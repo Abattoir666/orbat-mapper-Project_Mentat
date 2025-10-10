@@ -23,8 +23,11 @@
             >
               <span class="text-red-900 dark:text-red-900/90">ORBAT</span>
               Mapper<span class="absolute text-sm tracking-normal text-gray-500 uppercase"
-                >beta</span
-              >
+                >beta</span>
+               <span class="text-red-900 dark:text-red-900/90"></span><br/> 
+               <a :href="siteUrl69" target="_blank" class="uppercase hover:underline">
+                   PROJECT Mentat
+               </a>
             </h1>
             <p
               class="mx-auto mt-3 max-w-md text-base text-gray-700 sm:text-lg md:mt-5 md:max-w-3xl md:text-xl dark:text-slate-400"
@@ -170,6 +173,7 @@ import { IconGithub as GithubIcon } from "@iconify-prerendered/vue-mdi";
 import { ORBAT_CHART_ROUTE } from "@/router/names";
 import { CheckIcon } from "@heroicons/vue/24/outline";
 import { Button } from "@/components/ui/button";
+const siteUrl69 = "https://www.patreon.com/Analytica_Camillus";
 
 const features = [
   {

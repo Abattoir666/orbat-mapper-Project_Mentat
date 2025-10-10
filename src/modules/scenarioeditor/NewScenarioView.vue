@@ -264,8 +264,7 @@ async function create() {
   } = scenario.value;
   if (!noInitialOrbat.value) {
     form.sides.forEach((sideData) => {
-      const { units, ...rest } = sideData;
-      const sideId = unitActions.addSide(rest, { markAsNew: false });
+      const sideId = unitActions.addSide(sideData, { markAsNew: false });
       const parentId = getSideById(sideId).groups[0];
       sideData.units.forEach((u) => {
         const sidc = new Sidc("10031000000000000000");

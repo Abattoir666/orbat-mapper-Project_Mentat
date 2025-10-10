@@ -130,14 +130,6 @@ function onContextMenu(e: MouseEvent) {
 function returnMapProviders(lonLat: Position, zoomLevel: number) {
   return [
     {
-      name: "Bing Maps",
-      url: `https://www.bing.com/maps?cp=${lonLat[1]}~${lonLat[0]}&lvl=${zoomLevel}`,
-    },
-    {
-      name: "Geohack",
-      url: `https://geohack.toolforge.org/geohack.php?params=${lonLat[1]}_N_${lonLat[0]}_E`,
-    },
-    {
       name: "Google Maps",
       url: `https://www.google.com/maps/@${lonLat[1]},${lonLat[0]},${zoomLevel}z`,
     },
@@ -150,8 +142,16 @@ function returnMapProviders(lonLat: Position, zoomLevel: number) {
         lonLat[0],
     },
     {
+      name: "Bing Maps",
+      url: `https://www.bing.com/maps?cp=${lonLat[1]}~${lonLat[0]}&lvl=${zoomLevel}`,
+    },
+    {
       name: "OpenStreetMap",
       url: `https://www.openstreetmap.org/#map=15/${lonLat[1]}/${lonLat[0]}`,
+    },
+    {
+      name: "Geohack",
+      url: `https://geohack.toolforge.org/geohack.php?params=${lonLat[1]}_N_${lonLat[0]}_E`,
     },
   ];
 }
@@ -323,30 +323,14 @@ function onAddPoint() {
         </ContextMenuSubContent>
       </ContextMenuSub>
       <ContextMenuSub>
-        <ContextMenuSubTrigger inset><span>Export</span></ContextMenuSubTrigger>
-        <ContextMenuSubContent>
-          <ContextMenuItem @select="onExport()">Map as image</ContextMenuItem>
-        </ContextMenuSubContent>
-      </ContextMenuSub>
-      <ContextMenuSub>
         <ContextMenuSubTrigger inset><span>Map settings</span></ContextMenuSubTrigger>
         <ContextMenuSubContent>
-          <ContextMenuSub>
-            <ContextMenuSubTrigger inset>Coordinate format</ContextMenuSubTrigger>
-            <ContextMenuSubContent>
-              <ContextMenuRadioGroup v-model="coordinateFormat">
-                <ContextMenuRadioItem value="dms" @select.prevent
-                  >Degrees, minutes, seconds
-                </ContextMenuRadioItem>
-                <ContextMenuRadioItem value="dd" @select.prevent
-                  >Decimal degrees
-                </ContextMenuRadioItem>
-                <ContextMenuRadioItem value="MGRS" @select.prevent
-                  >MGRS
-                </ContextMenuRadioItem>
-              </ContextMenuRadioGroup>
-            </ContextMenuSubContent>
-          </ContextMenuSub>
+          <ContextMenuCheckboxItem v-model="showScaleLine" @select.prevent>
+            Scale line
+          </ContextMenuCheckboxItem>
+          <ContextMenuCheckboxItem v-model="showLocation" @select.prevent>
+            Pointer location
+          </ContextMenuCheckboxItem>
           <ContextMenuCheckboxItem v-model="showDayNightTerminator" @select.prevent>
             Day/nigth terminator
           </ContextMenuCheckboxItem>
@@ -368,24 +352,28 @@ function onAddPoint() {
               </ContextMenuRadioGroup>
             </ContextMenuSubContent>
           </ContextMenuSub>
-          <ContextMenuCheckboxItem v-model="showLocation" @select.prevent>
-            Pointer location
-          </ContextMenuCheckboxItem>
-          <ContextMenuCheckboxItem v-model="showScaleLine" @select.prevent>
-            Scale line
-          </ContextMenuCheckboxItem>
+          <ContextMenuSub>
+            <ContextMenuSubTrigger inset>Coordinate format</ContextMenuSubTrigger>
+            <ContextMenuSubContent>
+              <ContextMenuRadioGroup v-model="coordinateFormat">
+                <ContextMenuRadioItem value="dms" @select.prevent
+                  >Degrees, minutes, seconds
+                </ContextMenuRadioItem>
+                <ContextMenuRadioItem value="dd" @select.prevent
+                  >Decimal degrees
+                </ContextMenuRadioItem>
+                <ContextMenuRadioItem value="MGRS" @select.prevent
+                  >MGRS
+                </ContextMenuRadioItem>
+              </ContextMenuRadioGroup>
+            </ContextMenuSubContent>
+          </ContextMenuSub>
         </ContextMenuSubContent>
       </ContextMenuSub>
       <ContextMenuSub>
-        <ContextMenuSubTrigger inset><span>Open in</span></ContextMenuSubTrigger>
+        <ContextMenuSubTrigger inset><span>Export</span></ContextMenuSubTrigger>
         <ContextMenuSubContent>
-          <ContextMenuItem
-            v-for="{ name, url } in returnMapProviders(dropPosition, mapZoomLevel)"
-            :key="url"
-            inset
-            as-child
-            ><a :href="url" target="_blank">{{ name }}</a></ContextMenuItem
-          >
+          <ContextMenuItem @select="onExport()">Map as image</ContextMenuItem>
         </ContextMenuSubContent>
       </ContextMenuSub>
       <ContextMenuSub>
@@ -449,18 +437,30 @@ function onAddPoint() {
           >
         </ContextMenuSubContent>
       </ContextMenuSub>
+      <ContextMenuSub>
+        <ContextMenuSubTrigger inset><span>Open in</span></ContextMenuSubTrigger>
+        <ContextMenuSubContent>
+          <ContextMenuItem
+            v-for="{ name, url } in returnMapProviders(dropPosition, mapZoomLevel)"
+            :key="url"
+            inset
+            as-child
+            ><a :href="url" target="_blank">{{ name }}</a></ContextMenuItem
+          >
+        </ContextMenuSubContent>
+      </ContextMenuSub>
       <ContextMenuSeparator />
       <ContextMenuCheckboxItem v-model="uiSettings.showToolbar" @select.prevent
         >Map toolbar
+      </ContextMenuCheckboxItem>
+      <ContextMenuCheckboxItem v-model="uiSettings.showTimeline" @select.prevent
+        >Timeline
       </ContextMenuCheckboxItem>
       <ContextMenuCheckboxItem
         v-if="!isMobile"
         v-model="uiSettings.showLeftPanel"
         @select.prevent
         >ORBAT panel
-      </ContextMenuCheckboxItem>
-      <ContextMenuCheckboxItem v-model="uiSettings.showTimeline" @select.prevent
-        >Timeline
       </ContextMenuCheckboxItem>
       <ContextMenuCheckboxItem v-model="uiSettings.showOrbatBreadcrumbs" @select.prevent>
         Unit breadcrumbs

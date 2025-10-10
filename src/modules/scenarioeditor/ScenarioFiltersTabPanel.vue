@@ -93,12 +93,11 @@ watchEffect(() => {
       const sideItem = sideStatItems.find((item) => item.key === sideKey);
       if (sideItem) {
         const children = sideItem.children || [];
-        if (unit._gid)
-          children.push({
-            key: sideGroupKey,
-            label: getSideGroupLabel(unit._gid),
-            sidc: "10031000100000000000",
-          });
+        children.push({
+          key: sideGroupKey,
+          label: getSideGroupLabel(unit._gid),
+          sidc: "10031000100000000000",
+        });
 
         sideItem.children = children;
         sideItem.sidc = "10031000100000000000";

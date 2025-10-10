@@ -185,12 +185,7 @@ function setTextAmpValue(field: TextAmpKey, value: string | number | undefined) 
           </div>
         </div>
         <footer class="mt-2 flex items-center justify-end gap-2 border-t pt-2">
-          <Button
-            size="sm"
-            type="button"
-            variant="outline"
-            @click="handleReset"
-            :disabled="isLocked"
+          <Button size="sm" variant="outline" @click="handleReset" :disabled="isLocked"
             >Reset</Button
           >
           <Button size="sm" variant="secondary" type="submit" :disabled="isLocked"

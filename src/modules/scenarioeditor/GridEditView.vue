@@ -168,25 +168,8 @@ const filteredOrbat = computed(() => {
     .map((id) => state.sideMap[id])
     .forEach((side) => {
       const sideGroupList: SideGroupItem[] = [];
-      const dummyGroups = [...side.groups];
-      if (side.subUnits) {
-        dummyGroups.push(side.id);
-      }
-      dummyGroups
-        .map((id) => {
-          if (id in state.sideGroupMap) {
-            return state.sideGroupMap[id];
-          } else {
-            // Create a dummy side group for root units
-            return {
-              id: side.id,
-              name: "(Root units)",
-              shortName: "",
-              _pid: side.id,
-              subUnits: side.subUnits || [],
-            } as NSideGroup;
-          }
-        })
+      side.groups
+        .map((id) => state.sideGroupMap[id])
         .forEach((sideGroup) => {
           const filteredUnits = filterUnits(
             sideGroup.subUnits,
@@ -367,7 +350,7 @@ onMounted(() => {
 const { onUnitSelect } = useSearchActions();
 onUnitSelect(({ unitId }) => {
   const { parents, side, sideGroup } = unitActions.getUnitHierarchy(unitId);
-  sideGroup && sgOpen.value.set(sideGroup, true);
+  sgOpen.value.set(sideGroup, true);
   sideOpen.value.set(side, true);
   parents.forEach((p) => (p._isOpen = true));
   nextTick(() => {

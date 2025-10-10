@@ -122,9 +122,6 @@ function getSides(state: ScenarioState): Side[] {
     .map((nSide) => ({
       ...nSide,
       groups: nSide.groups.map((groupId) => getSideGroup(groupId)),
-      subUnits: nSide.subUnits.length
-        ? nSide.subUnits.map((unitId) => serializeUnit(unitId, state))
-        : undefined,
     }));
 }
 

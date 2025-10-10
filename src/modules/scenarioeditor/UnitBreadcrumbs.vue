@@ -16,7 +16,7 @@ import { injectStrict } from "@/utils";
 import { activeScenarioKey } from "@/components/injects";
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import MilitarySymbol from "@/components/NewMilitarySymbol.vue";
-import type { NSide, NSideGroup, NUnit } from "@/types/internalModels";
+import type { NUnit } from "@/types/internalModels";
 import type { EntityId } from "@/types/base";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { breakpointsTailwind, useBreakpoints } from "@vueuse/core";
@@ -69,10 +69,7 @@ const breadcrumbItems = computed((): BreadcrumbItemType[] => {
 
   try {
     const parentsWithItems = parents.map((uunit) => {
-      const parent: NUnit | NSideGroup | NSide =
-        getUnitById(uunit._pid) ??
-        getSideGroupById(uunit._pid) ??
-        getSideById(uunit._pid);
+      const parent = getUnitById(uunit._pid) ?? getSideGroupById(uunit._pid);
       if (!parent) return { name: uunit.name, items: [] };
       return {
         name: uunit.shortName || uunit.name,
@@ -80,26 +77,15 @@ const breadcrumbItems = computed((): BreadcrumbItemType[] => {
         location: Boolean(uunit._state?.location),
         id: uunit.id,
         symbolOptions: unitActions.getCombinedSymbolOptions(uunit),
-        items: [
-          ...parent.subUnits.map(getUnitById).map((subUnit) => ({
-            ...subUnit,
-            symbolOptions: unitActions.getCombinedSymbolOptions(subUnit),
-            location: Boolean(subUnit._state?.location),
-          })),
-          ...("groups" in parent
-            ? side.groups.map((group) => getSideGroupById(group))
-            : []),
-        ],
+        items: parent.subUnits.map((unitId) => ({
+          ...getUnitById(unitId),
+          symbolOptions: unitActions.getCombinedSymbolOptions(getUnitById(unitId)),
+          location: Boolean(uunit._state?.location),
+        })),
       };
     });
 
-    const sideGroups = [
-      ...side.subUnits.map((unitId) => ({
-        ...getUnitById(unitId),
-        symbolOptions: unitActions.getCombinedSymbolOptions(getUnitById(unitId)),
-      })),
-      ...side.groups.map((group) => getSideGroupById(group)),
-    ];
+    const sideGroups = side.groups.map((group) => getSideGroupById(group));
     const res = [
       {
         name: isMobile.value ? side.name.slice(0, 2) : side.name,
@@ -107,16 +93,14 @@ const breadcrumbItems = computed((): BreadcrumbItemType[] => {
         id: side.id,
         sidc: "",
       },
-      sideGroup
-        ? {
-            name: isMobile.value ? sideGroup.name.slice(0, 2) : sideGroup.name,
-            items: sideGroups,
-            id: sideGroup.id,
-            sidc: "",
-          }
-        : null,
+      {
+        name: isMobile.value ? sideGroup.name.slice(0, 2) : sideGroup.name,
+        items: sideGroups,
+        id: sideGroup.id,
+        sidc: "",
+      },
       ...parentsWithItems,
-    ].filter((i) => i !== null);
+    ];
     if (activeParent.value?.subUnits?.length) {
       res.push({
         sidc: "",
@@ -147,9 +131,12 @@ function onItemClick(entityId: EntityId) {
     let id;
     if (sideGroup) {
       id = sideGroup.subUnits[0];
+    } else if (side) {
+      id = side.groups[0];
     } else {
+      const side = getSideById(entityId);
       const sideGroup = getSideGroupById(side.groups[0]);
-      id = side?.subUnits[0] ?? sideGroup?.subUnits[0];
+      id = sideGroup?.subUnits[0];
     }
     unit = getUnitById(id);
   }

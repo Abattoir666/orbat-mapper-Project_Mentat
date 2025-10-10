@@ -1,4 +1,4 @@
-# About ORBAT Mapper
+# About ORBAT Mapper — PROJECT Mentat
 
 ORBAT Mapper is a web application that lets you build order of battles (ORBATs) and plot unit locations
 on a map. With ORBAT Mapper you can recreate historic battles and military scenarios in your browser.

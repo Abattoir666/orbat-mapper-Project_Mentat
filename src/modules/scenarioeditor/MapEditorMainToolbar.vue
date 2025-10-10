@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <nav
     class="bg-sidebar border-border pointer-events-auto flex w-full items-center justify-between border p-1 text-sm shadow-sm sm:rounded-xl sm:p-2 md:w-auto"
   >
@@ -50,6 +50,13 @@
       >
         <IconMapMarkerPath class="size-6" />
       </MainToolbarButton>
+      <MainToolbarButton
+        title="Unit Hieararchies"
+        :active="isParentLinkActive"
+        @click="toggleParentLinesPersistent"
+        >
+        <img :src="sargChevron" alt="Parent line" class="size-6 opacity-90" />
+       </MainToolbarButton>
       <div class="border-border h-7 border-l-2 sm:mx-1" />
       <div class="ml-2 flex items-center">
         <EchelonPickerPopover
@@ -167,6 +174,38 @@ import { CalendarIcon } from "@heroicons/vue/24/solid";
 import SymbolPickerPopover from "@/modules/scenarioeditor/SymbolPickerPopover.vue";
 import EchelonPickerPopover from "@/modules/scenarioeditor/EchelonPickerPopover.vue";
 import { Button } from "@/components/ui/button";
+import { parentLinkOverlay } from "@/stores/parentLinkOverlay";
+import sargChevron from "@/components/ui/Icons/sargchevron.svg?url";
+import { useSelectedItems } from "@/stores/selectedStore";
+
+const { selectedUnitIds } = useSelectedItems();
+const { store: scenarioStore } = injectStrict(activeScenarioKey);
+
+const isParentLinkActive = computed(
+  () => parentLinkOverlay.enabled && parentLinkOverlay.tracked.has(activeUnitId.value || "")
+);
+
+function toggleParentLinesPersistent() {
+  // If currently disabled, enable and track current selection
+  if (!parentLinkOverlay.enabled) {
+    parentLinkOverlay.enable();
+    if (selectedUnitIds.value.size) {
+      parentLinkOverlay.toggleUnits(selectedUnitIds.value);
+    }
+    return;
+  }
+
+  // If enabled and you have a selection, toggle those units in/out of tracking
+  if (selectedUnitIds.value.size) {
+    parentLinkOverlay.toggleUnits(selectedUnitIds.value);
+    return;
+  }
+
+  // If enabled and no selection, disable entirely (acts as global off)
+  parentLinkOverlay.disable();
+  parentLinkOverlay.clearTracked();
+  console.log("[ParentLine] segments:", parentLinkOverlay.segments);
+}
 
 const emit = defineEmits([
   "open-time-modal",

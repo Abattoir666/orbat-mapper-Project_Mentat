@@ -50,7 +50,6 @@ export interface GeoJsonSettings extends BaseExportSettings {
   includeFeatures: boolean;
   includeIdInProperties: boolean;
   includeId: boolean;
-  includeSelectedUnitsOnly: boolean;
 }
 
 export interface OrbatMapperExportSettings extends BaseExportSettings {
@@ -58,39 +57,17 @@ export interface OrbatMapperExportSettings extends BaseExportSettings {
   scenarioName?: string;
 }
 
-export type FolderMode = "one" | "side" | "sideGroup";
-export type TimeMode = "current" | "event" | "multiple";
-
-export interface KmlKmzExportSettings {
-  includeUnits: boolean;
-  includeSelectedUnitsOnly: boolean;
-  includeFeatures: boolean;
-  embedIcons: boolean;
-  useShortName: boolean;
-  folderMode: FolderMode;
-  oneFolderPerSide: boolean;
-  iconScale: number;
-  labelScale: number;
-  drawSymbolOutline: boolean;
-  outlineColor: string;
-  outlineWidth: number;
-  renderAmplifiers: boolean;
-  timeMode: TimeMode;
-  exportEventId?: EntityId;
-  exportEventIds: EntityId[];
-}
-
 export interface ExportSettings
   extends XlsxSettings,
     UnitGeneratorSettings,
     GeoJsonSettings,
-    OrbatMapperExportSettings,
-    KmlKmzExportSettings {
+    OrbatMapperExportSettings {
   fileName: string;
   includeUnits: boolean;
   includeFeatures: boolean;
   embedIcons: boolean;
   useShortName: boolean;
+  oneFolderPerSide: boolean;
 }
 
 export interface ImportSettings {

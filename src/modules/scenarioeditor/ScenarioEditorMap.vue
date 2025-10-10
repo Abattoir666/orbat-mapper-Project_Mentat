@@ -2,62 +2,47 @@
   <div class="relative flex min-h-0 flex-auto flex-col">
     <div class="relative flex flex-auto flex-col">
       <NewScenarioMap class="flex-auto" @mapReady="onMapReady" />
-      <main
-        v-if="mapRef"
-        class="pointer-events-none absolute inset-0 flex flex-col justify-between"
-      >
-        <header class="flex flex-none items-center justify-end p-2">
-          <MapTimeController
-            class="pointer-events-auto"
-            :show-controls="isMobile ? ui.mobilePanelOpen : false"
-            @open-time-modal="openTimeDialog()"
-            @show-settings="emit('show-settings')"
-            @inc-day="onIncDay()"
-            @dec-day="onDecDay()"
-            @next-event="goToNextScenarioEvent()"
-            @prev-event="goToPrevScenarioEvent()"
-          />
-          <IconButton
-            @click.stop="onShowPlaceSearch"
-            class="pointer-events-auto ml-2"
-            title="Search"
-          >
-            <MagnifyingGlassIcon class="h-5 w-5 text-gray-500" />
-          </IconButton>
-        </header>
-        <section v-if="!isMobile" class="flex flex-auto justify-between p-2">
-          <MapEditorDesktopPanel v-if="showLeftPanel" @close="toggleLeftPanel()" />
-          <div v-else>
-            <button
-              type="button"
-              @click="toggleLeftPanel()"
-              title="Show panel"
-              class="bg-opacity-70 pointer-events-auto absolute -my-12 rounded bg-white p-1 text-gray-600 hover:text-gray-900"
-            >
-              <ShowPanelIcon class="h-7 w-7" />
-            </button>
-          </div>
-          <MapEditorDetailsPanel v-if="showDetailsPanel" @close="onCloseDetailsPanel()">
-            <ScenarioFeatureDetails
-              v-if="activeDetailsPanel === 'feature'"
-              :selected-ids="selectedFeatureIds"
-            />
-            <UnitDetails
-              v-else-if="activeDetailsPanel === 'unit'"
-              :unit-id="activeUnitId || [...selectedUnitIds][0]"
-            />
-            <ScenarioEventDetails
-              v-else-if="activeDetailsPanel === 'event'"
-              :event-id="activeScenarioEventId!"
-            />
-            <ScenarioMapLayerDetails
-              v-else-if="activeDetailsPanel === 'mapLayer'"
-              :layer-id="activeMapLayerId!"
-            />
-            <ScenarioInfoPanel v-else-if="activeDetailsPanel === 'scenario'" />
-          </MapEditorDetailsPanel>
-          <div v-else></div>
-        </section>
+      <main v-if="mapRef"
+            class="pointer-events-none absolute inset-0 flex flex-col justify-between">
+          <header class="flex flex-none items-center justify-end p-2">
+              <MapTimeController class="pointer-events-auto"
+                                 :show-controls="isMobile ? ui.mobilePanelOpen : false"
+                                 @open-time-modal="openTimeDialog()"
+                                 @show-settings="emit('show-settings')"
+                                 @inc-day="onIncDay()"
+                                 @dec-day="onDecDay()"
+                                 @next-event="goToNextScenarioEvent()"
+                                 @prev-event="goToPrevScenarioEvent()" />
+              <IconButton @click.stop="onShowPlaceSearch"
+                          class="pointer-events-auto ml-2"
+                          title="Search">
+                  <MagnifyingGlassIcon class="h-5 w-5 text-gray-500" />
+              </IconButton>
+          </header>
+          <section v-if="!isMobile" class="flex flex-auto justify-between p-2">
+              <MapEditorDesktopPanel v-if="showLeftPanel" @close="toggleLeftPanel()" />
+              <div v-else>
+                  <button type="button"
+                          @click="toggleLeftPanel()"
+                          title="Show panel"
+                          class="bg-opacity-70 pointer-events-auto absolute -my-12 rounded bg-white p-1 text-gray-600 hover:text-gray-900">
+                      <ShowPanelIcon class="h-7 w-7" />
+                  </button>
+              </div>
+              <MapEditorDetailsPanel v-if="showDetailsPanel" @close="onCloseDetailsPanel()">
+                  <ScenarioFeatureDetails v-if="activeDetailsPanel === 'feature'"
+                                          :selected-ids="selectedFeatureIds" />
+                  <UnitDetails v-else-if="activeDetailsPanel === 'unit'"
+                               :unit-id="activeUnitId || [...selectedUnitIds][0]" />
+                  <ScenarioEventDetails v-else-if="activeDetailsPanel === 'event'"
+                                        :event-id="activeScenarioEventId!" />
+                  <ScenarioMapLayerDetails v-else-if="activeDetailsPanel === 'mapLayer'"
+                                           :layer-id="activeMapLayerId!" />
+                  <ScenarioInfoPanel v-else-if="activeDetailsPanel === 'scenario'" />
+              </MapEditorDetailsPanel>
+              <div v-else></div>
+          </section>
+          <ParentLinkCanvas />
       </main>
       <footer
         v-if="mapRef && ui.showToolbar"
@@ -158,6 +143,7 @@ import MapEditorUnitTrackToolbar from "@/modules/scenarioeditor/MapEditorUnitTra
 import { storeToRefs } from "pinia";
 import { usePlaybackStore } from "@/stores/playbackStore";
 import UnitBreadcrumbs from "@/modules/scenarioeditor/UnitBreadcrumbs.vue";
+import ParentLinkCanvas from "@/modules/scenarioeditor/ParentLinkCanvas.vue";
 
 const emit = defineEmits(["showExport", "showLoad", "show-settings"]);
 const activeScenario = injectStrict(activeScenarioKey);

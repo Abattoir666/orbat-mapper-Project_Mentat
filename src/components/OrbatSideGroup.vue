@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import OrbatTree from "./OrbatTree.vue";
 import { ChevronUpIcon } from "@heroicons/vue/24/solid";
@@ -109,6 +109,67 @@ if (props.group._isNew) {
 
 let dndCleanup: CleanupFn = () => {};
 
+// ====== ADD: we need the store to mutate ======
+const { store } = injectStrict(activeScenarioKey);
+
+// ====== ADD: extract unit IDs from the DnD source payload (single or multi) ======
+function extractUnitIdsFromDragData(data: any): string[] {
+  // Support both shapes:
+  //  - { unit: { id: "..." }, ... }  (single)
+  //  - { unitIds: ["...", "..."], ... }  (multi)
+  if (!data) return [];
+  if (Array.isArray(data.unitIds) && data.unitIds.length) return data.unitIds.map(String);
+  const id = data.unit?.id || data.id || data.unitId;
+  return id ? [String(id)] : [];
+}
+
+// ====== ADD: minimal move utility for "attach to group" ======
+function moveUnitsToGroup(state: any, unitIds: string[], groupId: string, sideId: string) {
+  const s = state;
+  const uMap = (s.unitMap ||= {});
+  const gMap = (s.groupMap ||= {});
+  const sgm = (s.sideGroupMap ||= {});
+
+  // ensure group + node + side node
+  const g = (gMap[groupId] ||= { id: groupId, type: "group", name: "Units", subUnits: [] });
+  const gNode = (sgm[groupId] ||= { id: groupId, type: "group", name: g.name, subUnits: g.subUnits });
+  const sideNode = (sgm[sideId] ||= { id: sideId, groups: [], subUnits: [] });
+  if (!Array.isArray(g.subUnits)) g.subUnits = [];
+  if (!Array.isArray(gNode.subUnits)) gNode.subUnits = g.subUnits;
+  if (!sideNode.groups.some((x: any) => (x?.id ?? x) === groupId)) sideNode.groups.push(gNode);
+
+  // detach from old parent/group, then attach to this group
+  function detach(uid: string) {
+    const u = uMap[uid];
+    if (!u) return;
+    // from parent unit
+    const pid = u._pid;
+    if (pid && uMap[pid]?.subUnits) {
+      uMap[pid].subUnits = uMap[pid].subUnits.filter((x: any) => (x?.id ?? x) !== uid);
+    }
+    // from any group lists
+    Object.values(gMap).forEach((gg: any) => {
+      if (Array.isArray(gg?.subUnits)) gg.subUnits = gg.subUnits.filter((x: any) => (x?.id ?? x) !== uid);
+    });
+    Object.values(sgm).forEach((node: any) => {
+      if (Array.isArray(node?.subUnits)) node.subUnits = node.subUnits.filter((x: any) => (x?.id ?? x) !== uid);
+    });
+  }
+
+  for (const uid of unitIds) {
+    detach(uid);
+    if (!g.subUnits.includes(uid)) g.subUnits.push(uid);
+    if (!gNode.subUnits.includes(uid)) gNode.subUnits.push(uid);
+    const u = uMap[uid]; if (!u) continue;
+    u._pid = groupId;
+    u.groupId = groupId;
+    u.sideId = sideId;
+  }
+
+  s.unitStateCounter = (s.unitStateCounter ?? 0) + 1;
+  s.featureStateCounter = (s.featureStateCounter ?? 0) + 1;
+}
+
 onMounted(() => {
   if (!dropRef.value) {
     return;
@@ -164,14 +225,32 @@ onMounted(() => {
         instruction.value = null;
         stopOpenTimeout();
       },
-      onDrop: (args) => {
-        isDragOver.value = false;
-        instruction.value = null;
-        stopOpenTimeout();
-        if (isUnitDragItem(args.source.data) && !isOpen.value) {
-          isOpen.value = true;
-        }
-      },
+        onDrop: (args) => {
+            isDragOver.value = false;
+            instruction.value = null;
+            stopOpenTimeout();
+
+            // If units dropped, open group (nice UX)
+            if (isUnitDragItem(args.source.data) && !isOpen.value) {
+                isOpen.value = true;
+            }
+
+            // ✅ Re-parent dropped units into THIS side-group
+            if (isUnitDragItem(args.source.data)) {
+                const unitIds = extractUnitIdsFromDragData(args.source.data);
+                if (unitIds.length) {
+                    // group.id is the bucket; its parent side id is _pid
+                    const groupId = props.group.id;
+                    const sideId = props.group._pid!;
+                    store.update((root: any) => {
+                        moveUnitsToGroup(root, unitIds, groupId, sideId);
+                    });
+                }
+            }
+
+            // (Optional) handle dropping a whole side-group onto another side-group (re-parent groups)…
+            // if (isSideGroupDragItem(args.source.data)) { /* your group re-parenting logic here */ }
+        },
     }),
   );
 });

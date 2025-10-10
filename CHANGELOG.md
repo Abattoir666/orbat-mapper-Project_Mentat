@@ -8,20 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
-September 2025
-
-- New KML/KMZ export options:
-  - export scenario events as KML folders
-  - draw symbol outline
-  - adjust icon and label scale
-  - render symbol amplifiers
-  - nested folders for sides and groups
-  - export only selected units
-- Units can now be added directly to a side. A side group is no longer required.
-
 May 2025
 
-- Add 'add point/marker' action to the map context menu.
+- Added 'add point/marker' action to the map context menu.
 
 April 2025
 

@@ -1,19 +1,20 @@
-import type { Unzipped } from "fflate";
+﻿import type { Unzipped } from "fflate";
 import type { GuessedFormatDialect, GuessedImportFormat } from "@/types/convert";
 import type { FeatureCollection, Feature } from "geojson";
 
 export interface ImportedFileInfo {
-  dataAsString: string;
-  errors: string[];
-  format: GuessedImportFormat;
-  dialect: GuessedFormatDialect;
-  hasMultipleFiles: boolean;
-  isInvalid: boolean;
-  isJson: boolean;
-  isZipped: boolean;
-  objectUrl: string;
-  fileName: string;
-  dataAsArrayBuffer?: ArrayBuffer;
+    format: string;
+    dialect: string;
+    dataAsArrayBuffer?: ArrayBuffer;
+    dataAsString?: string;
+    isJson: boolean;
+    isZipped: boolean;
+    isInvalid: boolean;
+    hasMultipleFiles: boolean;
+    fileName: string;
+    errors: string[];
+    objectUrl: string;
+    originalFile?: File; // 👈 add this line
 }
 
 export const imageCache = new Map<string, string>();
@@ -26,18 +27,19 @@ export function clearCache() {
 }
 
 export async function guessImportFormat(file: File): Promise<ImportedFileInfo> {
-  const guess: ImportedFileInfo = {
-    format: "unknown",
-    dialect: "unknown",
-    isZipped: false,
-    isJson: false,
-    hasMultipleFiles: false,
-    dataAsString: "Unknown data",
-    isInvalid: false,
-    errors: [],
-    objectUrl: "",
-    fileName: file.name,
-  };
+    const guess: ImportedFileInfo = {
+        format: "",
+        dialect: "",
+        isJson: false,
+        isZipped: false,
+        isInvalid: false,
+        hasMultipleFiles: false,
+        fileName: file.name,
+        errors: [],
+        objectUrl: "",
+    };
+
+    guess.originalFile = file; // 👈 add this line
 
   if (hasZippedFileType(file)) {
     guess.isZipped = true;
@@ -79,9 +81,15 @@ export async function guessImportFormat(file: File): Promise<ImportedFileInfo> {
     guess.objectUrl = URL.createObjectURL(file);
     return guess;
   } else if (isSpreadsheetFileType(file)) {
-    guess.format = "xlsx";
-    guess.dataAsArrayBuffer = await file.arrayBuffer();
-    return guess;
+      guess.format = "xlsx"; // <- keep "xlsx" so the app shows the Spreadsheet step
+
+      // 👇 Add this line here
+      if (/\.csv$/i.test(file.name) || /csv/.test(file.type)) {
+          guess.dialect = "CSV";
+      }
+
+      guess.dataAsArrayBuffer = await file.arrayBuffer();
+      return guess;
   }
 
   // read as text
@@ -167,9 +175,16 @@ function hasImageFileType(file: File): boolean {
 }
 
 function isSpreadsheetFileType(file: File): boolean {
-  const xlsxTypes = ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"];
-  if (xlsxTypes.includes(file.type)) return true;
-  return file.name.endsWith(".xlsx");
+    // accept xlsx + csv by MIME or extension
+    const types = [
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "text/csv",
+        "application/csv",
+    ];
+    if (types.includes(file.type)) return true;
+
+    const n = file.name.toLowerCase();
+    return n.endsWith(".xlsx") || n.endsWith(".csv");
 }
 
 export function arrayBufferToString(

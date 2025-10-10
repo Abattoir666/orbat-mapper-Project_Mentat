@@ -268,11 +268,14 @@ async function onLoad() {
     emit("loaded", "orbatmapper", data, fileInfo.value);
   }
 
-  if (format === "xlsx" && stringSource.value) {
-    send({ message: `Loaded data as ${format}` });
-
-    emit("loaded", "xlsx", stringSource.value, fileInfo.value);
-  }
+    if (format === "xlsx") {
+        // For XLSX and spoofed CSV->XLSX, we pass control to the spreadsheet step
+        // via fileInfo (which contains dataAsArrayBuffer + originalFile).
+        send({ message: `Loaded data as ${format}` });
+        NProgress.done();
+        emit("loaded", "xlsx", fileInfo.value?.dataAsArrayBuffer ?? null, fileInfo.value);
+        return;
+    }
 
   NProgress.done();
 }
@@ -324,11 +327,11 @@ async function handleFiles(files: File[]) {
     return;
   }
 
-  stringSource.value = info.dataAsString;
+  stringSource.value = info.dataAsString ?? "";
   objectUrl.value = info.objectUrl;
-  guessedFormat.value = info.format;
+  guessedFormat.value = info.format as unknown as GuessedImportFormat;
   if (info.format !== "unknown") {
-    form.value.format = info.format;
+    form.value.format = info.format as unknown as ImportFormat;
     await onLoad();
   }
 }
