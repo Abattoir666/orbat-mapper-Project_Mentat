@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { Toggle } from "reka-ui";
 import { ChevronUpIcon } from "@heroicons/vue/24/solid";
@@ -102,71 +102,192 @@ onMounted(() => {
   if (!dropRef.value) {
     return;
   }
-  dndCleanup = combine(
-    draggable({
-      element: dropRef.value!,
-      dragHandle: dragRef.value!,
-      getInitialData: () => getSideDragItem({ side: props.side }),
+    // === STABLE MULTI-DRAG PATCH: begin ===
+    // Assumptions this component already has available (keep these as-is if you already import them):
+    // - `store` or `scenario.store` with a reactive `state` that has unitMap (id -> unit),
+    //   and each unit has `_pid` (parent id) and `subUnits` array on parent.
+    // - Your DnD event gives you:
+    //     draggedIds: string[]         // all selected ids being dragged (includes the “primary” dragged id)
+    //     sourceParentId: string       // parent container they’re being dragged from
+    //     targetParentId: string       // parent container they’re being dropped into
+    //     targetIndex: number          // the intended insertion index within targetParent’s subUnits
+    //
+    // If your event shape is different, adjust the `mapEvent` function below in one place.
 
-      onDragStart: () => {
-        isDragging.value = true;
-      },
-      onDrop: () => {
-        isDragging.value = false;
-      },
-    }),
-    dropTargetForElements({
-      element: dropRef.value,
-      getData: ({ input, element, source }) => {
-        const data = getSideDragItem({ side: props.side });
-        return attachInstruction(data, {
-          input,
-          element,
-          currentLevel: 0,
-          indentPerLevel: 0,
-          block: isSideDragItem(source.data)
-            ? ["make-child", "reparent"]
-            : ["reparent", "instruction-blocked", "reorder-above", "reorder-below"],
-          mode: "standard",
+    type UnitNode = {
+        id: string;
+        name?: string;
+        _pid?: string;         // parent id (repo tree)
+        groupId?: string;      // optional, some builds mirror group id here
+        subUnits?: string[];   // children ids (only meaningful for containers/units that have children)
+    };
+
+    type DnDDropEvent = {
+        draggedIds: string[];
+        sourceParentId: string;
+        targetParentId: string;
+        targetIndex: number; // index in target parent's subUnits (0..length)
+        // Add anything else your DnD layer provides if needed
+    };
+
+    // ----- helpers to read/write your store -----
+    const st = (store as any)?.state ?? store;                           // pinia or raw object
+    const unitMap: Record<string, UnitNode> = (st.unitMap ??= {});
+    const getChildren = (parentId: string | undefined): string[] => {
+        if (!parentId) return [];
+        const p = unitMap[parentId];
+        if (!p) return [];
+        if (!Array.isArray(p.subUnits)) p.subUnits = [];
+        return p.subUnits;
+    };
+    const setParent = (childId: string, newParentId: string | undefined) => {
+        const u = unitMap[childId];
+        if (u) u._pid = newParentId;
+    };
+
+    // Guard: is target a descendant of any dragged? (prevent cycles)
+    const isDescendantOf = (candidateId: string, ancestorIds: Set<string>): boolean => {
+        let cur: UnitNode | undefined = unitMap[candidateId];
+        const MAX = 10000; // safety
+        let hops = 0;
+        while (cur && cur._pid && hops++ < MAX) {
+            if (ancestorIds.has(cur._pid)) return true;
+            cur = unitMap[cur._pid];
+        }
+        return false;
+    };
+
+    // Sort dragged items by their current visual order within `sourceParentId`
+    // This ensures we always keep the block’s relative order predictable.
+    const sortDraggedBySourceOrder = (ids: string[], sourceParentId: string): string[] => {
+        const src = getChildren(sourceParentId);
+        const idx = new Map(src.map((id, i) => [id, i]));
+        return [...ids].sort((a, b) => (idx.get(a) ?? 1e9) - (idx.get(b) ?? 1e9));
+    };
+
+    // Compute the adjusted insertion index when reordering within the same parent.
+    // If you remove N dragged items located before targetIndex, the final insertionIndex shifts left by N.
+    const adjustIndexForSameParent = (sourceIds: string[], draggedIds: Set<string>, targetIndex: number): number => {
+        let removedBefore = 0;
+        for (let i = 0; i < Math.min(targetIndex, sourceIds.length); i++) {
+            if (draggedIds.has(sourceIds[i])) removedBefore++;
+        }
+        return Math.max(0, targetIndex - removedBefore);
+    };
+
+    // Remove a set of ids from a children array (in-place) while preserving order of non-moved.
+    const removeMany = (arr: string[], toRemove: Set<string>) => {
+        let w = 0;
+        for (let r = 0; r < arr.length; r++) {
+            const id = arr[r];
+            if (!toRemove.has(id)) arr[w++] = id;
+        }
+        arr.length = w;
+    };
+
+    // Insert a block of ids into an array at a given index (in-place).
+    const insertBlock = (arr: string[], at: number, ids: string[]) => {
+        const idx = Math.min(Math.max(0, at), arr.length);
+        arr.splice(idx, 0, ...ids);
+    };
+
+    // NO-OP short-circuit: drop into same parent at same effective index with same order
+    const isNoOp = (dragged: string[], sourceParentId: string, targetParentId: string, targetIndex: number): boolean => {
+        if (sourceParentId !== targetParentId) return false;
+        const children = getChildren(sourceParentId);
+        // Check if dragged already occupy a contiguous block at `adjustedIndex` in the same order
+        const set = new Set(dragged);
+        const adjusted = adjustIndexForSameParent(children, set, targetIndex);
+        // Build a filtered array that excludes dragged
+        const filtered = children.filter(id => !set.has(id));
+        // Simulate insert
+        const preview = [...filtered.slice(0, adjusted), ...dragged, ...filtered.slice(adjusted)];
+        // If equal to original, it’s a no-op
+        if (preview.length !== children.length) return false;
+        for (let i = 0; i < children.length; i++) {
+            if (children[i] !== preview[i]) return false;
+        }
+        return true;
+    };
+
+    // Main entry: call this from your DnD drop hook
+    const onDrop = (evtRaw: any) => {
+        // 1) Map your framework event → DnDDropEvent shape (EDIT THIS PART if your event differs)
+        const mapEvent = (e: any): DnDDropEvent => {
+            // Example mapping; replace with your own getters:
+            return {
+                draggedIds: e.draggedIds ?? e.selection ?? [e.id],
+                sourceParentId: e.sourceParentId ?? e.fromParentId ?? e.source?.parentId,
+                targetParentId: e.targetParentId ?? e.toParentId ?? e.target?.parentId,
+                targetIndex: Number(e.targetIndex ?? e.index ?? 0),
+            };
+        };
+
+        const evt = mapEvent(evtRaw);
+        if (!Array.isArray(evt.draggedIds) || evt.draggedIds.length === 0) return;
+
+        const dragged = Array.from(new Set(evt.draggedIds)); // de-dup
+        const draggedSet = new Set(dragged);
+
+        // 2) Basic guards
+        if (!evt.targetParentId) return;
+        if (isDescendantOf(evt.targetParentId, draggedSet)) {
+            // Prevent dropping a parent under its own descendant
+            return;
+        }
+
+        // 3) Keep a deterministic relative order for the block:
+        //    If dragging inside the same parent, use the source parent's order;
+        //    otherwise, if your DnD gives you a "visual selection order", you could keep that.
+        const block = (evt.sourceParentId === evt.targetParentId)
+            ? sortDraggedBySourceOrder(dragged, evt.sourceParentId)
+            : dragged.slice(); // cross-parent: keep selection order
+
+        // 4) Early no-op exit (avoid jitter)
+        if (isNoOp(block, evt.sourceParentId, evt.targetParentId, evt.targetIndex)) return;
+
+        // 5) Apply mutation atomically so watchers fire once
+        const usePinia = store && typeof (store as any).$patch === "function";
+        const mutate = (fn: (root: any) => void) => {
+            if (usePinia) (store as any).$patch(fn);
+            else fn((store as any) ?? {});
+        };
+
+        mutate((root: any) => {
+            const targetChildren = getChildren(evt.targetParentId);
+
+            if (evt.sourceParentId === evt.targetParentId) {
+                // Reorder within the same parent
+                const sourceChildren = targetChildren; // same array
+                const adjusted = adjustIndexForSameParent(sourceChildren, draggedSet, evt.targetIndex);
+
+                // Remove dragged
+                removeMany(sourceChildren, draggedSet);
+
+                // Insert as a block at adjusted index
+                insertBlock(sourceChildren, adjusted, block);
+                // parent pointers do not change (_pid stays the same)
+            } else {
+                // Move across different parents
+
+                // 5a) Remove from source parent (we assume all share the same sourceParentId; if not, group by their _pid)
+                const sourceChildren = getChildren(evt.sourceParentId);
+                removeMany(sourceChildren, draggedSet);
+
+                // 5b) Insert in target as a block at targetIndex (clamped)
+                const clampedIndex = Math.min(Math.max(0, evt.targetIndex), targetChildren.length);
+                insertBlock(targetChildren, clampedIndex, block);
+
+                // 5c) Update parent pointers for moved items
+                for (const id of block) setParent(id, evt.targetParentId);
+            }
+
+            // 6) Optional: bump simple counters if your UI depends on them
+            root.nodesVersion = (root.nodesVersion ?? 0) + 1;
+            root.structureVersion = (root.structureVersion ?? 0) + 1;
         });
-      },
-      canDrop: ({ source }) => {
-        return (
-          (isUnitDragItem(source.data) && source.data.unit._sid !== props.side.id) ||
-          (isSideGroupDragItem(source.data) &&
-            source.data.sideGroup._pid !== props.side.id) ||
-          (isSideDragItem(source.data) && source.data.side.id !== props.side.id)
-        );
-      },
-      onDragEnter: ({ self }) => {
-        isDragOver.value = true;
-      },
-      onDrag: (args) => {
-        if (
-          (isUnitDragItem(args.source.data) || isSideGroupDragItem(args.source.data)) &&
-          !isOpen.value &&
-          !isPending.value
-        ) {
-          startOpenTimeout();
-        }
-        instruction.value = extractInstruction(args.self.data);
-      },
-
-      onDragLeave: () => {
-        isDragOver.value = false;
-        instruction.value = null;
-        stopOpenTimeout();
-      },
-      onDrop: (args) => {
-        isDragOver.value = false;
-        instruction.value = null;
-        stopOpenTimeout();
-        if (isSideGroupDragItem(args.source.data) && !isOpen.value) {
-          isOpen.value = true;
-        }
-      },
-    }),
-  );
+    };
+    // === STABLE MULTI-DRAG PATCH: end ===
 });
 
 onUnmounted(() => {

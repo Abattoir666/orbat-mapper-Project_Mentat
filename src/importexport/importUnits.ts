@@ -1,4 +1,4 @@
-// src/importexport/common/importUnits.ts
+﻿// src/importexport/common/importUnits.ts
 import { stableId, makeUnitSeed, ensureUniqueId, newId } from "@/utils/ids";
 
 export type ImportRow = {
@@ -26,14 +26,40 @@ type UnitLike = {
     state: Array<{ id: string; t: number; location: [number, number] }>;
 };
 
+function sideColorLookup(scenario: { sides?: Array<{ name: string; color?: string }> }) {
+    const map = new Map<string, string>();
+    for (const s of scenario.sides ?? []) {
+        if (!s?.name) continue;
+        const hex = (s.color || "").trim();
+        if (hex) map.set(s.name.toLowerCase(), hex.startsWith("#") ? hex : `#${hex}`);
+    }
+    return (sideName?: string | null): string | undefined => {
+        if (!sideName) return undefined;
+        return map.get(String(sideName).toLowerCase());
+    };
+}
+
+const toNum = (v: unknown): number | undefined => {
+    if (typeof v === "number" && Number.isFinite(v)) return v;
+    if (typeof v === "string") {
+        const n = Number(v);
+        if (Number.isFinite(n)) return n;
+    }
+    return undefined;
+};
+
+const clamp = (n: number, min: number, max: number): number | undefined =>
+    Number.isFinite(n) && n >= min && n <= max ? n : undefined;
+
 export function importRows(
     rows: ImportRow[],
     ctx: {
         resolveSideId: (sideKey: string) => string;
         resolveGroupId: (groupKey: string, sideId: string) => string;
-        existsId: (id: string) => boolean;          // check against scenario ids
-        findUnitById: (id: string) => UnitLike | undefined;   // from store
-        findGroupById: (id: string) => { subUnits: UnitLike[] } | undefined; // from store
+        existsId: (id: string) => boolean;
+        findUnitById: (id: string) => UnitLike | undefined;
+        findGroupById: (id: string) => { subUnits: UnitLike[] } | undefined;
+        getSideColor?: (sideId: string) => string | undefined;   // ← NEW (optional)
     }
 ): UnitLike[] {
     // 1) Assign ids (preserve if present)
@@ -65,20 +91,36 @@ export function importRows(
             idMap.set(r.id!, id);
         }
 
+        // prefer explicit CSV fillColor; else inherit from side color (if provided by ctx)
+        const explicitFill = (r.fillColor || "").trim();
+        const inheritedFill = ctx.getSideColor ? ctx.getSideColor(sideId) : undefined;
+        const fillColor = explicitFill || inheritedFill || undefined;
+
+        // coerce and validate numeric types
+        const tRaw = toNum(r.t);
+        const latRaw = toNum(r.lat);
+        const lonRaw = toNum(r.lon);
+
+        // bounds-check lat/lon just in case
+        const lat = latRaw !== undefined ? clamp(latRaw, -90, 90) : undefined;
+        const lon = lonRaw !== undefined ? clamp(lonRaw, -180, 180) : undefined;
+
         const unit: UnitLike = {
             id,
             name: r.name,
-            sidc: r.sidc,
+            sidc: (r.sidc || "10061000001211000000").trim(), // keep your default here too, just in case
             subUnits: [],
-            symbolOptions: r.fillColor ? { fillColor: r.fillColor } : {},
+            symbolOptions: fillColor ? { fillColor } : {},
             _sid: sideId,
             _gid: groupId,
             state: []
         };
 
-        if (r.t != null && r.lat != null && r.lon != null) {
-            unit.state.push({ id: newId(), t: r.t, location: [r.lon, r.lat] });
+        // push a timed state only if all three are valid numbers
+        if (tRaw !== undefined && lat !== undefined && lon !== undefined) {
+            unit.state.push({ id: newId(), t: tRaw, location: [lon, lat] });
         }
+        unit.state.push({ id: newId(), t: r.t, location: [r.lon, r.lat] });
 
         staged.push({ row: r, unit });
     }
@@ -107,6 +149,5 @@ export function importRows(
         }
         created.push(u);
     }
-
     return created;
 }

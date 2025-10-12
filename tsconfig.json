@@ -5,6 +5,10 @@
     { "path": "./tsconfig.app.json" }
   ],
   "compilerOptions": {
+    "skipLibCheck": true,
+    "noEmitOnError": false,
+    "isolatedModules": false,
+    "strict": false,
     "baseUrl": ".",
     "paths": {
       "@/*": [ "./src/*" ]

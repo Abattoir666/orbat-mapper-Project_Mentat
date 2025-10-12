@@ -1,4 +1,4 @@
-import type { KmlKmzExportSettings } from "@/types/convert";
+import type { ExportSettings } from "@/types/convert";
 import type { Folder, Root } from "@tmcw/togeojson";
 import type { NUnit } from "@/types/internalModels";
 import { saveBlobToLocalFile } from "@/utils/files";
@@ -7,8 +7,22 @@ import { useGeoJsonConverter } from "@/importexport/export/geojsonConverter";
 import type { TScenario } from "@/scenariostore";
 import { symbolGenerator } from "@/symbology/milsymbwrapper";
 import { useSelectedItems } from "@/stores/selectedStore.ts";
-import { hashObject } from "@/utils";
 import type { UnitSymbolOptions } from "@/types/scenarioModels.ts";
+
+const walkUnitTree = (rootId: string, visit: (u: any) => void, state: any) => {
+    const m = state?.unitMap ?? {};
+    const stack = [rootId];
+    const seen = new Set<string>();
+    while (stack.length) {
+        const id = stack.pop()!;
+        if (!id || seen.has(id)) continue;
+        seen.add(id);
+        const u = m[id];
+        if (u) visit(u);
+        const kids = (u?.subUnits ?? []) as string[];
+        for (const k of kids) stack.push(k);
+    }
+};
 
 type RenderSymbolSettings = {
   sidc: string;
@@ -93,7 +107,7 @@ export function useKmlExport(scenario: TScenario) {
               const group = store.state.sideGroupMap[groupId];
               if (!group) continue;
               const sideGroupUnits: NUnit[] = [];
-              unitActions.walkItem(group.id, (unit) => {
+                walkUnitTree(group.id, (unit: any) => {
                 if (
                   unit._state?.location &&
                   (opts.includeSelectedUnitsOnly
@@ -101,14 +115,14 @@ export function useKmlExport(scenario: TScenario) {
                     : true)
                 )
                   sideGroupUnits.push(unit);
-              });
+                }, state);
               if (sideGroupUnits.length) {
                 sideFolder.children.push(createUnitsFolder(sideGroupUnits, group.name));
               }
             }
             const sideUnits: NUnit[] = [];
-            for (const rootUnitId of side.subUnits) {
-              unitActions.walkItem(rootUnitId, (unit) => {
+              for (const rootUnitId of ((side as any).units ?? (side as any).subUnits ?? [])) {
+                  walkUnitTree(rootUnitId, (unit: any) => {
                 if (
                   unit._state?.location &&
                   (opts.includeSelectedUnitsOnly
@@ -116,7 +130,7 @@ export function useKmlExport(scenario: TScenario) {
                     : true)
                 )
                   sideUnits.push(unit);
-              });
+                  }, state);
             }
             if (sideUnits.length) {
               const tempFolder = createUnitsFolder(sideUnits, "Root units");

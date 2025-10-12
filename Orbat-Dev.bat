@@ -1,3 +1,3 @@
-cd /d C:\Users\astut\source\repos\orbat-mapper
+cd /d "%~dp0"
 npm run dev
 pause

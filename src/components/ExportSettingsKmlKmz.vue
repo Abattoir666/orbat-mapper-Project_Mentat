@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import InputCheckbox from "@/components/InputCheckbox.vue";
-import type { ExportFormat, ExportSettings, KmlKmzExportSettings } from "@/types/convert";
+import type { ExportFormat, ExportSettings } from "@/types/convert";
 import { Slider } from "@/components/ui/slider";
 import InputGroupTemplate from "@/components/InputGroupTemplate.vue";
 import NewAccordionPanel from "@/components/NewAccordionPanel.vue";
@@ -18,7 +18,7 @@ const props = defineProps<{
   format: ExportFormat;
   modelValue: ExportSettings;
 }>();
-const form = defineModel<KmlKmzExportSettings>({ required: true });
+const form = defineModel<ExportSettings>({ required: true });
 
 const { store, time } = injectStrict(activeScenarioKey);
 
@@ -63,7 +63,7 @@ if (!events.value.some((e) => e.value === form.value.exportEventId)) {
 if (!Array.isArray(form.value.exportEventIds)) {
   form.value.exportEventIds = [];
 } else {
-  form.value.exportEventIds = form.value.exportEventIds.filter((id) =>
+    form.value.exportEventIds = form.value.exportEventIds.filter((id: string) =>
     events.value.some((e) => e.value === id),
   );
 }
