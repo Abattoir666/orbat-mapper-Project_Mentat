@@ -33,7 +33,6 @@ import { toLonLat } from "ol/proj";
 import { storeToRefs } from "pinia";
 import { useNotifications } from "@/composables/notifications";
 import { breakpointsTailwind, useBreakpoints, useClipboard } from "@vueuse/core";
-
 import { useUiStore } from "@/stores/uiStore";
 import { useMeasurementsStore } from "@/stores/geoStore";
 import {
