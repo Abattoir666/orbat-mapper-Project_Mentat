@@ -1,0 +1,686 @@
+{
+  "Version": 1,
+  "WorkspaceRootPath": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\",
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\orbat-mapper\\src\\modules\\scenarioeditor\\MainMenu.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\modules\\scenarioeditor\\MainMenu.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\Source\\Repos\\orbat-mapper\\src\\types\\static-assets.d.ts||{8B382828-6202-11D1-8870-0000F87579D2}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\types\\static-assets.d.ts||{8B382828-6202-11D1-8870-0000F87579D2}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\orbat-mapper\\src\\views\\LandingPage.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\views\\LandingPage.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\orbat-mapper\\docs\\index.md||{EFC0BB08-EA7D-40C6-A696-C870411A895B}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:docs\\index.md||{EFC0BB08-EA7D-40C6-A696-C870411A895B}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\orbat-mapper\\docs\\guide\\map-layers.md||{EFC0BB08-EA7D-40C6-A696-C870411A895B}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:docs\\guide\\map-layers.md||{EFC0BB08-EA7D-40C6-A696-C870411A895B}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\orbat-mapper\\src\\geo\\layerConfigTypes.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\geo\\layerConfigTypes.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\orbat-mapper\\docs\\tutorial\\introduction.md||{EFC0BB08-EA7D-40C6-A696-C870411A895B}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:docs\\tutorial\\introduction.md||{EFC0BB08-EA7D-40C6-A696-C870411A895B}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\orbat-mapper\\docs\\guide\\import-data.md||{EFC0BB08-EA7D-40C6-A696-C870411A895B}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:docs\\guide\\import-data.md||{EFC0BB08-EA7D-40C6-A696-C870411A895B}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\orbat-mapper\\docs\\guide\\getting-started.md||{EFC0BB08-EA7D-40C6-A696-C870411A895B}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:docs\\guide\\getting-started.md||{EFC0BB08-EA7D-40C6-A696-C870411A895B}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\orbat-mapper\\src\\components\\ExportScenarioModal.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\components\\ExportScenarioModal.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\orbat-mapper\\docs\\guide\\export-data.md||{EFC0BB08-EA7D-40C6-A696-C870411A895B}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:docs\\guide\\export-data.md||{EFC0BB08-EA7D-40C6-A696-C870411A895B}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\orbat-mapper\\docs\\guide\\about-orbat-mapper.md||{EFC0BB08-EA7D-40C6-A696-C870411A895B}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:docs\\guide\\about-orbat-mapper.md||{EFC0BB08-EA7D-40C6-A696-C870411A895B}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\orbat-mapper\\docs\\.vitepress\\config.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:docs\\.vitepress\\config.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\orbat-mapper\\public\\favicon.svg||{FA3CD31E-987B-443A-9B81-186104E8DAC1}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:public\\favicon.svg||{FA3CD31E-987B-443A-9B81-186104E8DAC1}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\orbat-mapper\\public\\_redirects||{8B382828-6202-11D1-8870-0000F87579D2}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:public\\_redirects||{8B382828-6202-11D1-8870-0000F87579D2}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\orbat-mapper\\docs\\guide\\military-symbology.md||{EFC0BB08-EA7D-40C6-A696-C870411A895B}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:docs\\guide\\military-symbology.md||{EFC0BB08-EA7D-40C6-A696-C870411A895B}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\orbat-mapper\\README.md||{EFC0BB08-EA7D-40C6-A696-C870411A895B}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:README.md||{EFC0BB08-EA7D-40C6-A696-C870411A895B}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\orbat-mapper\\docs\\guide\\storage.md||{EFC0BB08-EA7D-40C6-A696-C870411A895B}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:docs\\guide\\storage.md||{EFC0BB08-EA7D-40C6-A696-C870411A895B}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\orbat-mapper\\docs\\support.md||{EFC0BB08-EA7D-40C6-A696-C870411A895B}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:docs\\support.md||{EFC0BB08-EA7D-40C6-A696-C870411A895B}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\orbat-mapper\\docs\\guide\\terminology.md||{EFC0BB08-EA7D-40C6-A696-C870411A895B}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:docs\\guide\\terminology.md||{EFC0BB08-EA7D-40C6-A696-C870411A895B}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\orbat-mapper\\docs\\guide\\editing-modes.md||{EFC0BB08-EA7D-40C6-A696-C870411A895B}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:docs\\guide\\editing-modes.md||{EFC0BB08-EA7D-40C6-A696-C870411A895B}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\orbat-mapper\\src\\components\\ImportLoadStep.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\components\\ImportLoadStep.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\orbat-mapper\\CHANGELOG.md||{EFC0BB08-EA7D-40C6-A696-C870411A895B}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:CHANGELOG.md||{EFC0BB08-EA7D-40C6-A696-C870411A895B}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\orbat-mapper\\src\\importexport\\fileHandling.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\importexport\\fileHandling.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\orbat-mapper\\src\\views\\GeoTestView.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\views\\GeoTestView.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\orbat-mapper\\src\\components\\MapEditToolbar.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\components\\MapEditToolbar.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\orbat-mapper\\src\\components\\ui\\Icons\\Mentat.png||{58961B49-13E0-48C0-9258-13CBC4D40279}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\components\\ui\\Icons\\Mentat.png||{58961B49-13E0-48C0-9258-13CBC4D40279}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\orbat-mapper\\src\\components\\CsvColumnMapper.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\components\\CsvColumnMapper.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\Source\\Repos\\orbat-mapper\\src\\stores\\useSelection.ts||{8B382828-6202-11D1-8870-0000F87579D2}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\stores\\useSelection.ts||{8B382828-6202-11D1-8870-0000F87579D2}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\Source\\Repos\\orbat-mapper\\src\\composables\\useMultiDrag.ts||{8B382828-6202-11D1-8870-0000F87579D2}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\composables\\useMultiDrag.ts||{8B382828-6202-11D1-8870-0000F87579D2}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\Source\\Repos\\orbat-mapper\\src\\utils\\moveUnits.ts||{8B382828-6202-11D1-8870-0000F87579D2}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\utils\\moveUnits.ts||{8B382828-6202-11D1-8870-0000F87579D2}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\orbat-mapper\\src\\components\\OrbatSideGroup.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\components\\OrbatSideGroup.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\orbat-mapper\\tsconfig.app.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:tsconfig.app.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\orbat-mapper\\tsconfig.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:tsconfig.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\orbat-mapper\\src\\components\\OrbatTreeItem.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\components\\OrbatTreeItem.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\orbat-mapper\\src\\modules\\scenarioeditor\\MapEditorMainToolbar.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\modules\\scenarioeditor\\MapEditorMainToolbar.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\orbat-mapper\\src\\scenariostore\\unitManipulations.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\scenariostore\\unitManipulations.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\Source\\Repos\\orbat-mapper\\src\\modules\\scenarioeditor\\ParentLinkCanvas.vue||{8B382828-6202-11D1-8870-0000F87579D2}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\modules\\scenarioeditor\\ParentLinkCanvas.vue||{8B382828-6202-11D1-8870-0000F87579D2}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\orbat-mapper\\src\\modules\\scenarioeditor\\ScenarioEditorMap.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\modules\\scenarioeditor\\ScenarioEditorMap.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}"
+    }
+  ],
+  "DocumentGroupContainers": [
+    {
+      "Orientation": 0,
+      "VerticalTabListWidth": 256,
+      "DocumentGroups": [
+        {
+          "DockedWidth": 200,
+          "SelectedChildIndex": 19,
+          "Children": [
+            {
+              "$type": "Bookmark",
+              "Name": "ST:0:0:{1c4feeaa-4718-4aa9-859d-94ce25d182ba}"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
+              "Title": "LandingPage.vue",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\src\\views\\LandingPage.vue",
+              "RelativeDocumentMoniker": "src\\views\\LandingPage.vue",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\src\\views\\LandingPage.vue",
+              "RelativeToolTip": "src\\views\\LandingPage.vue",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAABsAAAA7AAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003491|",
+              "WhenOpened": "2025-10-10T07:13:57.712Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 13,
+              "Title": "favicon.svg",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\public\\favicon.svg",
+              "RelativeDocumentMoniker": "public\\favicon.svg",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\public\\favicon.svg",
+              "RelativeToolTip": "public\\favicon.svg",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAYAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001001|",
+              "WhenOpened": "2025-10-10T07:07:13.939Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 14,
+              "Title": "_redirects",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\public\\_redirects",
+              "RelativeDocumentMoniker": "public\\_redirects",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\public\\_redirects",
+              "RelativeToolTip": "public\\_redirects",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001001|",
+              "WhenOpened": "2025-10-10T07:07:11.746Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 19,
+              "Title": "terminology.md",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\docs\\guide\\terminology.md",
+              "RelativeDocumentMoniker": "docs\\guide\\terminology.md",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\docs\\guide\\terminology.md",
+              "RelativeToolTip": "docs\\guide\\terminology.md",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAEwAAAAMAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001818|",
+              "WhenOpened": "2025-10-10T06:58:15.194Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 18,
+              "Title": "support.md",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\docs\\support.md",
+              "RelativeDocumentMoniker": "docs\\support.md",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\docs\\support.md",
+              "RelativeToolTip": "docs\\support.md",
+              "ViewState": "AgIAAAgAAAAAAAAAAAAAAAgAAAAlAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001818|",
+              "WhenOpened": "2025-10-10T06:58:14.415Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 17,
+              "Title": "storage.md",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\docs\\guide\\storage.md",
+              "RelativeDocumentMoniker": "docs\\guide\\storage.md",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\docs\\guide\\storage.md",
+              "RelativeToolTip": "docs\\guide\\storage.md",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAABEAAAAeAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001818|",
+              "WhenOpened": "2025-10-10T06:58:09.85Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 16,
+              "Title": "README.md",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\README.md",
+              "RelativeDocumentMoniker": "README.md",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\README.md",
+              "RelativeToolTip": "README.md",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAADsAAAA4AAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001818|",
+              "WhenOpened": "2025-10-10T06:58:03.935Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 15,
+              "Title": "military-symbology.md",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\docs\\guide\\military-symbology.md",
+              "RelativeDocumentMoniker": "docs\\guide\\military-symbology.md",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\docs\\guide\\military-symbology.md",
+              "RelativeToolTip": "docs\\guide\\military-symbology.md",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAADMAAAAMAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001818|",
+              "WhenOpened": "2025-10-10T06:58:00.637Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 4,
+              "Title": "map-layers.md",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\docs\\guide\\map-layers.md",
+              "RelativeDocumentMoniker": "docs\\guide\\map-layers.md",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\docs\\guide\\map-layers.md",
+              "RelativeToolTip": "docs\\guide\\map-layers.md",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAIAAAAMAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001818|",
+              "WhenOpened": "2025-10-10T06:57:58.069Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 5,
+              "Title": "layerConfigTypes.ts",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\src\\geo\\layerConfigTypes.ts",
+              "RelativeDocumentMoniker": "src\\geo\\layerConfigTypes.ts",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\src\\geo\\layerConfigTypes.ts",
+              "RelativeToolTip": "src\\geo\\layerConfigTypes.ts",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAMAAAAPAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2025-10-10T06:57:56.519Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 6,
+              "Title": "introduction.md",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\docs\\tutorial\\introduction.md",
+              "RelativeDocumentMoniker": "docs\\tutorial\\introduction.md",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\docs\\tutorial\\introduction.md",
+              "RelativeToolTip": "docs\\tutorial\\introduction.md",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAkAAAA/AAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001818|",
+              "WhenOpened": "2025-10-10T06:57:55.138Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 3,
+              "Title": "index.md",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\docs\\index.md",
+              "RelativeDocumentMoniker": "docs\\index.md",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\docs\\index.md",
+              "RelativeToolTip": "docs\\index.md",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAgAAABIAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001818|",
+              "WhenOpened": "2025-10-10T06:57:52.42Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 7,
+              "Title": "import-data.md",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\docs\\guide\\import-data.md",
+              "RelativeDocumentMoniker": "docs\\guide\\import-data.md",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\docs\\guide\\import-data.md",
+              "RelativeToolTip": "docs\\guide\\import-data.md",
+              "ViewState": "AgIAABIAAAAAAAAAAAAowE4AAABAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001818|",
+              "WhenOpened": "2025-10-10T06:57:43.024Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 8,
+              "Title": "getting-started.md",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\docs\\guide\\getting-started.md",
+              "RelativeDocumentMoniker": "docs\\guide\\getting-started.md",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\docs\\guide\\getting-started.md",
+              "RelativeToolTip": "docs\\guide\\getting-started.md",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAIAAAAYAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001818|",
+              "WhenOpened": "2025-10-10T06:57:37.446Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 9,
+              "Title": "ExportScenarioModal.vue",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\src\\components\\ExportScenarioModal.vue",
+              "RelativeDocumentMoniker": "src\\components\\ExportScenarioModal.vue",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\src\\components\\ExportScenarioModal.vue",
+              "RelativeToolTip": "src\\components\\ExportScenarioModal.vue",
+              "ViewState": "AgIAAEcAAAAAAAAAAAApwIQAAAAYAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003491|",
+              "WhenOpened": "2025-10-10T06:57:23.134Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 10,
+              "Title": "export-data.md",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\docs\\guide\\export-data.md",
+              "RelativeDocumentMoniker": "docs\\guide\\export-data.md",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\docs\\guide\\export-data.md",
+              "RelativeToolTip": "docs\\guide\\export-data.md",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAIAAAAMAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001818|",
+              "WhenOpened": "2025-10-10T06:57:18.861Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 20,
+              "Title": "editing-modes.md",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\docs\\guide\\editing-modes.md",
+              "RelativeDocumentMoniker": "docs\\guide\\editing-modes.md",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\docs\\guide\\editing-modes.md",
+              "RelativeToolTip": "docs\\guide\\editing-modes.md",
+              "ViewState": "AgIAAAIAAAAAAAAAAAAAAAgAAAAQAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001818|",
+              "WhenOpened": "2025-10-10T06:57:11.309Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 11,
+              "Title": "about-orbat-mapper.md",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\docs\\guide\\about-orbat-mapper.md",
+              "RelativeDocumentMoniker": "docs\\guide\\about-orbat-mapper.md",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\docs\\guide\\about-orbat-mapper.md",
+              "RelativeToolTip": "docs\\guide\\about-orbat-mapper.md",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAABIAAAAQAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001818|",
+              "WhenOpened": "2025-10-10T06:55:16.833Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "MainMenu.vue",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\src\\modules\\scenarioeditor\\MainMenu.vue",
+              "RelativeDocumentMoniker": "src\\modules\\scenarioeditor\\MainMenu.vue",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\src\\modules\\scenarioeditor\\MainMenu.vue",
+              "RelativeToolTip": "src\\modules\\scenarioeditor\\MainMenu.vue",
+              "ViewState": "AgIAAG4AAAAAAAAAAAAAAOEAAAANAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003491|",
+              "WhenOpened": "2025-10-10T06:46:55.256Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 12,
+              "Title": "config.ts",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\docs\\.vitepress\\config.ts",
+              "RelativeDocumentMoniker": "docs\\.vitepress\\config.ts",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\docs\\.vitepress\\config.ts",
+              "RelativeToolTip": "docs\\.vitepress\\config.ts",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAQAAAAWAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2025-10-10T06:42:12.393Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 22,
+              "Title": "CHANGELOG.md",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\CHANGELOG.md",
+              "RelativeDocumentMoniker": "CHANGELOG.md",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\CHANGELOG.md",
+              "RelativeToolTip": "CHANGELOG.md",
+              "ViewState": "AgIAAM4AAAAAAAAAAAAAAOkAAAA/AAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001818|",
+              "WhenOpened": "2025-10-10T06:42:04.768Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 24,
+              "Title": "GeoTestView.vue",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\src\\views\\GeoTestView.vue",
+              "RelativeDocumentMoniker": "src\\views\\GeoTestView.vue",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\src\\views\\GeoTestView.vue",
+              "RelativeToolTip": "src\\views\\GeoTestView.vue",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAA8AAABBAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003491|",
+              "WhenOpened": "2025-10-10T06:35:15.003Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 26,
+              "Title": "Mentat.png",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\src\\components\\ui\\Icons\\Mentat.png",
+              "RelativeDocumentMoniker": "src\\components\\ui\\Icons\\Mentat.png",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\src\\components\\ui\\Icons\\Mentat.png",
+              "RelativeToolTip": "src\\components\\ui\\Icons\\Mentat.png",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001533|",
+              "WhenOpened": "2025-10-10T06:33:37.92Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "static-assets.d.ts",
+              "DocumentMoniker": "C:\\Users\\astut\\Source\\Repos\\orbat-mapper\\src\\types\\static-assets.d.ts",
+              "RelativeDocumentMoniker": "src\\types\\static-assets.d.ts",
+              "ToolTip": "C:\\Users\\astut\\Source\\Repos\\orbat-mapper\\src\\types\\static-assets.d.ts",
+              "RelativeToolTip": "src\\types\\static-assets.d.ts",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAgAAAABAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2025-10-10T05:38:09.521Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 25,
+              "Title": "MapEditToolbar.vue",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\src\\components\\MapEditToolbar.vue",
+              "RelativeDocumentMoniker": "src\\components\\MapEditToolbar.vue",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\src\\components\\MapEditToolbar.vue",
+              "RelativeToolTip": "src\\components\\MapEditToolbar.vue",
+              "ViewState": "AgIAAAwAAAAAAAAAAAAAABwAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003491|",
+              "WhenOpened": "2025-10-10T06:27:30.683Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 32,
+              "Title": "tsconfig.app.json",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\tsconfig.app.json",
+              "RelativeDocumentMoniker": "tsconfig.app.json",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\tsconfig.app.json",
+              "RelativeToolTip": "tsconfig.app.json",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAABAAAAABAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001642|",
+              "WhenOpened": "2025-10-10T05:47:36.875Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 33,
+              "Title": "tsconfig.json",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\tsconfig.json",
+              "RelativeDocumentMoniker": "tsconfig.json",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\tsconfig.json",
+              "RelativeToolTip": "tsconfig.json",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAwAAAABAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001642|",
+              "WhenOpened": "2025-10-10T05:41:08.537Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 34,
+              "Title": "OrbatTreeItem.vue",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\src\\components\\OrbatTreeItem.vue",
+              "RelativeDocumentMoniker": "src\\components\\OrbatTreeItem.vue",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\src\\components\\OrbatTreeItem.vue",
+              "RelativeToolTip": "src\\components\\OrbatTreeItem.vue",
+              "ViewState": "AgIAACQAAAAAAAAAAAAAAHAAAAAdAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003491|",
+              "WhenOpened": "2025-10-10T05:36:41.124Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 36,
+              "Title": "unitManipulations.ts",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\src\\scenariostore\\unitManipulations.ts",
+              "RelativeDocumentMoniker": "src\\scenariostore\\unitManipulations.ts",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\src\\scenariostore\\unitManipulations.ts",
+              "RelativeToolTip": "src\\scenariostore\\unitManipulations.ts",
+              "ViewState": "AgIAAEgAAAAAAAAAAAAowKAAAABAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2025-10-10T05:30:49.37Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 35,
+              "Title": "MapEditorMainToolbar.vue",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\src\\modules\\scenarioeditor\\MapEditorMainToolbar.vue",
+              "RelativeDocumentMoniker": "src\\modules\\scenarioeditor\\MapEditorMainToolbar.vue",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\src\\modules\\scenarioeditor\\MapEditorMainToolbar.vue",
+              "RelativeToolTip": "src\\modules\\scenarioeditor\\MapEditorMainToolbar.vue",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAADYAAAAjAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003491|",
+              "WhenOpened": "2025-10-10T02:05:34.141Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 38,
+              "Title": "ScenarioEditorMap.vue",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\src\\modules\\scenarioeditor\\ScenarioEditorMap.vue",
+              "RelativeDocumentMoniker": "src\\modules\\scenarioeditor\\ScenarioEditorMap.vue",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\src\\modules\\scenarioeditor\\ScenarioEditorMap.vue",
+              "RelativeToolTip": "src\\modules\\scenarioeditor\\ScenarioEditorMap.vue",
+              "ViewState": "AgIAAGkAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003491|",
+              "WhenOpened": "2025-10-10T01:46:54.956Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 37,
+              "Title": "ParentLinkCanvas.vue",
+              "DocumentMoniker": "C:\\Users\\astut\\Source\\Repos\\orbat-mapper\\src\\modules\\scenarioeditor\\ParentLinkCanvas.vue",
+              "RelativeDocumentMoniker": "src\\modules\\scenarioeditor\\ParentLinkCanvas.vue",
+              "ToolTip": "C:\\Users\\astut\\Source\\Repos\\orbat-mapper\\src\\modules\\scenarioeditor\\ParentLinkCanvas.vue",
+              "RelativeToolTip": "src\\modules\\scenarioeditor\\ParentLinkCanvas.vue",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAACEAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003491|",
+              "WhenOpened": "2025-10-10T01:32:26.656Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 21,
+              "Title": "ImportLoadStep.vue",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\src\\components\\ImportLoadStep.vue",
+              "RelativeDocumentMoniker": "src\\components\\ImportLoadStep.vue",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\src\\components\\ImportLoadStep.vue",
+              "RelativeToolTip": "src\\components\\ImportLoadStep.vue",
+              "ViewState": "AgIAABsAAAAAAAAAAAAjwFgAAAAyAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003491|",
+              "WhenOpened": "2025-10-07T21:25:36.292Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 31,
+              "Title": "OrbatSideGroup.vue",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\src\\components\\OrbatSideGroup.vue",
+              "RelativeDocumentMoniker": "src\\components\\OrbatSideGroup.vue",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\src\\components\\OrbatSideGroup.vue",
+              "RelativeToolTip": "src\\components\\OrbatSideGroup.vue",
+              "ViewState": "AgIAAJUAAAAAAAAAAAAAwPwAAAAKAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003491|",
+              "WhenOpened": "2025-10-09T22:25:39.675Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 30,
+              "Title": "moveUnits.ts",
+              "DocumentMoniker": "C:\\Users\\astut\\Source\\Repos\\orbat-mapper\\src\\utils\\moveUnits.ts",
+              "RelativeDocumentMoniker": "src\\utils\\moveUnits.ts",
+              "ToolTip": "C:\\Users\\astut\\Source\\Repos\\orbat-mapper\\src\\utils\\moveUnits.ts",
+              "RelativeToolTip": "src\\utils\\moveUnits.ts",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAD0AAAABAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2025-10-09T22:10:46.966Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 29,
+              "Title": "useMultiDrag.ts",
+              "DocumentMoniker": "C:\\Users\\astut\\Source\\Repos\\orbat-mapper\\src\\composables\\useMultiDrag.ts",
+              "RelativeDocumentMoniker": "src\\composables\\useMultiDrag.ts",
+              "ToolTip": "C:\\Users\\astut\\Source\\Repos\\orbat-mapper\\src\\composables\\useMultiDrag.ts",
+              "RelativeToolTip": "src\\composables\\useMultiDrag.ts",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAC8AAAABAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2025-10-09T22:09:47.674Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 28,
+              "Title": "useSelection.ts",
+              "DocumentMoniker": "C:\\Users\\astut\\Source\\Repos\\orbat-mapper\\src\\stores\\useSelection.ts",
+              "RelativeDocumentMoniker": "src\\stores\\useSelection.ts",
+              "ToolTip": "C:\\Users\\astut\\Source\\Repos\\orbat-mapper\\src\\stores\\useSelection.ts",
+              "RelativeToolTip": "src\\stores\\useSelection.ts",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAABQAAAABAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2025-10-09T22:09:02.66Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 23,
+              "Title": "fileHandling.ts",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\src\\importexport\\fileHandling.ts",
+              "RelativeDocumentMoniker": "src\\importexport\\fileHandling.ts",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\src\\importexport\\fileHandling.ts",
+              "RelativeToolTip": "src\\importexport\\fileHandling.ts",
+              "ViewState": "AgIAAFoAAAAAAAAAAAApwJYAAAAuAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2025-10-07T15:42:40.614Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 27,
+              "Title": "CsvColumnMapper.vue",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\src\\components\\CsvColumnMapper.vue",
+              "RelativeDocumentMoniker": "src\\components\\CsvColumnMapper.vue",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\orbat-mapper\\src\\components\\CsvColumnMapper.vue",
+              "RelativeToolTip": "src\\components\\CsvColumnMapper.vue",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAF8AAAAlAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003491|",
+              "WhenOpened": "2025-10-07T14:48:09.904Z",
+              "EditorCaption": ""
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
