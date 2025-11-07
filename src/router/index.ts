@@ -51,9 +51,9 @@ const routes = [
         meta: { helpUrl: "https://docs.orbat-mapper.app/guide/map-edit-mode" },
        },
       {
-            path: "Globe",
-            name: GLOBE_EDIT_ROUTE,
-            component: GlobeEditView,
+        path: "Globe",
+        name: GLOBE_EDIT_ROUTE,
+        component: GlobeEditView,
       },
       {
         path: "grid-edit",

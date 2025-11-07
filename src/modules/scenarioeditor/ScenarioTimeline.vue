@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { IconTriangleDown } from "@iconify-prerendered/vue-mdi";
 import { computed, ref, unref, watch, watchEffect } from "vue";
 import { useElementSize, useThrottleFn } from "@vueuse/core";

@@ -1,5 +1,5 @@
-﻿// src/modules/threeDView/useGlobe.ts
-/* eslint-disable @typescript-eslint/no-explicit-any */
+﻿/* eslint-disable @typescript-eslint/no-explicit-any */
+// src/modules/threeDView/useGlobe.ts
 import * as CesiumNS from "cesium";
 import {
     Viewer,
@@ -7,78 +7,143 @@ import {
     Globe,
     Ellipsoid,
     Color,
+    Cartesian2,
     Cartesian3,
     Cartographic,
-    ScreenSpaceEventHandler,
-    ScreenSpaceEventType,
-    Terrain,
-    EllipsoidTerrainProvider,
-    type TerrainProvider,
+    ClockRange,
     ImageryProvider,
     OpenStreetMapImageryProvider,
     UrlTemplateImageryProvider,
     WebMercatorTilingScheme,
+    WebMercatorProjection,
+    Rectangle,
+    JulianDate,
+    Math as CesiumMath,
+    Terrain,
+    EllipsoidTerrainProvider,
+    SkyBox,
+    SunLight,
+    type Credit,
 } from "cesium";
 import type { Unit } from "@/types/scenarioModels";
 
-// Expose Cesium in console for debugging
+// Expose Cesium for console debugging
 (globalThis as any).Cesium = CesiumNS;
 
-// Ion token (flat fallback if missing)
+// Ion token: enable World Terrain if present
 Ion.defaultAccessToken = import.meta.env.VITE_CESIUM_ION_TOKEN || "";
+
+
+
+/* ─────────────────────────────── Types ─────────────────────────────── */
 
 export type GlobeInitOptions = {
     imageryProvider?: ImageryProvider;
-    // start with elevation enabled or not (defaults: enabled if Ion token present)
-    elevationEnabled?: boolean;
-    // start exaggeration (defaults to 1 when elevation is enabled, 0 when disabled)
-    exaggeration?: number;
+    elevationEnabled?: boolean;     // default: true if Ion token is set
+    exaggeration?: number;          // default: 1 if elevation, 0 if not
+};
+
+export type BaseTemplateOptions = {
+    minLevel?: number;
+    maxLevel?: number;
+    attribution?: string | Credit;
+    geographic?: boolean;           // default false (WebMercator)
+    subdomains?: string[] | string; // e.g., "abc" or ["a","b","c"]
 };
 
 export type GlobeApi = {
     viewer: Viewer;
+
     // imagery
     setImageryProvider: (p: ImageryProvider) => void;
+    setBaseLayerTemplate: (url: string, opts?: BaseTemplateOptions) => void;
+    setBaseLayer: (key: string) => void;
+
     // elevation & exaggeration
     setElevationEnabled: (enabled: boolean) => Promise<void>;
     setExaggeration: (factor: number) => Promise<void>;
-    // convenience (optional, wire your own key->provider in adapter)
+
+    // time
+    setTime: (epochMs: number) => void;
+    setTimeBounds: (startMs: number, stopMs: number) => void;
+
+    // camera helpers
+    flyToLatLon: (
+        lon: number,
+        lat: number,
+        heightMeters: number,
+        opts?: { heading?: number; pitch?: number; roll?: number; duration?: number }
+    ) => Promise<void>;
+    frameFromWebMercator: (center3857: [number, number], zoom: number, rotationRad?: number) => Promise<void>;
+    frameFromScenario2D: () => Promise<boolean>;
+
+    // sky/lighting
+    enableDayNight: (on: boolean) => void;
+    enableSkybox: (on: boolean) => void;
+    onCameraChange: (cb: (o: { heading: number; pitch: number; roll: number }) => void) => () => void;
+
+
+    // units (for bindUnitsToView)
+    setUnits: (units: Unit[]) => void;
+    upsertUnit: (u: Unit) => void;
+    removeUnit: (id: string) => void;
+
+    // lifecycle
     rebuild: () => Promise<void>;
     destroy: () => void;
 };
+
+/* ───────────────────────────── Utilities ───────────────────────────── */
+
+const wmProj = new WebMercatorProjection(Ellipsoid.WGS84);
+
+function toJulian(ms: number) {
+    return JulianDate.fromDate(new Date(ms));
+}
+function clamp(v: number, a: number, b: number) {
+    return Math.max(a, Math.min(b, v));
+}
+function zoomToHeight(zoom: number, latDeg: number) {
+    // Tuned for similar footprint “feel” vs OL, not exact math
+    const table: Array<[number, number]> = [
+        [2, 20_000_000],
+        [4, 10_000_000],
+        [6, 4_000_000],
+        [8, 1_500_000],
+        [10, 600_000],
+        [12, 250_000],
+        [14, 100_000],
+        [16, 40_000],
+        [18, 16_000],
+        [20, 6_000],
+    ];
+    const z = clamp(zoom, table[0][0], table[table.length - 1][0]);
+    let i = 1; while (i < table.length && z > table[i][0]) i++;
+    const [z0, h0] = table[i - 1];
+    const [z1, h1] = table[i] ?? table[i - 1];
+    const t = z1 === z0 ? 0 : (z - z0) / (z1 - z0);
+    let h = h0 + (h1 - h0) * t;
+
+    // Compensate Mercator scale toward poles
+    h *= clamp(Math.cos((latDeg * Math.PI) / 180), 0.2, 1);
+    return clamp(h, 1_500, 30_000_000);
+}
+
+/* ────────────────────────── Main entry point ───────────────────────── */
 
 export async function useGlobe(
     container: HTMLDivElement,
     opts: GlobeInitOptions = {}
 ): Promise<GlobeApi> {
-    // --------- Internal state (single source of truth)
+    // —— State
     let elevationEnabled =
         typeof opts.elevationEnabled === "boolean"
             ? opts.elevationEnabled
             : !!Ion.defaultAccessToken;
 
-    // NOTE: exaggeration now lives on Scene, not Globe.
-    // We'll mirror it in local state for UI, but always write to scene.verticalExaggeration.
     let exag = Math.max(0, opts.exaggeration ?? (elevationEnabled ? 1 : 0));
 
-    // --------- Helpers to always target *current* viewer
-    const getScene = () => viewer.scene;
-    const getGlobe = () => viewer.scene.globe;
-    const getSSC = () => viewer.scene.screenSpaceCameraController;
-
-    // --------- Build a Globe with safe defaults (no blue orb)
-    function ensureBaseLayer() {
-        const layers = viewer.scene.imageryLayers;
-        if (layers.length === 0) {
-            const osm = new OpenStreetMapImageryProvider({
-                url: "https://tile.openstreetmap.org/",
-            });
-            const ly = layers.addImageryProvider(osm);
-            ly.alpha = 1;
-            ly.show = true;
-            viewer.scene.globe.material = undefined;
-        }
-    }
+    // —— Factories
     function makeGlobe(): Globe {
         const g = new Globe(Ellipsoid.WGS84);
         g.baseColor = Color.BLACK;
@@ -88,8 +153,6 @@ export async function useGlobe(
         g.depthTestAgainstTerrain = false;
         return g;
     }
-
-    // --------- Terrain provider (no hard Ion dependency; graceful fallback)
     function makeTerrain(): Terrain {
         if (!elevationEnabled || exag <= 0) {
             return new Terrain(new EllipsoidTerrainProvider());
@@ -97,23 +160,22 @@ export async function useGlobe(
         try {
             return Terrain.fromWorldTerrain({ requestVertexNormals: true });
         } catch {
-            console.warn("[useGlobe] World terrain unavailable; using flat ellipsoid");
+            console.warn("[useGlobe] World terrain unavailable; using ellipsoid");
             return new Terrain(new EllipsoidTerrainProvider());
         }
     }
 
-    // --------- Default imagery if none is provided
     const defaultOSM = new OpenStreetMapImageryProvider({
         url: "https://tile.openstreetmap.org/",
         credit: "\u00A9 OpenStreetMap contributors",
     });
 
-    // --------- Viewer creation
+    // —— Viewer
     let viewer = new Viewer(container, {
         scene3DOnly: true,
         animation: false,
         timeline: false,
-        baseLayerPicker: false, // (terrain dropdown removed)
+        baseLayerPicker: false,
         geocoder: false,
         homeButton: false,
         navigationHelpButton: false,
@@ -122,100 +184,34 @@ export async function useGlobe(
         skyAtmosphere: false,
         globe: makeGlobe(),
         terrain: makeTerrain(),
-        // IMPORTANT: do NOT rely on old terrainExaggeration option here.
         imageryProvider: opts.imageryProvider ?? defaultOSM,
     });
 
-    const unitPrims = new Map<string, Cesium.Entity>(); // id -> entity
-    const unitCache = new Map<string, Unit>();          // id -> Unit (rehydrate after rebuilds)
+    try {
+        (viewer.scene as any).requestRenderMode = false; // continuous render loop
+        (viewer as any).useDefaultRenderLoop = true;
+    } catch { }
 
-    function toCartesian3(u: Unit, defaultHeight = 0): Cesium.Cartesian3 | undefined {
-        if (!u || typeof u.lat !== "number" || typeof u.lon !== "number") return undefined;
-        const h = (u as any).alt ?? (u as any).height ?? defaultHeight;
-        return Cesium.Cartesian3.fromDegrees(u.lon, u.lat, h);
-    }
+    // Clock control: driven externally
+    viewer.clock.shouldAnimate = false;
+    viewer.clock.clockRange = ClockRange.CLAMPED;
 
-    // Stub: wire this to your real SIDC -> icon if/when ready
-    function resolveSidcBillboard(u: Unit): Cesium.BillboardGraphics.ConstructorOptions | undefined {
-        return undefined;
-    }
-
-    function unitLabelText(u: Unit): string {
-        return u?.name ?? "";
-    }
-    function upsertUnit(u: Unit) {
-        if (!u?.id || !viewer) return;
-
-        const pos = toCartesian3(u, 0);
-        if (!pos) return;
-
-        // cache for rebuilds
-        unitCache.set(u.id, u);
-
-        const existing = unitPrims.get(u.id);
-        if (existing) {
-            existing.position = pos;
-            if (existing.label) existing.label.text = new Cesium.ConstantProperty(unitLabelText(u));
-            // If you later use billboard icons, update here as well
-            return;
-        }
-
-        const billboardOpts = resolveSidcBillboard(u);
-        const ent = viewer.entities.add(
-            new Cesium.Entity({
-                id: u.id,
-                position: pos,
-                billboard: billboardOpts ? new Cesium.BillboardGraphics(billboardOpts) : undefined,
-                label: new Cesium.LabelGraphics({
-                    text: unitLabelText(u),
-                    font: "14px sans-serif",
-                    pixelOffset: new Cesium.Cartesian2(0, -28),
-                    verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-                    disableDepthTestDistance: Number.POSITIVE_INFINITY,
-                    outlineColor: Cesium.Color.BLACK,
-                    outlineWidth: 2,
-                    showBackground: true,
-                    backgroundPadding: new Cesium.Cartesian2(6, 4),
-                    backgroundColor: new Cesium.Color(0, 0, 0, 0.4),
-                }),
-            })
-        );
-        unitPrims.set(u.id, ent);
-    }
-    function removeUnit(id: string) {
-        unitCache.delete(id);
-        if (!viewer) { unitPrims.delete(id); return; }
-
-        const ent = unitPrims.get(id);
-        if (ent) {
-            try { viewer.entities.remove(ent); } catch { }
-            unitPrims.delete(id);
-        }
-    }
-    function upsertUnitsBulk(units: Unit[]) {
-        if (!units?.length) return;
-        for (const u of units) {
-            if (u?.id) unitCache.set(u.id, u);
-        }
-        for (const u of units) upsertUnit(u);
-    }
-
-    // --------- Scene defaults
-    const scene = getScene();
+    // Scene defaults
+    const scene = viewer.scene as any;
     scene.backgroundColor = Color.BLACK;
-    (scene as any).clearColor = Color.BLACK;
+    scene.clearColor = Color.BLACK;
     scene.fog.enabled = false;
     scene.highDynamicRange = false;
 
-    // Apply initial exaggeration on the Scene (the correct, modern API)
+    // Initial exaggeration on Scene
     try {
-        (scene as any).verticalExaggeration = Math.max(0, exag || 0);
-        (scene as any).verticalExaggerationRelativeHeight = 0;
+        scene.verticalExaggeration = Math.max(0, exag || 0);
+        scene.verticalExaggerationRelativeHeight = 0;
     } catch {
         console.warn("[useGlobe] Could not set scene.verticalExaggeration at init");
     }
 
-    // DOM backgrounds
+    // Canvas background
     try {
         const canvas = (viewer as any).canvas as HTMLCanvasElement;
         const el = viewer.container as HTMLElement;
@@ -223,48 +219,182 @@ export async function useGlobe(
         if (el) el.style.background = "black";
     } catch { }
 
-    // Camera to sane place
-    viewer.camera.setView({
-        destination: Cartesian3.fromDegrees(-20, 25, 2_500_000),
-    });
-
-    // make sure we don’t start black
-    ensureBaseLayer();
-    viewer.scene.requestRender();
-
-    // --------- Diagnostics: tile progress
-    let detachTileDiag: (() => void) | null = null;
-    function attachTileDiagnostics() {
-        if (detachTileDiag) {
+    // —— Imagery helpers
+    function clearImagery() {
+        const layers = viewer.scene.imageryLayers;
+        for (let i = layers.length - 1; i >= 0; i--) {
             try {
-                detachTileDiag();
+                layers.remove(layers.get(i), true);
             } catch { }
-            detachTileDiag = null;
         }
-        let last = -1;
-        const g = getGlobe();
-        const on = (n: number) => {
-            if (n !== last) {
-                last = n;
-                if (n === 0) console.log("[tileLoadProgress] ✅ All imagery tiles loaded");
-            }
-        };
-        g.tileLoadProgressEvent.addEventListener(on);
-        detachTileDiag = () => {
-            try {
-                g.tileLoadProgressEvent.removeEventListener(on);
-            } catch { }
-        };
     }
-    attachTileDiagnostics();
 
-    // --------- Ready clamp (optional safety)
+    function setImageryProvider(provider: ImageryProvider) {
+        if (!provider) {
+            console.warn("[useGlobe] setImageryProvider: no provider");
+            return;
+        }
+        const layers = viewer.scene.imageryLayers;
+        clearImagery();
+        const layer = layers.addImageryProvider(provider);
+        viewer.scene.globe.material = undefined;
+        layer.alpha = 1;
+        layer.show = true;
+        viewer.scene.requestRender();
+        console.log("[useGlobe] Imagery provider set:", (provider as any)?.constructor?.name);
+    }
+
+    function makeUrlTemplateProvider(url: string, opts?: BaseTemplateOptions): UrlTemplateImageryProvider {
+        const scheme = opts?.geographic ? undefined : new WebMercatorTilingScheme();
+        return new UrlTemplateImageryProvider({
+            url,
+            maximumLevel: opts?.maxLevel ?? 19,
+            minimumLevel: opts?.minLevel ?? 0,
+            tilingScheme: scheme,
+            credit: (opts?.attribution as any) ?? "",
+            subdomains: opts?.subdomains as any,
+        });
+    }
+
+    function setBaseLayerTemplate(url: string, opts?: BaseTemplateOptions) {
+        const prov = makeUrlTemplateProvider(url, opts);
+        setImageryProvider(prov);
+    }
+
+    function setBaseLayer(key: string) {
+        const k = (key || "").toLowerCase();
+
+        if (k.includes("osm") || k.includes("openstreetmap")) {
+            setImageryProvider(new OpenStreetMapImageryProvider({ url: "https://tile.openstreetmap.org/" }));
+            return;
+        }
+        if (k.includes("esri") || k.includes("world") || k.includes("imagery")) {
+            // ESRI World Imagery via ArcGIS tiles
+            setImageryProvider(
+                new UrlTemplateImageryProvider({
+                    url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{x}/{y}.png",
+                    maximumLevel: 19,
+                    tilingScheme: new WebMercatorTilingScheme(),
+                })
+            );
+            return;
+        }
+
+        console.warn("[useGlobe] setBaseLayer: unknown key, falling back to OSM:", key);
+        setImageryProvider(new OpenStreetMapImageryProvider({ url: "https://tile.openstreetmap.org/" }));
+    }
+
+    // —— Exaggeration / Elevation
+    function runtimeExagSupported(): boolean {
+        return "verticalExaggeration" in scene && "verticalExaggerationRelativeHeight" in scene;
+    }
+
+    async function setElevationEnabled(enabled: boolean): Promise<void> {
+        elevationEnabled = enabled;
+
+        // Swap terrain
+        viewer.terrain = makeTerrain();
+
+        // keep older references in sync
+        (viewer as any).terrainProvider = (viewer.terrain as any)?.provider ?? null;
+        (viewer.scene as any).terrainProvider = (viewer.terrain as any)?.provider ?? null;
+        (viewer.scene.globe as any).terrainProvider = (viewer.terrain as any)?.provider ?? null;
+
+        // nudge + render
+        try { viewer.camera.moveForward(0.001); viewer.camera.moveBackward(0.001); } catch { }
+        viewer.scene.requestRender();
+        console.log("[useGlobe] Elevation:", elevationEnabled, "exag(scene):", scene.verticalExaggeration);
+    }
+
+    async function setExaggeration(factor: number): Promise<void> {
+        exag = Math.max(0, factor);
+
+        if (!runtimeExagSupported()) {
+            // fallback (older Cesium) – rebuild
+            await rebuild();
+            console.log("[useGlobe] Exaggeration set (fallback rebuild):", exag);
+            return;
+        }
+
+        scene.verticalExaggeration = exag;
+        scene.verticalExaggerationRelativeHeight = 0;
+        const wantElevation = exag > 0;
+        if (wantElevation !== elevationEnabled) {
+            await setElevationEnabled(wantElevation);
+        }
+
+        try { viewer.camera.moveForward(0.001); viewer.camera.moveBackward(0.001); } catch { }
+        viewer.scene.requestRender();
+        console.log("[useGlobe] Exaggeration set (scene):", exag);
+    }
+
+    // —— Camera seed: prefer Scenario 2D map if available
+    function readScenario2DCamera():
+        | { center3857: [number, number]; zoom: number; rotation?: number }
+        | null {
+        const w: any = window;
+
+        // 1) If scenario/editor publishes a camera object
+        if (w.__scenario_camera?.center3857 && typeof w.__scenario_camera.zoom === "number") {
+            return w.__scenario_camera;
+        }
+
+        // 2) If 2D map is exposed (recommended: window.Mentat2D = { map })
+        const olMap = w.Mentat2D?.map ?? w.__olMap ?? null;
+        try {
+            const view = olMap?.getView?.();
+            const center = view?.getCenter?.();
+            const zoom = view?.getZoom?.();
+            const rotation = view?.getRotation?.() ?? 0;
+            if (center && typeof zoom === "number") {
+                return { center3857: center as [number, number], zoom, rotation };
+            }
+        } catch { }
+
+        // 3) Try scenario store (if someone stashes it there)
+        try {
+            const sc = (w.__scenario?.store ?? w.__scenario)?.state;
+            const cam = sc?.ui?.last2dCamera;
+            if (cam?.center3857 && typeof cam.zoom === "number") return cam;
+        } catch { }
+
+        return null;
+    }
+
+    function seedCameraFrom2D(cam: { center3857: [number, number]; zoom: number; rotation?: number }): boolean {
+        try {
+            const carto = wmProj.unproject(new Cartesian3(cam.center3857[0], cam.center3857[1], 0));
+            const lat = CesiumMath.toDegrees(carto.latitude);
+            const lon = CesiumMath.toDegrees(carto.longitude);
+            const h = zoomToHeight(cam.zoom, lat);
+
+            viewer.camera.setView({
+                destination: Cartesian3.fromDegrees(lon, lat, h),
+                orientation: {
+                    heading: 0,                  // mirror rotation if you like: -cam.rotation!
+                    pitch: -Math.PI / 2,
+                    roll: 0,
+                },
+            });
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
+    // If we can’t seed from 2D, use a global fallback
+    if (!seedCameraFrom2D(readScenario2DCamera())) {
+        viewer.camera.setView({ destination: Cartesian3.fromDegrees(-20, 25, 2_500_000) });
+    }
+
+    // Clamp camera to stay ≥ 50 m AGL after tiles are ready
     const MIN_AGL_METERS = 50;
     let mapReady = false;
+
     function clampAGL() {
         if (!mapReady) return;
         try {
-            const globe = getGlobe();
+            const globe = viewer.scene.globe;
             const carto = Cartographic.fromCartesian(viewer.camera.position);
             const h = globe.getHeight(carto);
             if (typeof h === "number" && Number.isFinite(h)) {
@@ -276,7 +406,7 @@ export async function useGlobe(
                         carto.latitude,
                         carto.height
                     );
-                    getScene().requestRender();
+                    viewer.scene.requestRender();
                 }
             }
         } catch { }
@@ -284,61 +414,241 @@ export async function useGlobe(
 
     function wireReadiness() {
         mapReady = false;
-        const sc = getScene();
-        const ssc = getSSC();
+        const ssc = viewer.scene.screenSpaceCameraController;
         ssc.enableCollisionDetection = false;
 
         const mark = () => {
-            const g = getGlobe();
+            const g = viewer.scene.globe;
             if (g?.tilesLoaded && (viewer.terrainProvider?.ready ?? true)) {
                 mapReady = true;
                 ssc.enableCollisionDetection = true;
-                sc.postRender.addEventListener(clampAGL);
+                viewer.scene.postRender.addEventListener(clampAGL);
             }
         };
 
-        const onTiles = (c: number) => {
-            if (c === 0) mark();
+        const onTiles = (c: number) => { if (c === 0) mark(); };
+        viewer.scene.globe.tileLoadProgressEvent.addEventListener(onTiles);
+        viewer.scene.postRender.addEventListener(mark);
+        ssc.minimumZoomDistance = 50;
+    }
+
+    // ── Camera change pub/sub (place this right after viewer is created)
+    type CamPayload = { heading: number; pitch: number; roll: number };
+    const cameraListeners = new Set<(o: CamPayload) => void>();
+
+    function emitCamera() {
+        const c = viewer.camera;
+        const payload: CamPayload = { heading: c.heading, pitch: c.pitch, roll: c.roll };
+        for (const fn of cameraListeners) { try { fn(payload); } catch { } }
+    }
+
+    let detachCameraEvents: (() => void) | null = null;
+    let camEventsAttached = false;
+
+    function attachCameraEvents() {
+        if (camEventsAttached) return;
+        camEventsAttached = true;
+
+        const postRenderHandler = () => emitCamera();
+        const cameraChangedHandler = () => emitCamera();
+        const moveStartHandler = () => emitCamera();
+        const moveEndHandler = () => emitCamera();
+
+        // 1) Always-on: postRender gives us a pulsing feed while interacting
+        try { viewer.scene.postRender.addEventListener(postRenderHandler); } catch { }
+
+        // 2) Extra signals (some builds only fire these)
+        try { (viewer.camera as any).changed?.addEventListener?.(cameraChangedHandler); } catch { }
+        try { (viewer.camera as any).moveStart?.addEventListener?.(moveStartHandler); } catch { }
+        try { (viewer.camera as any).moveEnd?.addEventListener?.(moveEndHandler); } catch { }
+
+        // First publish so the compass paints immediately
+        try { emitCamera(); } catch { }
+
+        detachCameraEvents = () => {
+            try { viewer.scene.postRender.removeEventListener(postRenderHandler); } catch { }
+            try { (viewer.camera as any).changed?.removeEventListener?.(cameraChangedHandler); } catch { }
+            try { (viewer.camera as any).moveStart?.removeEventListener?.(moveStartHandler); } catch { }
+            try { (viewer.camera as any).moveEnd?.removeEventListener?.(moveEndHandler); } catch { }
+            camEventsAttached = false;
+            detachCameraEvents = null;
         };
-        const g = getGlobe();
-        g.tileLoadProgressEvent.addEventListener(onTiles);
-        sc.postRender.addEventListener(mark);
     }
+
+    function onCameraChange(cb: (o: CamPayload) => void) {
+        cameraListeners.add(cb);
+        try { cb({ heading: viewer.camera.heading, pitch: viewer.camera.pitch, roll: viewer.camera.roll }); } catch { }
+        return () => cameraListeners.delete(cb);
+    }
+
+
     wireReadiness();
-    getSSC().minimumZoomDistance = 50;
+    attachCameraEvents();
 
-    // --------- Imagery
-    function clearImagery() {
-        const layers = getScene().imageryLayers;
-        for (let i = layers.length - 1; i >= 0; i--) {
-            try {
-                layers.remove(layers.get(i), true);
-            } catch { }
-        }
+    // Tile diagnostics (console)
+    let detachTileDiag: (() => void) | null = null;
+    (function attachTileDiagnostics() {
+        if (detachTileDiag) { try { detachTileDiag(); } catch { } detachTileDiag = null; }
+        let last = -1;
+        const g = viewer.scene.globe;
+        const on = (n: number) => { if (n !== last) { last = n; if (n === 0) console.log("[tileLoadProgress] ✅ imagery loaded"); } };
+        g.tileLoadProgressEvent.addEventListener(on);
+        detachTileDiag = () => { try { g.tileLoadProgressEvent.removeEventListener(on); } catch { } };
+    })();
+
+    /* ───────────────────────────── Units API ───────────────────────────── */
+
+    const unitPrims = new Map<string, CesiumNS.Entity>();
+    const unitCache = new Map<string, Unit>();
+
+    function toCartesian3(u: Unit, defaultHeight = 0): Cartesian3 | undefined {
+        if (!u || typeof (u as any).lat !== "number" || typeof (u as any).lon !== "number") return undefined;
+        const h = (u as any).alt ?? (u as any).height ?? defaultHeight;
+        return Cartesian3.fromDegrees((u as any).lon, (u as any).lat, h);
     }
+    function unitLabelText(u: Unit): string {
+        return (u as any)?.name ?? "";
+    }
+    function upsertUnit(u: Unit) {
+        if (!u?.id) return;
+        const pos = toCartesian3(u, 0);
+        if (!pos) return;
+        unitCache.set(u.id, u);
 
-    function setImageryProvider(provider: ImageryProvider) {
-        const sc = getScene();
-        if (!provider) {
-            console.warn("[useGlobe] setImageryProvider: no provider");
+        const existing = unitPrims.get(u.id);
+        if (existing) {
+            existing.position = pos;
+            if (existing.label) existing.label.text = new CesiumNS.ConstantProperty(unitLabelText(u));
             return;
         }
-        const layers = sc.imageryLayers;
-        clearImagery();
-        const layer = layers.addImageryProvider(provider);
-        sc.globe.material = undefined;
-        layer.alpha = 1;
-        layer.show = true;
-        sc.requestRender();
-        console.log("[useGlobe] Imagery provider set:", provider.constructor.name);
+        const ent = viewer.entities.add(new CesiumNS.Entity({
+            id: u.id,
+            position: pos,
+            label: new CesiumNS.LabelGraphics({
+                text: unitLabelText(u),
+                font: "14px sans-serif",
+                pixelOffset: new Cartesian2(0, -28),
+                verticalOrigin: CesiumNS.VerticalOrigin.BOTTOM,
+                disableDepthTestDistance: Number.POSITIVE_INFINITY,
+                outlineColor: Color.BLACK,
+                outlineWidth: 2,
+                showBackground: true,
+                backgroundPadding: new Cartesian2(6, 4),
+                backgroundColor: new Color(0, 0, 0, 0.4),
+            }),
+        }));
+        unitPrims.set(u.id, ent);
+    }
+    function removeUnit(id: string) {
+        unitCache.delete(id);
+        const ent = unitPrims.get(id);
+        if (ent) { try { viewer.entities.remove(ent); } catch { } unitPrims.delete(id); }
+    }
+    function setUnits(units: Unit[]) {
+        // simple naive sync: clear & re-add
+        for (const id of unitPrims.keys()) removeUnit(id);
+        if (!Array.isArray(units)) return;
+        for (const u of units) upsertUnit(u);
     }
 
-    // Utility: clone the current base imagery (so rebuild keeps it)
+    /* ─────────────────────────── Camera helpers ─────────────────────────── */
+
+    async function flyToLatLon(
+        lon: number,
+        lat: number,
+        heightMeters: number,
+        opts?: { heading?: number; pitch?: number; roll?: number; duration?: number }
+    ): Promise<void> {
+        const duration = opts?.duration ?? 0.8;
+        const heading = opts?.heading ?? 0;
+        const pitch = opts?.pitch ?? -Math.PI / 2;
+        const roll = opts?.roll ?? 0;
+
+        return new Promise((resolve) => {
+            viewer.camera.flyTo({
+                destination: Cartesian3.fromDegrees(lon, lat, heightMeters),
+                orientation: { heading, pitch, roll },
+                duration,
+                complete: () => { viewer.scene.requestRender(); resolve(); },
+            });
+        });
+    }
+
+    async function frameFromWebMercator(center3857: [number, number], zoom: number, rotationRad = 0): Promise<void> {
+        const carto = wmProj.unproject(new Cartesian3(center3857[0], center3857[1], 0));
+        const lat = CesiumMath.toDegrees(carto.latitude);
+        const lon = CesiumMath.toDegrees(carto.longitude);
+        const h = zoomToHeight(zoom, lat);
+        await flyToLatLon(lon, lat, h, { heading: 0 /* or -rotationRad for rotated */, pitch: -Math.PI / 2, roll: 0 });
+    }
+
+    async function frameFromScenario2D(): Promise<boolean> {
+        const cam = readScenario2DCamera();
+        if (!cam) return false;
+        await frameFromWebMercator(cam.center3857, cam.zoom, cam.rotation ?? 0);
+        return true;
+    }
+
+    /* ───────────────────────────── Time API ───────────────────────────── */
+
+    function setTime(epochMs: number) {
+        viewer.clock.currentTime = toJulian(epochMs);
+        viewer.scene.requestRender();
+    }
+    function setTimeBounds(startMs: number, stopMs: number) {
+        viewer.clock.startTime = toJulian(startMs);
+        viewer.clock.stopTime = toJulian(stopMs);
+        if (JulianDate.lessThan(viewer.clock.currentTime, viewer.clock.startTime)) {
+            viewer.clock.currentTime = viewer.clock.startTime.clone();
+        }
+        if (JulianDate.greaterThan(viewer.clock.currentTime, viewer.clock.stopTime)) {
+            viewer.clock.currentTime = viewer.clock.stopTime.clone();
+        }
+        viewer.scene.requestRender();
+    }
+
+    /* ─────────────────────────── Sky & Lighting ─────────────────────────── */
+
+    function enableDayNight(on: boolean) {
+        try {
+            viewer.scene.globe.enableLighting = !!on;
+            (viewer.scene as any).light = on ? new SunLight() : undefined;
+            viewer.scene.requestRender();
+        } catch (e) {
+            console.warn("[useGlobe] enableDayNight failed", e);
+        }
+    }
+    function enableSkybox(on: boolean) {
+        try {
+            if (on) {
+                viewer.scene.skyBox = new SkyBox({
+                    sources: {
+                        positiveX: CesiumNS.buildModuleUrl("Assets/Textures/SkyBox/tycho2t3_80_px.jpg"),
+                        negativeX: CesiumNS.buildModuleUrl("Assets/Textures/SkyBox/tycho2t3_80_mx.jpg"),
+                        positiveY: CesiumNS.buildModuleUrl("Assets/Textures/SkyBox/tycho2t3_80_py.jpg"),
+                        negativeY: CesiumNS.buildModuleUrl("Assets/Textures/SkyBox/tycho2t3_80_my.jpg"),
+                        positiveZ: CesiumNS.buildModuleUrl("Assets/Textures/SkyBox/tycho2t3_80_pz.jpg"),
+                        negativeZ: CesiumNS.buildModuleUrl("Assets/Textures/SkyBox/tycho2t3_80_mz.jpg"),
+                    },
+                });
+                // Optional: show atmosphere with the skybox
+                (viewer.scene as any).skyAtmosphere = (viewer.scene as any).skyAtmosphere || new CesiumNS.SkyAtmosphere();
+                (viewer.scene as any).skyAtmosphere.show = true;
+            } else {
+                if (viewer.scene.skyBox) viewer.scene.skyBox.show = false;
+                if ((viewer.scene as any).skyAtmosphere) (viewer.scene as any).skyAtmosphere.show = false;
+            }
+            viewer.scene.requestRender();
+        } catch (e) {
+            console.warn("[useGlobe] enableSkybox failed", e);
+        }
+    }
+
+    /* ─────────────────────────── Rebuild / Destroy ─────────────────────────── */
+
     function cloneImageryProvider(p?: ImageryProvider): ImageryProvider {
         if (!p) {
-            return new OpenStreetMapImageryProvider({
-                url: "https://tile.openstreetmap.org/",
-            });
+            return new OpenStreetMapImageryProvider({ url: "https://tile.openstreetmap.org/" });
         }
         const ap: any = p;
         const name = ap?.constructor?.name;
@@ -350,10 +660,7 @@ export async function useGlobe(
             });
         }
         if (name === "UrlTemplateImageryProvider") {
-            const url =
-                ap.url ||
-                ap._resource?.url ||
-                "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+            const url = ap.url || ap._resource?.url || "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
             const max = ap.maximumLevel ?? 19;
             return new UrlTemplateImageryProvider({
                 url,
@@ -362,20 +669,9 @@ export async function useGlobe(
                 credit: ap.credit ?? "",
             });
         }
-        // fallback
-        return new OpenStreetMapImageryProvider({
-            url: "https://tile.openstreetmap.org/",
-        });
+        return new OpenStreetMapImageryProvider({ url: "https://tile.openstreetmap.org/" });
     }
 
-    // --------- Exaggeration & elevation toggles
-    function runtimeExagSupported(): boolean {
-        // Modern Cesium exposes vertical exaggeration on Scene
-        const sc: any = getScene();
-        return "verticalExaggeration" in sc && "verticalExaggerationRelativeHeight" in sc;
-    }
-
-    // Rebuild viewer when needed (preserves camera + baselayer)
     async function rebuild(): Promise<void> {
         console.log("[useGlobe] Rebuild start", { elevationEnabled, exag });
         const container = viewer.container as HTMLDivElement;
@@ -385,16 +681,12 @@ export async function useGlobe(
         const dir = viewer.camera.directionWC.clone();
         const up = viewer.camera.upWC.clone();
 
-        const layers = getScene().imageryLayers;
+        const layers = viewer.scene.imageryLayers;
         const activeLayer = layers.length > 0 ? layers.get(0) : undefined;
         const activeProvider = activeLayer?.imageryProvider;
-        const baseProv = cloneImageryProvider(
-            activeProvider ?? opts.imageryProvider ?? defaultOSM
-        );
+        const baseProv = cloneImageryProvider(activeProvider ?? opts.imageryProvider ?? defaultOSM);
 
-        try {
-            detachTileDiag?.();
-        } catch { }
+        try { detachTileDiag?.(); } catch { }
 
         viewer.destroy();
 
@@ -410,171 +702,82 @@ export async function useGlobe(
             skyBox: false,
             skyAtmosphere: false,
             globe: makeGlobe(),
-            terrain: makeTerrain(), // respects elevationEnabled
-            imageryProvider: baseProv, // preserve base layer
+            terrain: makeTerrain(),
+            imageryProvider: baseProv,
         });
 
-        const sc = getScene();
+        attachCameraEvents();
+
+        const sc: any = viewer.scene;
         sc.backgroundColor = Color.BLACK;
-        (sc as any).clearColor = Color.BLACK;
+        sc.clearColor = Color.BLACK;
         sc.fog.enabled = false;
         sc.highDynamicRange = false;
 
-        // Re-apply exaggeration on Scene after rebuild
-        try {
-            (sc as any).verticalExaggeration = Math.max(0, exag || 0);
-            (sc as any).verticalExaggerationRelativeHeight = 0;
-        } catch { }
+        try { sc.verticalExaggeration = Math.max(0, exag || 0); sc.verticalExaggerationRelativeHeight = 0; } catch { }
 
         viewer.camera.setView({ destination: pos, orientation: { direction: dir, up } });
-        getSSC().minimumZoomDistance = 50;
+        viewer.scene.screenSpaceCameraController.minimumZoomDistance = 50;
 
-        attachTileDiagnostics();
+        // rewire readiness/diagnostics
         wireReadiness();
+        attachCameraEvents();
 
-        // nudge + render
-        try {
-            const c = viewer.camera;
-            c.moveForward(0.001);
-            c.moveBackward(0.001);
-        } catch { }
-        sc.requestRender(); // ensure immediate draw
+        (function reattachDiag() {
+            let last = -1;
+            const g = viewer.scene.globe;
+            const on = (n: number) => { if (n !== last) { last = n; if (n === 0) console.log("[tileLoadProgress] ✅ imagery loaded"); } };
+            g.tileLoadProgressEvent.addEventListener(on);
+            detachTileDiag = () => { try { g.tileLoadProgressEvent.removeEventListener(on); } catch { } };
+        })();
+
+        try { viewer.camera.moveForward(0.001); viewer.camera.moveBackward(0.001); } catch { }
+        viewer.scene.requestRender();
         console.log("[useGlobe] Rebuild done");
     }
 
-    async function setElevationEnabled(enabled: boolean): Promise<void> {
-        elevationEnabled = enabled;
-
-        // Swap terrain and keep the same scene exaggeration
-        viewer.terrain = makeTerrain();
-
-        // keep various references in sync for older Cesium patterns
-        (viewer as any).terrainProvider = (viewer.terrain as any)?.provider ?? null;
-        (getScene() as any).terrainProvider = (viewer.terrain as any)?.provider ?? null;
-        (getGlobe() as any).terrainProvider = (viewer.terrain as any)?.provider ?? null;
-
-        // nudge + render
-        try {
-            const c = viewer.camera;
-            c.moveForward(0.001);
-            c.moveBackward(0.001);
-        } catch { }
-        getScene().requestRender();
-
-        console.log("[useGlobe] Elevation:", elevationEnabled, "exag(scene):", (getScene() as any).verticalExaggeration);
-    }
-
-    async function setExaggeration(factor: number): Promise<void> {
-        exag = Math.max(0, factor);
-
-        if (!runtimeExagSupported()) {
-            // Super defensive fallback (older builds) – rebuild to apply
-            await rebuild();
-            console.log("[useGlobe] Exaggeration set (fallback rebuild):", exag);
-            return;
-        }
-
-        // Modern path: write directly to Scene
-        const sc: any = getScene();
-        sc.verticalExaggeration = exag;
-        sc.verticalExaggerationRelativeHeight = 0;
-
-        // If exag == 0, we can optionally disable elevation to save work
-        const wantElevation = exag > 0;
-        if (wantElevation !== elevationEnabled) {
-            await setElevationEnabled(wantElevation);
-        }
-
-        // nudge to ensure redraw
-        try {
-            const c = viewer.camera;
-            c.moveForward(0.001);
-            c.moveBackward(0.001);
-        } catch { }
-        sc.requestRender();
-
-        console.log("[useGlobe] Exaggeration set (scene):", exag);
-    }
-
-    // --------- Minimal picking (kept simple)
-    let handler: ScreenSpaceEventHandler | null = new ScreenSpaceEventHandler(
-        getScene().canvas
-    );
-    handler.setInputAction((click) => {
-        const picked = getScene().pick(click.position);
-        const id: any = picked?.id;
-        if (id?.id) console.log("[pick] entity:", id.id);
-    }, ScreenSpaceEventType.LEFT_CLICK);
-
     function destroy() {
-        try {
-            handler?.destroy();
-        } catch { }
-        handler = null;
-        try {
-            detachTileDiag?.();
-        } catch { }
-        viewer.destroy();
+        try { detachTileDiag?.(); } catch { }
+        try { viewer.scene.postRender.removeEventListener(clampAGL); } catch { }
+        try { detachCameraEvents?.(); } catch { }     
+        try { viewer.destroy(); } catch { }
     }
 
-    // --------- Debug helpers
-    (globalThis as any).GL = {
-        get viewer() {
-            return viewer;
-        },
-        get scene() {
-            return getScene();
-        },
-        get globe() {
-            return getGlobe();
-        },
-        dumpLayers() {
-            const layers = getScene().imageryLayers;
-            console.log("[dumpLayers] count=", layers.length);
-            for (let i = 0; i < layers.length; i++) {
-                const ly = layers.get(i) as any;
-                const p = ly.imageryProvider as any;
-                console.log(`[layer ${i}]`, {
-                    alpha: ly.alpha,
-                    show: ly.show,
-                    type: p?.constructor?.name,
-                    url: p?.url || p?._resource?.url,
-                    tiling: p?.tilingScheme?.constructor?.name,
-                    min: p?.minimumLevel,
-                    max: p?.maximumLevel,
-                });
-            }
-        },
-        info() {
-            const sc: any = getScene();
-            const g: any = getGlobe();
-            const t: any = (viewer as any).terrain;
-            const prov =
-                t?.provider ??
-                (viewer as any).terrainProvider ??
-                (getScene() as any).terrainProvider ??
-                (g as any).terrainProvider ??
-                null;
-            console.log({
-                elevationEnabled,
-                exag,
-                runtimeExagSupported:
-                    "verticalExaggeration" in sc &&
-                    "verticalExaggerationRelativeHeight" in sc,
-                provider: prov?.constructor?.name ?? "null",
-                ready: !!prov?.ready,
-                sceneVerticalExaggeration: sc.verticalExaggeration,
-            });
-        },
-    };
+    /* ───────────────────────────── Public API ───────────────────────────── */
 
-    // --------- Public API
-    return {
+    const api: GlobeApi = {
         viewer,
+
         setImageryProvider,
+        setBaseLayerTemplate,
+        setBaseLayer,
+
         setElevationEnabled,
         setExaggeration,
+
+        setTime,
+        setTimeBounds,
+
+        flyToLatLon,
+        frameFromWebMercator,
+        frameFromScenario2D,
+
+        // camera change hook for overlays (compass)
+        onCameraChange,
+
+        enableDayNight,
+        enableSkybox,
+
+        setUnits,
+        upsertUnit,
+        removeUnit,
+
         rebuild,
         destroy,
     };
+
+    // handy in console
+    (window as any).MentatGlobe = api;
+
+    return api;
 }

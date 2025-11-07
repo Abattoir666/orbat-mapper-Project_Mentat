@@ -1,8 +1,16 @@
 {
   "ExpandedNodes": [
     "",
-    "\\src"
+    "\\src",
+    "\\src\\components",
+    "\\src\\components\\ui",
+    "\\src\\geo",
+    "\\src\\modules",
+    "\\src\\modules\\threeDView",
+    "\\src\\modules\\threeDView\\widgets",
+    "\\src\\utils",
+    "\\src\\views"
   ],
-  "SelectedNode": "\\Orbat Mapper Dev.lnk",
+  "SelectedNode": "\\src\\modules\\threeDView\\widgets\\CompassWidget.vue",
   "PreviewInSolutionExplorer": false
 }
