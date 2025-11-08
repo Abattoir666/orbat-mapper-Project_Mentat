@@ -30,11 +30,14 @@
         import("@/stores/selectedStore").then(m => m.useSelectedItems);
     import type { NScenarioEvent } from "@/types/internalModels";
     import CompassWidget from "./widgets/CompassWidget.vue";
+    import PlaybackMenu from "@/modules/scenarioeditor/PlaybackMenu.vue";
 
     /* ───────────────── Globe port + mount target ───────────────── */
 
     const mountRef = ref<HTMLDivElement | null>(null);
     const port = useGlobePort();
+    const rightOpen = ref(true);
+    function toggleRight() { rightOpen.value = !rightOpen.value; }
 
     /** Normalize globe whether it's a Ref or a plain object */
     const g = computed<any>(() => {
@@ -42,7 +45,11 @@
         return isRef(maybe) ? maybe.value : maybe;
     });
 
-    const showCompass = ref(true);
+    // Compass: open on button; close when clicking the widget itself
+    const showCompass = ref(false);
+    function openCompass() { showCompass.value = true; }
+    function closeCompass() { showCompass.value = false; }
+
     const globeApi = g;
     const mount = (port as any).mount as (el: HTMLDivElement) => Promise<void>;
     const flyToLatLon = (port as any).flyToLatLon as (lon: number, lat: number, h?: number) => void;
@@ -123,6 +130,27 @@
         g.value?.setTimeBounds?.(s, e);
     }
 
+    /* === Scenario clock (formatted) === */
+    function fmtOffset(mins: number) {
+        const sign = mins >= 0 ? "+" : "-";
+        const a = Math.abs(mins);
+        const hh = String(Math.floor(a / 60)).padStart(2, "0");
+        const mm = String(a % 60).padStart(2, "0");
+        return `UTC${sign}${hh}:${mm}`;
+    }
+
+    const scenarioClock = computed(() => {
+        const ts = +tlScenarioTime.value;
+        const fmt = tlFmtStore.value?.scenarioFormatter ?? tlFallbackFormatter;
+        return fmt.format(ts);
+    });
+
+    const scenarioTzLabel = computed(() => fmtOffset(tlTzOffset ?? 0));
+
+    function jumpToNow() {
+        tlSetCurrentTime(Date.now());
+    }
+
     /* ─────────── Sync bounds & clock to the globe ─────────── */
     let lastBounds = { s: Number.NaN, e: Number.NaN };
     watch([startMs, stopMs], ([s, e]) => {
@@ -147,6 +175,15 @@
             flushClock(t);
         });
     }, { immediate: true });
+
+    const jumpTimeLocal = ref<string>("");
+
+    function jumpToTime() {
+        if (!jumpTimeLocal.value) return;
+        const dt = new Date(jumpTimeLocal.value);   // treated as local time
+        if (Number.isNaN(+dt)) return;
+        tlSetCurrentTime(dt.getTime());             // store expects ms since epoch
+    }
 
     /* ─────────── Playback loop (kept) ─────────── */
     const isPlaying = ref(false);
@@ -185,6 +222,19 @@
         if (rafIdPlay != null) cancelAnimationFrame(rafIdPlay);
         rafIdPlay = null;
         lastTickTs = 0;
+    }
+
+    function setSpeedAndPlay(v: number) {
+        speed.value = v;
+        if (!isPlaying.value) play();
+    }
+    function togglePlayPause() {
+        if (isPlaying.value) {
+            pause();
+        } else {
+            if (!Number.isFinite(speed.value) || speed.value === 0) speed.value = 1;
+            play();
+        }
     }
 
     /* ─────────── Base-layer config & selection ─────────── */
@@ -838,11 +888,12 @@
 
 <template>
     <div class="globe-wrap">
+
         <!-- Globe canvas -->
         <div ref="mountRef" class="globe-host"></div>
 
         <!-- Left controls -->
-        <div class="controls-drawer" :class="{ closed: !controlsOpen }">
+        <div class="controls-drawer controls-drawer--left" :class="{ closed: !controlsOpen }">
             <button class="drawer-toggle" @click="toggleControls" :aria-expanded="controlsOpen">
                 <span v-if="controlsOpen">«</span>
                 <span v-else>»</span>
@@ -897,236 +948,367 @@
             </div>
         </div>
 
-            <!-- Timeline (bottom) — inlined ScenarioTimeline template -->
-            <div class="timeline-overlay" v-if="timelineReady">
-                <TimelineContextMenu @action="tlOnContextMenuAction"
-                                     v-slot="{ onContextMenu }"
-                                     :formattedHoveredDate="tlFormattedHoveredDate">
-                    <div ref="tlEl"
-                         class="relative mb-0 w-full overflow-hidden border-t border-border text-sm select-none"
-                         @wheel.prevent.stop="tlOnWheel"
-                         @pointerdown="tlOnPointerDown"
-                         @pointerup="tlOnPointerUp"
-                         @pointermove="tlOnPointerMove"
-                         @mousemove="tlOnHover"
-                         @mouseenter="tlShowHoverMarker = true"
-                         @mouseleave="tlShowHoverMarker = false"
-                         @contextmenu="onContextMenu">
+        <!-- Timeline (bottom) — inlined ScenarioTimeline template -->
+        <div class="timeline-overlay" v-if="timelineReady">
+            <TimelineContextMenu @action="tlOnContextMenuAction"
+                                 v-slot="{ onContextMenu }"
+                                 :formattedHoveredDate="tlFormattedHoveredDate">
+                <div ref="tlEl"
+                     class="relative mb-0 w-full overflow-hidden border-t border-border text-sm select-none"
+                     @wheel.prevent.stop="tlOnWheel"
+                     @pointerdown="tlOnPointerDown"
+                     @pointerup="tlOnPointerUp"
+                     @pointermove="tlOnPointerMove"
+                     @mousemove="tlOnHover"
+                     @mouseenter="tlShowHoverMarker = true"
+                     @mouseleave="tlShowHoverMarker = false"
+                     @contextmenu="onContextMenu">
 
-                        <!-- A. subtle grey scrim behind ticks (doesn't block input) -->
-                        <div class="timeline-scrim" aria-hidden="true"></div>
+                    <!-- A. subtle grey scrim behind ticks (doesn't block input) -->
+                    <div class="timeline-scrim" aria-hidden="true"></div>
 
-                        <!-- sliding strip -->
-                        <div class="timeline-strip touch-none text-sm select-none"
-                             :class="tlAnimate ? 'transition-all' : 'transition-none'"
-                             :style="{ transform: `translate(${tlTotalXOffset}px)`, width: tlTimelineWidth + 'px' }">
-                            <!-- Major day ticks row -->
-                            <div class="flex justify-center">
-                                <div v-for="(t, i) in tlMajorTicks"
-                                     :key="'maj-' + i + '-' + t.timestamp"
-                                     class="flex shrink-0 items-center justify-center border-x px-2"
-                                     :style="{ width: tlMajorWidth + 'px' }">
-                                    {{ t.label }}
-                                </div>
-                            </div>
-
-                            <!-- Minor hour ticks row -->
-                            <div class="flex items-center">
-                                <div v-for="(t, i) in tlMinorTicks"
-                                     :key="'min-' + i + '-' + t.timestamp"
-                                     class="minor-tick flex shrink-0 items-center justify-center border-r"
-                                     :style="{ width: tlMinorWidth + 'px' }">
-                                    <i class="tick-line" aria-hidden="true"></i>
-                                    <span class="opacity-90">{{ t.label }}</span>
-                                </div>
+                    <!-- sliding strip -->
+                    <div class="timeline-strip touch-none text-sm select-none"
+                         :class="tlAnimate ? 'transition-all' : 'transition-none'"
+                         :style="{ transform: `translate(${tlTotalXOffset}px)`, width: tlTimelineWidth + 'px' }">
+                        <!-- Major day ticks row -->
+                        <div class="flex justify-center">
+                            <div v-for="(t, i) in tlMajorTicks"
+                                 :key="'maj-' + i + '-' + t.timestamp"
+                                 class="flex shrink-0 items-center justify-center border-x px-2"
+                                 :style="{ width: tlMajorWidth + 'px' }">
+                                {{ t.label }}
                             </div>
                         </div>
 
-                        <!-- hover readout + hairline -->
-                        <p v-if="tlShowHoverMarker && !tlIsDragging"
-                           class="timeline-readout">
-                            {{ tlFormattedHoveredDate }}
-                        </p>
-                        <div v-if="tlShowHoverMarker"
-                             class="timeline-hair"
-                             :style="`left: ${tlHoveredX}px`" />
-
-                        <!-- B. fixed center overlay: pill + arrow (always at screen center) -->
-                        <div class="center-overlay" aria-hidden="true">
-                            <div class="center-pill">{{ tlFormattedCurrentDate }}</div>
-                            <IconTriangleDown class="center-triangle" />
+                        <!-- Minor hour ticks row -->
+                        <div class="flex items-center">
+                            <div v-for="(t, i) in tlMinorTicks"
+                                 :key="'min-' + i + '-' + t.timestamp"
+                                 class="minor-tick flex shrink-0 items-center justify-center border-r"
+                                 :style="{ width: tlMinorWidth + 'px' }">
+                                <i class="tick-line" aria-hidden="true"></i>
+                                <span class="opacity-90">{{ t.label }}</span>
+                            </div>
                         </div>
                     </div>
-                </TimelineContextMenu>
-            </div>
 
-            <!-- Right: Day/Night + Skybox -->
-            <div class="right-stack">
-                <div class="sky-toggles">
-                    <button @click="toggleDayNight" :class="{ active: isDayNight }">🌞 Day/Night</button>
-                    <button @click="toggleSkybox" :class="{ active: isSkybox }">🌌 Skybox</button>
-                    <!-- force a working subscription regardless of the adapter API -->
-                    <button @click="showCompass = !showCompass"
-                             :class="{ active: showCompass }"
-                             title="Show/Hide compass">
-                           🧭 {{ showCompass ? 'Hide' : 'Compass' }}
-                        
-                    </button>
-                    <CompassWidget v-if="showCompass" :globe="g" @close="showCompass=false" />
+                    <!-- hover readout + hairline -->
+                    <p v-if="tlShowHoverMarker && !tlIsDragging"
+                       class="timeline-readout">
+                        {{ tlFormattedHoveredDate }}
+                    </p>
+                    <div v-if="tlShowHoverMarker"
+                         class="timeline-hair"
+                         :style="`left: ${tlHoveredX}px`" />
+
+                    <!-- B. fixed center overlay: pill + arrow (always at screen center) -->
+                    <div class="center-overlay" aria-hidden="true">
+                        <div class="center-pill">{{ tlFormattedCurrentDate }}</div>
+                        <IconTriangleDown class="center-triangle" />
+                    </div>
+                </div>
+            </TimelineContextMenu>
+        </div>
+
+        <!-- Right drawer: fully hideable -->
+        <div class="controls-drawer controls-drawer--right" :class="{ closed: !rightOpen }">
+            <!-- Panel -->
+            <div class="controls" style="min-width: 260px; gap: 12px;">
+                <!-- Box 1: Environment -->
+                <div class="row" style="flex-direction: column; align-items: stretch; gap: 8px;">
+                    <div style="font-weight: 600;">Environment</div>
+                    <div style="display:flex; gap:8px; flex-wrap: wrap;">
+                        <button @click="toggleDayNight" :class="{ active: isDayNight }">🌞 Day/Night</button>
+                        <button @click="toggleSkybox" :class="{ active: isSkybox }">🌌 Skybox</button>
+                    </div>
+                </div>
+
+                <!-- Clock (scenario time) -->
+                <div class="row clock-row" style="align-items:center; justify-content:space-between;">
+                    <div class="clock-face" style="display:flex; align-items:center; gap:8px;">
+                        <span aria-hidden="true">🕒</span>
+                        <span>{{ scenarioClock }}</span>
+                        <span class="tz" style="opacity:0.85; font-size:12px;">{{ scenarioTzLabel }}</span>
+                    </div>
+                </div>
+
+                <!-- Jump to time (local) -->
+                <div class="row jump-row">
+                    <div class="jump-label">Jump-to-Time</div>
+
+                    <div class="jump-controls">
+                        <input id="jumpTimeLocal"
+                               class="jump-input"
+                               type="datetime-local"
+                               v-model="jumpTimeLocal"
+                               @keydown.enter.prevent="jumpToTime" />
+                        <button class="jump-go" @click="jumpToTime" title="Set scenario time">Go</button>
+                    </div>
+                </div>
+
+
+
+                <!-- Box 2: Playback / Compass -->
+                <div class="row" style="flex-direction: column; align-items: stretch; gap: 8px;">
+                    <div style="font-weight: 600;">Playback</div>
+
+                    <!-- ▶▶▶ Speed chevrons (reverse / normal / forward) -->
+                    <div class="ff-row" style="display:flex; gap:6px; flex-wrap: wrap;">
+                        <button @click="setSpeedAndPlay(-60)" :class="{ active: isPlaying && speed === -60 }" title="Reverse by Minute">«</button>
+                        <button @click="setSpeedAndPlay(-3600)" :class="{ active: isPlaying && speed === -3600 }" title="Reverse by Hour">««</button>
+                        <button @click="setSpeedAndPlay(-86400)" :class="{ active: isPlaying && speed === -86400 }" title="Reverse by Day">«««</button>
+                        <button @click="togglePlayPause" :class="{ active: isPlaying && Math.abs(speed) === 1 }" title="Play/Pause">
+                            {{ isPlaying ? '⏸' : '▶' }}
+                        </button>
+                        <button @click="setSpeedAndPlay(86400)" :class="{ active: isPlaying && speed === 86400 }" title="Forward by Day">»»»</button>
+                        <button @click="setSpeedAndPlay(3600)" :class="{ active: isPlaying && speed === 3600 }" title="Forward by Hour">»»</button>
+                        <button @click="setSpeedAndPlay(60)" :class="{ active: isPlaying && speed === 60 }" title="Forward by Minute">»</button>
+                    </div>
+
+                    <!-- Compass -->
+                    <div style="display:flex; align-items:center; gap:8px; flex-wrap: wrap;">
+                        <!-- Button only visible when compass is hidden -->
+                        <button v-if="!showCompass"
+                                @click="openCompass"
+                                class="compass-trigger"
+                                title="Show compass">
+                            🧭 Compass
+                        </button>
+
+                        <!-- Expanded compass replaces the button -->
+                        <div v-else
+                             class="compass-pop"
+                             @click="closeCompass"
+                             title="Click to hide compass">
+                            <CompassWidget :globe="g" />
+                        </div>
+                    </div>
                 </div>
             </div>
+
+            <!-- Tiny arrow tab (mirrored) -->
+            <button class="drawer-toggle drawer-toggle--right" @click="toggleRight" :aria-expanded="rightOpen">
+                <span v-if="rightOpen">»</span>
+                <span v-else>«</span>
+            </button>
         </div>
+    </div>
 </template>
 
 <style scoped>
-    /* Page shell — keeps the globe pinned and frees normal flow */
+    .clock-row {
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+    }
+
+
+    /* ───────────────────── Layout shell ───────────────────── */
     .globe-wrap {
         position: relative;
         inset: 0;
-        height: 100%;
         width: 100%;
+        height: 100%;
         min-height: 100vh;
     }
 
     .globe-host {
-        position: absolute; /* removes from flow */
-        inset: 0; /* fills viewport under everything */
+        position: absolute;
+        inset: 0;
         z-index: 0;
     }
 
-    /* Floating controls box at the top-left */
+    /* ───────────────────── Shared control panel ───────────────────── */
     .controls {
-        position: absolute; /* anchor to top-left of .globe-wrap */
-        top: 12px;
-        left: 12px;
         background: rgba(0, 0, 0, 0.65);
         color: #fefefe;
-        padding: 12px 14px;
         border-radius: 10px;
         display: grid;
-        gap: 10px;
-        min-width: 280px;
+        gap: 8px;
         font: 14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, "Helvetica Neue", Arial, "Noto Sans";
-        z-index: 10050; /* above timeline & globe */
         box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+        transform: translateX(0);
+        transition: transform 180ms ease-in-out, width 180ms ease-in-out, padding 180ms ease-in-out, opacity 120ms ease-in-out;
+        overflow: hidden;
+        padding: 10px 12px;
+        opacity: 1;
     }
 
-        /* Improve readability of labels and text */
-        .controls label,
-        .controls .badge {
-            color: #ffffff;
-            font-weight: 500;
-        }
+    /* Wider left panel (50% larger than before) */
+    .controls-drawer--left .controls {
+        width: 300px;
+    }
 
-        /* Inputs and dropdowns */
-        .controls input[type="number"],
-        .controls select,
-        .controls input[type="range"] {
-            background: rgba(255, 255, 255, 0.1);
-            border: 1px solid rgba(255, 255, 255, 0.25);
-            color: #fefefe;
-            border-radius: 4px;
-            padding: 3px 6px;
-            font-size: 13px;
-        }
+    .controls-drawer--right .controls {
+        width: 260px;
+    }
 
-        .controls input[type="range"] {
-            accent-color: #4ea3ff; /* subtle blue highlight for sliders */
-        }
+    /* Inside the panel */
+    .controls .row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px;
+    }
 
-        /* Buttons inside control box */
-        .controls button {
-            background: rgba(255, 255, 255, 0.15);
-            border: 1px solid rgba(255, 255, 255, 0.35);
-            border-radius: 6px;
-            color: #fff;
-            font-weight: 600;
-            cursor: pointer;
-            padding: 5px 10px;
-            transition: background 0.2s, color 0.2s;
-        }
+    .controls label {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        color: #fff;
+        font-weight: 500;
+    }
 
-            .controls button:hover {
-                background: rgba(255, 255, 255, 0.4);
-                color: #000;
-            }
+    .controls .badge {
+        padding: 2px 6px;
+        border-radius: 6px;
+        background: rgba(32,32,32,0.6);
+        border: 1px solid rgba(255,255,255,0.2);
+        color: #fff;
+        font-weight: 500;
+    }
 
-        /* Layout helpers */
-        .controls .row {
-            display: flex;
-            flex-wrap: wrap;
-            align-items: center;
-            gap: 6px;
-        }
+    /* Inputs & dropdowns */
+    .controls input[type="number"],
+    .controls select,
+    .controls input[type="range"] {
+        background: rgba(255,255,255,0.1);
+        border: 1px solid rgba(255,255,255,0.25);
+        color: #fefefe;
+        border-radius: 4px;
+        padding: 3px 6px;
+        font-size: 13px;
+    }
 
-            .controls .row .badge {
-                padding: 2px 6px;
-                border-radius: 6px;
-            }
+    .controls input[type="range"] {
+        accent-color: #4ea3ff !important;
+    }
 
-        .controls label {
-            display: flex;
-            align-items: center;
-            gap: 4px;
-        }
+    .controls select {
+        background-color: rgba(25,25,25,0.9);
+        color: #fefefe;
+        appearance: none;
+    }
 
-        /* Force the slider to a cool accent, not yellow-green */
-        .controls input[type="range"] {
-            accent-color: #4ea3ff !important;
-        }
-
-        /* Make the small pill badges neutral/dark, not yellow */
-        .controls .badge {
-            background: rgba(32,32,32,0.6) !important;
-            color: #fff !important;
-            border: 1px solid rgba(255,255,255,0.2);
-        }
-
-        /* (Optional) squash Chrome's yellow autofill in number inputs */
-        .controls input[type="number"]:-webkit-autofill {
-            -webkit-box-shadow: 0 0 0 1000px rgba(255,255,255,0.10) inset !important;
-            -webkit-text-fill-color: #fefefe !important;
-        }
-        /* --- Fix base layer dropdown visibility --- */
-        .controls select {
-            background-color: rgba(25, 25, 25, 0.9) !important; /* opaque dark */
-            color: #fefefe !important; /* readable text */
-            border: 1px solid rgba(255, 255, 255, 0.25);
-            border-radius: 4px;
-            padding: 3px 6px;
-            appearance: none; /* hide native arrow (optional) */
-        }
-
-            /* Optional: add a subtle arrow icon for clarity */
-            .controls select::-ms-expand {
-                display: none;
-            }
-
-            .controls select:after {
-                content: "▼";
-                float: right;
-                margin-right: 4px;
-                pointer-events: none;
-                opacity: 0.7;
-            }
-
-    /* Ensure the *opened* dropdown menu itself isn’t transparent */
     select option {
         background-color: #1e1e1e;
         color: #fefefe;
     }
 
-    /* Keep the timeline beneath controls */
-    .timeline-overlay {
-        z-index: 10010;
+    /* Buttons */
+    .controls button {
+        background: rgba(255,255,255,0.15);
+        border: 1px solid rgba(255,255,255,0.35);
+        border-radius: 6px;
+        color: #fff;
+        font-weight: 600;
+        cursor: pointer;
+        padding: 5px 10px;
+        transition: background 0.2s, color 0.2s;
     }
 
-    .right-stack {
-        z-index: 10035;
-    }
-    /* your skybox/day-night buttons */
+        .controls button:hover {
+            background: rgba(255,255,255,0.4);
+            color: #000;
+        }
 
-    /* Keep fixed-to-viewport placement you already set */
+    /* ───────────────────── Drawers (left & right) ───────────────────── */
+    .controls-drawer,
+    .controls-drawer--left,
+    .controls-drawer--right {
+        position: absolute;
+        top: 12px;
+        z-index: 10050;
+        display: flex;
+        align-items: flex-start;
+        gap: 6px;
+        pointer-events: none;
+    }
+
+    .controls-drawer--left {
+        left: 12px;
+        flex-direction: row;
+    }
+
+    .controls-drawer--right {
+        right: 12px;
+        flex-direction: row;
+    }
+
+    .controls-drawer .controls,
+    .controls-drawer .drawer-toggle {
+        pointer-events: auto;
+    }
+
+    /* Fully hide when closed */
+    .controls-drawer--left.closed .controls {
+        transform: translateX(calc(-100% - 8px));
+        width: 0;
+        padding: 0;
+        opacity: 0;
+        pointer-events: none;
+        box-shadow: none;
+    }
+
+    .controls-drawer--right.closed .controls {
+        transform: translateX(calc(100% + 8px));
+        width: 0;
+        padding: 0;
+        opacity: 0;
+        pointer-events: none;
+        box-shadow: none;
+    }
+
+    /* ───────────────────── Drawer toggle buttons (small tabs) ───────────────────── */
+    .drawer-toggle,
+    .drawer-toggle--right {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 28px;
+        height: 32px;
+        padding: 0;
+        margin-top: 4px;
+        border-radius: 8px;
+        border: 1px solid rgba(255,255,255,0.35);
+        background: rgba(0,0,0,0.65);
+        color: #fff;
+        cursor: pointer;
+        user-select: none;
+        backdrop-filter: blur(2px);
+        box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+        z-index: 10070;
+    }
+
+    .controls-drawer--left .drawer-toggle {
+        order: 0;
+        margin-right: 4px;
+    }
+
+    .controls-drawer--right .drawer-toggle--right {
+        order: 2;
+        margin-left: 4px;
+    }
+
+    /* ───────────────────── Playback buttons smaller ───────────────────── */
+    /* Playback row: slightly smaller buttons so they don't wrap */
+    .ff-row {
+        display: flex;
+        gap: 4px;
+        justify-content: center;
+        align-items: center;
+        flex-wrap: nowrap; /* keep to one line */
+    }
+
+        .ff-row > button {
+            min-width: 26px; /* was 32px/42px */
+            padding: 2px 5px; /* a little tighter */
+            font-size: 12px; /* slightly smaller text */
+            line-height: 1.1;
+        }
+
+
+    /* ───────────────────── Timeline overlay ───────────────────── */
     .timeline-overlay {
         position: fixed;
         left: 0;
@@ -1136,30 +1318,35 @@
         pointer-events: auto;
     }
 
-    /* Subtle grey scrim behind the tick rows */
     .timeline-scrim {
         position: absolute;
-        inset: 0; /* fill the timeline area */
-        background: rgba(34,34,34,0.35); /* soft neutral grey */
-        pointer-events: none; /* don't block dragging/scrolling */
-        z-index: 0; /* under ticks */
+        inset: 0;
+        background: rgba(34,34,34,0.35);
+        pointer-events: none;
     }
 
-    /* Center marker (pill + arrow) fixed to the middle of tlEl */
+    .timeline-strip {
+        position: relative;
+        z-index: 1;
+    }
+
+    .timeline-hair, .timeline-readout {
+        z-index: 3;
+    }
+
     .center-overlay {
         position: absolute;
         left: 50%;
-        top: -26px; /* sits above timeline; tweak as you like */
+        top: -26px;
         transform: translateX(-50%);
         display: flex;
         flex-direction: column;
         align-items: center;
         gap: 2px;
-        pointer-events: none; /* purely visual */
-        z-index: 4; /* above ticks & hairline */
+        pointer-events: none;
+        z-index: 4;
     }
 
-    /* The grey pill behind the current time */
     .center-pill {
         padding: 2px 8px;
         border-radius: 8px;
@@ -1172,140 +1359,15 @@
         white-space: nowrap;
     }
 
-    /* The arrow under the pill */
     .center-triangle {
         width: 12px;
         height: 12px;
-        color: #d0d0d0; /* light grey */
+        color: #d0d0d0;
         filter: drop-shadow(0 1px 1px rgba(0,0,0,0.45));
         opacity: 0.95;
     }
 
-    /* Ensure existing z-ordering plays nice */
-    .timeline-strip {
-        position: relative;
-        z-index: 1;
-    }
-
-    .timeline-hair, .timeline-readout {
-        z-index: 3;
-    }
-
-    /* Right side stack */
-    .right-stack {
-        position: absolute;
-        top: 10px;
-        right: 12px;
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-        z-index: 10035;
-    }
-
-    /* Day/Night + Skybox */
-    .sky-toggles {
-        display: flex;
-        flex-direction: column;
-        gap: 6px;
-    }
-
-        .sky-toggles button {
-            background: rgba(0,0,0,0.6);
-            color: #fff;
-            border: 1px solid rgba(255,255,255,0.3);
-            border-radius: 6px;
-            padding: 6px 10px;
-            cursor: pointer;
-            transition: .2s;
-            font-size: 14px;
-        }
-
-            .sky-toggles button.active {
-                background: rgba(255,255,255,0.85);
-                color: #000;
-            }
-
-            .sky-toggles button:hover {
-                background: rgba(255,255,255,0.4);
-            }
-
-    /* Wrapper stays fixed; do NOT transform this */
-    .controls-drawer {
-        position: absolute;
-        top: 12px;
-        left: 12px;
-        z-index: 10050;
-        display: flex;
-        align-items: flex-start;
-        gap: 6px;
-    }
-
-    /* Animate the panel itself so the tab remains clickable */
-    .controls {
-        transform: translateX(0);
-        transition: transform 180ms ease-in-out;
-    }
-
-    /* Slide the panel left when closed; adjust the offset if your panel is wider */
-    .controls-drawer.closed .controls {
-        transform: translateX(-260px); /* tweak this to your panel width */
-        pointer-events: none; /* panel won’t intercept clicks while hidden */
-    }
-
-    /* The arrow tab always stays visible & clickable */
-    .drawer-toggle {
-        align-self: stretch;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        width: 22px;
-        min-height: 36px;
-        padding: 6px 4px;
-        border-radius: 8px;
-        border: 1px solid rgba(255,255,255,0.35);
-        background: rgba(0,0,0,0.65);
-        color: #fff;
-        cursor: pointer;
-        user-select: none;
-        backdrop-filter: blur(2px);
-        box-shadow: 0 2px 8px rgba(0,0,0,0.35);
-        z-index: 10060; /* ensure it’s above the panel while sliding */
-    }
-    
-
-    /* The little arrow tab that stays visible */
-    .drawer-toggle {
-        align-self: stretch;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        width: 22px;
-        min-height: 36px;
-        padding: 6px 4px;
-        border-radius: 8px;
-        border: 1px solid rgba(255,255,255,0.35);
-        background: rgba(0,0,0,0.65);
-        color: #fff;
-        cursor: pointer;
-        user-select: none;
-        backdrop-filter: blur(2px);
-        box-shadow: 0 2px 8px rgba(0,0,0,0.35);
-    }
-
-    /* Make the tab sit on the left edge of the controls when open */
-    .controls-drawer .drawer-toggle {
-        /* keep it visible even when closed */
-        position: relative;
-        left: 0;
-    }
-
-    /* Fine-tune the hidden offset so a sliver of the controls doesn't peek */
-    .controls-drawer.closed .controls {
-        /* optional: if you want the box fully off-screen except the tab, no extra rules needed.
-     If the box still peeks, you can also add: visibility: hidden; pointer-events: none; 
-     and re-enable via .controls-drawer:not(.closed) .controls { visibility: visible; } */
-    }
-
+    /* ───────────────────── Misc ───────────────────── */
     .compass-container {
         position: absolute;
         top: 1rem;
@@ -1317,4 +1379,101 @@
         pointer-events: auto;
     }
 
+    /* Compact, floaty container for the expanded compass */
+    .compass-pop {
+        display: inline-flex;
+        padding: 4px;
+        border-radius: 8px;
+        background: rgba(0,0,0,0.35);
+        border: 1px solid rgba(255,255,255,0.25);
+        box-shadow: 0 2px 10px rgba(0,0,0,.45);
+        cursor: pointer; /* indicates you can click to collapse */
+    }
+
+    .compass-trigger {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+        .compass-trigger span {
+            transition: opacity .15s ease;
+        }
+
+    /* --- Jump to time block --- */
+    .jump-row {
+        display: flex;
+        flex-direction: column; /* label on its own line */
+        gap: 4px;
+        align-items: stretch;
+    }
+
+    .jump-label {
+        font-weight: 600;
+        white-space: nowrap;
+    }
+
+    .jump-controls {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        justify-content: space-between;
+        gap: 6px;
+        flex-wrap: nowrap;
+    }
+
+    .jump-input {
+        flex: 1 1 auto;
+        min-width: 0;
+        background: rgba(255,255,255,0.1);
+        border: 1px solid rgba(255,255,255,0.25);
+        color: #fefefe;
+        border-radius: 4px;
+        padding: 3px 6px;
+        font-size: 13px;
+    }
+
+    .jump-go {
+        flex: 0 0 auto;
+        padding: 5px 10px;
+        font-size: 13px;
+        background: rgba(255,255,255,0.15);
+        border: 1px solid rgba(255,255,255,0.35);
+        border-radius: 6px;
+        color: #fff;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.2s, color 0.2s;
+    }
+
+        .jump-go:hover {
+            background: rgba(255,255,255,0.4);
+            color: #000;
+        }
+
+    /* Center section titles like "Environment" and "Playback" */
+    .controls .row > div[style*="font-weight: 600"],
+    .controls .row > .section-title {
+        text-align: center;
+        width: 100%;
+    }
+
+    /* Center the button groups within Environment and Playback */
+    .controls .row[style*="flex-direction: column"] {
+        align-items: center !important; /* center horizontally */
+        text-align: center;
+    }
+
+    /* Make the Environment and Playback titles bold + centered */
+    .controls .row > div[style*="font-weight: 600"] {
+        font-weight: 600 !important;
+        text-align: center !important;
+        margin-bottom: 4px;
+    }
+
+    /* Center the compass button horizontally in its row */
+    .controls .row button[title="Show compass"] {
+        display: block;
+        margin: 0 auto;
+    }
 </style>
