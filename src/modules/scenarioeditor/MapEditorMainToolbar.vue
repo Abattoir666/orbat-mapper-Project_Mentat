@@ -8,7 +8,8 @@
                 <IconLockOpenVariantOutline v-else class="size-6" />
             </MainToolbarButton>
 
-            <MainToolbarButton @click="toggleMoveUnit(false)" :active="!moveUnitEnabled">
+            <MainToolbarButton @click="toggleMoveUnit(false)"
+                               :active="!moveUnitEnabled">
                 <SelectIcon class="size-6" />
             </MainToolbarButton>
 
@@ -26,28 +27,30 @@
 
             <div class="border-border h-7 border-l-2 sm:mx-1" />
 
-            <MainToolbarButton :active="store.currentToolbar === 'measurements'"
-                               @click="store.toggleToolbar('measurements')"
+            <MainToolbarButton :active="mainToolbarStore.currentToolbar === 'measurements'"
+                               @click="mainToolbarStore.toggleToolbar('measurements')"
                                title="Measurements">
                 <MeasurementIcon class="size-6" />
             </MainToolbarButton>
 
-            <MainToolbarButton :active="store.currentToolbar === 'draw'"
-                               @click="store.toggleToolbar('draw')"
+            <MainToolbarButton :active="mainToolbarStore.currentToolbar === 'draw'"
+                               @click="mainToolbarStore.toggleToolbar('draw')"
                                title="Draw">
                 <DrawIcon class="size-6" />
             </MainToolbarButton>
 
             <MainToolbarButton title="Unit track"
-                               :active="store.currentToolbar === 'track'"
-                               @click="store.toggleToolbar('track')">
+                               :active="mainToolbarStore.currentToolbar === 'track'"
+                               @click="mainToolbarStore.toggleToolbar('track')">
                 <IconMapMarkerPath class="size-6" />
             </MainToolbarButton>
 
             <MainToolbarButton title="Unit Hieararchies"
                                :active="isParentLinkActive"
                                @click="toggleParentLinesPersistent">
-                <img :src="sargChevron" alt="Parent line" class="size-6 opacity-90" />
+                <img :src="sargChevron"
+                     alt="Parent line"
+                     class="size-6 opacity-90" />
             </MainToolbarButton>
 
             <!-- Bulk quick edit trigger -->
@@ -63,9 +66,21 @@
                 <div class="flex items-center gap-2">
                     <button class="qb-btn" @click="promptSidc">Set SIDC…</button>
                     <button class="qb-btn" @click="promptFill">Set fillColor…</button>
-                    <button class="qb-btn qb-cancel" @click="bulkMenuOpen = false">Close</button>
+
+                    <!-- NEW: open delete-events dialog, then close the mini menu -->
+                    <button class="qb-btn" @click="openDeleteEventsDialog">
+                        Delete events in time range…
+                    </button>
+
+                    <button class="qb-btn qb-cancel" @click="bulkMenuOpen = false">
+                        Close
+                    </button>
                 </div>
             </FloatingPanel>
+
+            <!-- NEW: Pop-out dialog for time-range delete, only for selected units -->
+            <DeleteEventsBulkDialog v-model="deleteEventsDialogOpen"
+                                    :selected-unit-ids="selectedUnitIdsArray" />
 
             <div class="border-border h-7 border-l-2 sm:mx-1" />
 
@@ -81,7 +96,8 @@
                                    :disabled="!activeParentId || unitActions.isUnitLocked(activeParentId)">
                     <AddSymbolIcon class="bg-opacity-70 absolute -right-2 bottom-0 h-4 w-4 rounded-full bg-white text-gray-600 group-hover:text-gray-900" />
                 </PanelSymbolButton>
-                <SymbolPickerPopover :symbol-options="symbolOptions" :add-unit="addUnit" />
+                <SymbolPickerPopover :symbol-options="symbolOptions"
+                                     :add-unit="addUnit" />
             </div>
         </section>
 
@@ -110,7 +126,9 @@
                 <IconChevronLeft class="size-5" aria-hidden="true" />
             </MainToolbarButton>
 
-            <MainToolbarButton title="Next Day" class="hidden sm:flex" @click="emit('inc-day')">
+            <MainToolbarButton title="Next Day"
+                               class="hidden sm:flex"
+                               @click="emit('inc-day')">
                 <span class="sr-only">Next Day</span>
                 <IconChevronRight class="size-5" aria-hidden="true" />
             </MainToolbarButton>
@@ -141,245 +159,280 @@
 </template>
 
 <script setup lang="ts">
-    /* Icons */
-    import {
-        IconChevronLeft,
-        IconChevronRight,
-        IconCogOutline as SettingsIcon,
-        IconCursorDefaultOutline as SelectIcon,
-        IconCursorMove as MoveIcon,
-        IconLockOpenVariantOutline,
-        IconLockOutline,
-        IconMapMarkerPath,
-        IconPencil as DrawIcon,
-        IconPlus as AddSymbolIcon,
-        IconRedoVariant as RedoIcon,
-        IconRulerSquareCompass as MeasurementIcon,
-        IconSkipNext,
-        IconSkipPrevious,
-        IconUndoVariant as UndoIcon,
-    } from "@iconify-prerendered/vue-mdi";
-    import { CalendarIcon, CircleStackIcon } from "@heroicons/vue/24/solid";
+/* Icons */
+import {
+  IconChevronLeft,
+  IconChevronRight,
+  IconCogOutline as SettingsIcon,
+  IconCursorDefaultOutline as SelectIcon,
+  IconCursorMove as MoveIcon,
+  IconLockOpenVariantOutline,
+  IconLockOutline,
+  IconMapMarkerPath,
+  IconPencil as DrawIcon,
+  IconPlus as AddSymbolIcon,
+  IconRedoVariant as RedoIcon,
+  IconRulerSquareCompass as MeasurementIcon,
+  IconSkipNext,
+  IconSkipPrevious,
+  IconUndoVariant as UndoIcon,
+} from "@iconify-prerendered/vue-mdi";
+import { CalendarIcon, CircleStackIcon } from "@heroicons/vue/24/solid";
 
-    /* Components */
-    import MainToolbarButton from "@/components/MainToolbarButton.vue";
-    import PanelSymbolButton from "@/components/PanelSymbolButton.vue";
-    import FloatingPanel from "@/components/FloatingPanel.vue";
-    import SymbolPickerPopover from "@/modules/scenarioeditor/SymbolPickerPopover.vue";
-    import EchelonPickerPopover from "@/modules/scenarioeditor/EchelonPickerPopover.vue";
-    import QuickBulkBar from "@/modules/scenarioeditor/bulkEdit/QuickBulkBar.vue";
-    import { Button } from "@/components/ui/button";
+/* Components */
+import MainToolbarButton from "@/components/MainToolbarButton.vue";
+import PanelSymbolButton from "@/components/PanelSymbolButton.vue";
+import FloatingPanel from "@/components/FloatingPanel.vue";
+import SymbolPickerPopover from "@/modules/scenarioeditor/SymbolPickerPopover.vue";
+import EchelonPickerPopover from "@/modules/scenarioeditor/EchelonPickerPopover.vue";
+import QuickBulkBar from "@/modules/scenarioeditor/bulkEdit/QuickBulkBar.vue";
+import { Button } from "@/components/ui/button";
+import DeleteEventsBulkDialog from "@/modules/scenarioeditor/bulkEdit/DeleteEventsBulkDialog.vue";
 
-    /* Stores / DI / composables */
-    import { useMainToolbarStore } from "@/stores/mainToolbarStore";
-    import { storeToRefs } from "pinia";
-    import { injectStrict } from "@/utils";
-    import { activeMapKey, activeScenarioKey } from "@/components/injects";
-    import { useUnitSettingsStore } from "@/stores/geoStore";
-    import { useEventBus, useToggle } from "@vueuse/core";
-    import { useMapSelectStore } from "@/stores/mapSelectStore";
-    import { useToolbarUnitSymbolData } from "@/composables/mainToolbarData";
-    import { useActiveUnitStore } from "@/stores/dragStore";
-    import { orbatUnitClick } from "@/components/eventKeys";
-    import sargChevron from "@/components/ui/Icons/sargchevron.svg?url";
-    import { useSelectedItems } from "@/stores/selectedStore";
-    import { setSidcBulk, setFillColorBulk } from "@/modules/scenarioeditor/bulkEdit/quickBulkActions";
+/* Stores / DI / composables */
+import { useMainToolbarStore } from "@/stores/mainToolbarStore";
+import { storeToRefs } from "pinia";
+import { injectStrict } from "@/utils";
+import { activeMapKey, activeScenarioKey } from "@/components/injects";
+import { useUnitSettingsStore } from "@/stores/geoStore";
+import { useEventBus, useToggle } from "@vueuse/core";
+import { useMapSelectStore } from "@/stores/mapSelectStore";
+import { useToolbarUnitSymbolData } from "@/composables/mainToolbarData";
+import { useActiveUnitStore } from "@/stores/dragStore";
+import { orbatUnitClick } from "@/components/eventKeys";
+import sargChevron from "@/components/ui/Icons/sargchevron.svg?url";
+import { useSelectedItems } from "@/stores/selectedStore";
+import {
+  setSidcBulk,
+  setFillColorBulk,
+} from "@/modules/scenarioeditor/bulkEdit/quickBulkActions";
+import { parentLinkOverlay } from "@/stores/parentLinkOverlay";
+import { useGetMapLocation } from "@/composables/geoMapLocation";
 
-    /* Vue */
-    import { computed, ref, onMounted, type Ref, watch } from "vue";
+/* Vue */
+import { computed, ref, onMounted, type Ref, watch } from "vue";
 
-    /* Symbology */
-    import { SID_INDEX, Sidc } from "@/symbology/sidc";
+/* Symbology */
+import { SID_INDEX, Sidc } from "@/symbology/sidc";
 
-    /* ---------- Existing wiring ---------- */
+/* ---------- Emits ---------- */
+const emit = defineEmits([
+  "open-time-modal",
+  "inc-day",
+  "dec-day",
+  "next-event",
+  "prev-event",
+  "show-settings",
+]);
 
-    const { selectedUnitIds } = useSelectedItems();
-    const { store: scenarioStore } = injectStrict(activeScenarioKey);
-    const selectedCount = computed(() => selectedUnitIds.value.size);
-    const bulkMenuOpen = ref(false);
+/* ---------- Scenario + map DI ---------- */
+const { store: scenarioStore, unitActions, geo, helpers } =
+  injectStrict(activeScenarioKey);
+const { addUnitPosition } = geo;
+const { getSideById } = helpers;
+const mapRef = injectStrict(activeMapKey);
 
+/* ---------- Toolbar + selection stores ---------- */
+const mainToolbarStore = useMainToolbarStore();
+const { addMultiple } = storeToRefs(mainToolbarStore);
 
-    const isParentLinkActive = computed(
-        () => parentLinkOverlay.enabled && parentLinkOverlay.tracked.has(activeUnitId.value || "")
-    );
+const { moveUnitEnabled } = storeToRefs(useUnitSettingsStore());
+const toggleMoveUnit = useToggle(moveUnitEnabled);
 
-    function toggleParentLinesPersistent() {
-        // If currently disabled, enable and track current selection
-        if (!parentLinkOverlay.enabled) {
-            parentLinkOverlay.enable();
-            if (selectedUnitIds.value.size) {
-                parentLinkOverlay.toggleUnits(selectedUnitIds.value);
-            }
-            return;
-        }
+const selectStore = useMapSelectStore();
+const toggleAddMultiple = useToggle(addMultiple);
 
-        // If enabled and you have a selection, toggle those units in/out of tracking
-        if (selectedUnitIds.value.size) {
-            parentLinkOverlay.toggleUnits(selectedUnitIds.value);
-            return;
-        }
+const { activeUnitId, resetActiveParent, activeParent, activeParentId } =
+  useActiveUnitStore();
 
-        // If enabled and no selection, disable entirely (acts as global off)
-        parentLinkOverlay.disable();
-        parentLinkOverlay.clearTracked();
-        console.log("[ParentLine] segments:", parentLinkOverlay.segments);
+const { selectedUnitIds } = useSelectedItems(); // Ref<Set<string>>
+
+const selectedCount = computed(() => selectedUnitIds.value.size);
+const selectedUnitIdsArray = computed(() => Array.from(selectedUnitIds.value));
+
+/* ---------- Time / SIDC helpers ---------- */
+const { currentSid, currentEchelon, activeSidc } = useToolbarUnitSymbolData();
+
+/* ---------- History / groupUpdate ---------- */
+const { undo, redo, canRedo, canUndo, groupUpdate, state } =
+  scenarioStore;
+
+/* ---------- Bulk menu + dialog ---------- */
+const bulkMenuOpen = ref(false);
+const deleteEventsDialogOpen = ref(false);
+
+function openDeleteEventsDialog() {
+  if (!selectedCount.value) return;
+  deleteEventsDialogOpen.value = true;
+  bulkMenuOpen.value = false;
+}
+
+/* ---------- Parent-link overlay ---------- */
+const isParentLinkActive = computed(
+  () =>
+    parentLinkOverlay.enabled &&
+    parentLinkOverlay.tracked.has(activeUnitId.value || "")
+);
+
+function toggleParentLinesPersistent() {
+  // If currently disabled, enable and track current selection
+  if (!parentLinkOverlay.enabled) {
+    parentLinkOverlay.enable();
+    if (selectedUnitIds.value.size) {
+      parentLinkOverlay.toggleUnits(selectedUnitIds.value);
     }
+    return;
+  }
 
-    const emit = defineEmits([
-        "open-time-modal",
-        "inc-day",
-        "dec-day",
-        "next-event",
-        "prev-event",
-        "show-settings",
-    ]);
+  // If enabled and you have a selection, toggle those units in/out of tracking
+  if (selectedUnitIds.value.size) {
+    parentLinkOverlay.toggleUnits(selectedUnitIds.value);
+    return;
+  }
 
-    const {
-        store: { undo, redo, canRedo, canUndo, groupUpdate, state },
-        unitActions,
-        geo: { addUnitPosition },
-        helpers: { getSideById },
-    } = injectStrict(activeScenarioKey);
-    const mapRef = injectStrict(activeMapKey);
+  // If enabled and no selection, disable entirely (acts as global off)
+  parentLinkOverlay.disable();
+  parentLinkOverlay.clearTracked();
+  console.log("[ParentLine] segments:", parentLinkOverlay.segments);
+}
 
-    const store = useMainToolbarStore();
-    const { addMultiple } = storeToRefs(store);
-    const { moveUnitEnabled } = storeToRefs(useUnitSettingsStore());
-    const selectStore = useMapSelectStore();
-    const toggleAddMultiple = useToggle(addMultiple);
-    const bus = useEventBus(orbatUnitClick);
-    const { activeUnitId, resetActiveParent, activeParent, activeParentId } =
-        useActiveUnitStore();
+/* ---------- Geo location composable ---------- */
+const {
+  start: startGetLocation,
+  isActive: isGetLocationActive,
+  cancel: cancelGetLocation,
+  onGetLocation,
+  onCancel,
+  onStart,
+} = useGetMapLocation(mapRef.value, {
+  cancelOnClickOutside: false,
+  stopPropagationOnClickOutside: false,
+});
 
-    const { currentSid, currentEchelon, activeSidc } = useToolbarUnitSymbolData();
+/* ---------- Computed symbol + options ---------- */
+const computedSidc = computed(() => {
+  const parsedSidc = new Sidc(activeSidc.value);
+  parsedSidc.standardIdentity = currentSid.value;
+  parsedSidc.emt = "00";
+  parsedSidc.hqtfd = "0";
+  return parsedSidc.toString();
+});
 
-    const computedSidc = computed(() => {
-        const parsedSidc = new Sidc(activeSidc.value);
-        parsedSidc.standardIdentity = currentSid.value;
-        parsedSidc.emt = "00";
-        parsedSidc.hqtfd = "0";
-        return parsedSidc.toString();
+const symbolOptions = computed(() =>
+  activeParent.value
+    ? {
+        ...unitActions.getCombinedSymbolOptions(activeParent.value, true),
+        outlineWidth: 5,
+      }
+    : {}
+);
+
+/* ---------- Quick Bulk actions (SIDC / fill / delete events) ---------- */
+
+function promptSidc() {
+  if (!selectedCount.value) return;
+  const v = window.prompt(
+    `Set SIDC for ${selectedCount.value} unit(s):`,
+    ""
+  );
+  if (!v) return;
+  setSidcBulk(scenarioStore, selectedUnitIds.value, v);
+  bulkMenuOpen.value = false;
+}
+
+function promptFill() {
+  if (!selectedCount.value) return;
+  const v = window.prompt(
+    `Set symbolOptions.fillColor for ${selectedCount.value} unit(s):`,
+    "#2e86de"
+  );
+  if (!v) return;
+  setFillColorBulk(scenarioStore, selectedUnitIds.value, v);
+  bulkMenuOpen.value = false;
+}
+
+/** UX: auto-close bulk menu when selection clears */
+watch(selectedUnitIds, (s) => {
+  if (!s.size) bulkMenuOpen.value = false;
+});
+
+/* ---------- Existing behaviors ---------- */
+
+const bus = useEventBus(orbatUnitClick);
+
+function addUnit(
+  sidc: string,
+  closePopover?: (ref?: Ref | HTMLElement) => void
+) {
+  activeSidc.value = sidc;
+  closePopover && closePopover();
+  startGetLocation();
+}
+
+onMounted(() => {
+  if (!activeParentId.value) resetActiveParent();
+});
+
+onCancel(() => {
+  selectStore.hoverEnabled = true;
+});
+
+onStart(() => {
+  selectStore.hoverEnabled = false;
+  mainToolbarStore.clearToolbar();
+});
+
+onGetLocation((location) => {
+  selectStore.hoverEnabled = true;
+  groupUpdate(() => {
+    if (!activeParentId.value || unitActions.isUnitLocked(activeParentId.value))
+      return;
+
+    const name = `${(activeParent.value?.subUnits?.length ?? 0) + 1}`;
+    const sidc = new Sidc(activeSidc.value!);
+    sidc.emt = currentEchelon.value;
+    sidc.standardIdentity = currentSid.value;
+    const unitId = unitActions.createSubordinateUnit(activeParentId.value, {
+      sidc: sidc.toString(),
+      name,
     });
+    unitId && addUnitPosition(unitId, location);
+  });
+  if (addMultiple.value && activeSidc.value) {
+    addUnit(activeSidc.value);
+  }
+});
 
-    const toggleMoveUnit = useToggle(moveUnitEnabled);
-
-    const symbolOptions = computed(() =>
-        activeParent.value
-            ? {
-                ...unitActions.getCombinedSymbolOptions(activeParent.value, true),
-                outlineWidth: 5,
-            }
-            : {}
-    );
-
-    const {
-        start: startGetLocation,
-        isActive: isGetLocationActive,
-        cancel: cancelGetLocation,
-        onGetLocation,
-        onCancel,
-        onStart,
-    } = useGetMapLocation(mapRef.value, {
-        cancelOnClickOutside: false,
-        stopPropagationOnClickOutside: false,
-    });
-
-    /* ---------- Quick Bulk Bar wiring (new) ---------- */
-    function promptSidc() {
-        if (!selectedCount.value) return;
-        const v = window.prompt(`Set SIDC for ${selectedCount.value} unit(s):`, "");
-        if (!v) return;
-        setSidcBulk(scenarioStore, selectedUnitIds.value, v);
-        bulkMenuOpen.value = false;
+bus.on((unit) => {
+  if (isGetLocationActive.value) {
+    if (!(addMultiple.value && activeSidc.value)) {
+      cancelGetLocation();
     }
-
-    function promptFill() {
-        if (!selectedCount.value) return;
-        const v = window.prompt(`Set symbolOptions.fillColor for ${selectedCount.value} unit(s):`, "#2e86de");
-        if (!v) return;
-        setFillColorBulk(scenarioStore, selectedUnitIds.value, v);
-        bulkMenuOpen.value = false;
-    }
-
-    /** UX: auto-close on selection clear */
-    watch(selectedUnitIds, (s) => {
-        if (!s.size) quickOpen.value = false;
+    const name = `${(activeParent.value?.subUnits?.length ?? 0) + 1}`;
+    const sidc = new Sidc(activeSidc.value!);
+    sidc.emt = currentEchelon.value;
+    sidc.standardIdentity = unit.sidc[SID_INDEX];
+    const unitId = unitActions.createSubordinateUnit(unit.id, {
+      sidc: sidc.toString(),
+      name,
     });
+  }
+});
 
-    /* ---------- Existing behaviors ---------- */
+watch(activeParent, (unitOrSideGroup) => {
+  if (!unitOrSideGroup) return;
+  if ("sidc" in unitOrSideGroup) {
+    currentSid.value = unitOrSideGroup.sidc[SID_INDEX];
+  } else {
+    currentSid.value = getSideById(unitOrSideGroup._pid).standardIdentity;
+  }
+});
 
-    function addUnit(sidc: string, closePopover?: (ref?: Ref | HTMLElement) => void) {
-        activeSidc.value = sidc;
-        closePopover && closePopover();
-        startGetLocation();
-    }
-
-    onMounted(() => {
-        if (!activeParentId.value) resetActiveParent();
-    });
-
-    onCancel(() => {
-        selectStore.hoverEnabled = true;
-    });
-
-    onStart(() => {
-        selectStore.hoverEnabled = false;
-        store.clearToolbar();
-    });
-
-    onGetLocation((location) => {
-        selectStore.hoverEnabled = true;
-        groupUpdate(() => {
-            if (!activeParentId.value || unitActions.isUnitLocked(activeParentId.value)) return;
-            const name = `${(activeParent.value?.subUnits?.length ?? 0) + 1}`;
-            const sidc = new Sidc(activeSidc.value!);
-            sidc.emt = currentEchelon.value;
-            sidc.standardIdentity = currentSid.value;
-            const unitId = unitActions.createSubordinateUnit(activeParentId.value, {
-                sidc: sidc.toString(),
-                name,
-            });
-            unitId && addUnitPosition(unitId, location);
-        });
-        if (addMultiple.value && activeSidc.value) {
-            addUnit(activeSidc.value);
-        }
-    });
-
-    bus.on((unit) => {
-        if (isGetLocationActive.value) {
-            if (!(addMultiple.value && activeSidc.value)) {
-                cancelGetLocation();
-            }
-            const name = `${(activeParent.value?.subUnits?.length ?? 0) + 1}`;
-            const sidc = new Sidc(activeSidc.value!);
-            sidc.emt = currentEchelon.value;
-            sidc.standardIdentity = unit.sidc[SID_INDEX];
-            const unitId = unitActions.createSubordinateUnit(unit.id, {
-                sidc: sidc.toString(),
-                name,
-            });
-        }
-    });
-
-    watch(activeParent, (unitOrSideGroup) => {
-        if (!unitOrSideGroup) return;
-        if ("sidc" in unitOrSideGroup) {
-            currentSid.value = unitOrSideGroup.sidc[SID_INDEX];
-        } else {
-            currentSid.value = getSideById(unitOrSideGroup._pid).standardIdentity;
-        }
-    });
-
-    function selectEchelon(sidc: string) {
-        currentEchelon.value = new Sidc(sidc).emt;
-    }
-
-    /* Parent link overlay import placed after usage-related code to avoid hoist confusion */
-    import { parentLinkOverlay } from "@/stores/parentLinkOverlay";
-    /* Geo location composable imported where used above */
-    import { useGetMapLocation } from "@/composables/geoMapLocation";
+function selectEchelon(sidc: string) {
+  currentEchelon.value = new Sidc(sidc).emt;
+}
 </script>
+
 <style scoped>
     .qb-btn {
         height: 28px;

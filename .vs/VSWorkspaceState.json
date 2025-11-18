@@ -11,6 +11,6 @@
     "\\src\\utils",
     "\\src\\views"
   ],
-  "SelectedNode": "\\src\\modules\\threeDView\\widgets\\CompassWidget.vue",
+  "SelectedNode": "\\src\\components\\BaseToolbar.vue",
   "PreviewInSolutionExplorer": false
 }
