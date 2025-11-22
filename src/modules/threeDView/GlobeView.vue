@@ -169,12 +169,12 @@
         g.value.setTime?.(t);
     }
     watch(currentMs, (t) => {
-        if (rafIdSend != null) cancelAnimationFrame(rafIdSend);
-        rafIdSend = requestAnimationFrame(() => {
-            rafIdSend = null;
-            flushClock(t);
-        });
-    }, { immediate: true });
+    if (rafIdSend != null) cancelAnimationFrame(rafIdSend);
+    rafIdSend = requestAnimationFrame(() => {
+        rafIdSend = null;
+        flushClock(t);
+    });
+}, { immediate: true });
 
     const jumpTimeLocal = ref<string>("");
 
@@ -584,6 +584,7 @@
     const tlRedrawCounter = ref(0);
     const { width: tlWidth } = useElementSize(tlEl);
     const tlTzOffset = tlScenarioTime.value.utcOffset();
+
 
     /* formatters */
     const tlHourFormatter = utcFormat("%H");

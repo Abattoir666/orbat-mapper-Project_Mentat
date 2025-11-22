@@ -142,14 +142,20 @@ export interface LayerFeatureItem {
   _pid?: FeatureId;
 }
 
+export type RangeRingShape = "circle" | "square" | "ellipse";
+
 export interface RangeRing {
   name: string;
-  range: number;
-  uom: "m" | "km" | "ft" | "mi" | "nmi";
-  hidden?: boolean;
-  style?: Partial<RangeRingStyle>;
+  range: number;                 // primary radius / semi-major / half-side
+  uom: "m" | "km" | "mi" | "nmi";
   group?: string | null;
-  _counter?: number;
+  verticalMeters?: number;
+  hidden?: boolean;
+  style?: RangeRingStyle;
+
+  // NEW:
+  shape?: RangeRingShape;        // defaults to "circle"
+  secondaryRange?: number | null; // secondary radius / semi-minor / other half-side
 }
 
 export interface RangeRingGroup {

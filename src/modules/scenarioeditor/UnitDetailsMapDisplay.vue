@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed, ref } from "vue";
 
 import type { NUnit } from "@/types/internalModels";
@@ -46,6 +46,9 @@ const editedRangeRing = ref<RangeRing>({
   range: 0,
   uom: "km",
   group: undefined,
+  verticalMeters: 0,
+  shape: "circle",          // NEW
+  secondaryRange: null,     // NEW
 });
 
 const originalRangeRing = ref<RangeRing | null>(null);
@@ -201,7 +204,15 @@ function updateRangeRingOrRings(
 
 function updateRing() {
   if (editedIndex.value < 0 || !editedRangeRing.value) return;
-  const { name, range, uom, group } = editedRangeRing.value;
+  const {
+    name,
+    range,
+    uom,
+    group,
+    verticalMeters,
+    shape,
+    secondaryRange,
+  } = editedRangeRing.value;
 
   updateRangeRingOrRings(
     editedIndex.value,
@@ -211,12 +222,26 @@ function updateRing() {
       range: +range,
       uom,
       group,
+      verticalMeters: +verticalMeters,
+      shape: shape ?? "circle",
+      secondaryRange:
+        secondaryRange != null && !Number.isNaN(+secondaryRange)
+          ? +secondaryRange
+          : null,
     },
     { addIfNameDoesNotExists: true },
   );
+
   editedIndex.value = -1;
-  editedRangeRing.value = { name: "", range: 0, uom: "km", group: null };
-  originalRangeRing.value = null;
+  editedRangeRing.value = {
+    name: "",
+    range: 0,
+    uom: "km",
+    group: undefined,
+    verticalMeters: 0,
+    shape: "circle",
+    secondaryRange: null,
+  };
 }
 
 function updateRingStyle(ring: RangeRing, index: number, style: Partial<RangeRingStyle>) {
@@ -250,166 +275,187 @@ function updateVisibilityStyle(style: Partial<VisibilityStyleSpec>) {
     const newStyle = { ...unitStyle, ...style };
     unitActions.updateUnit(props.unit.id, { style: newStyle });
   }
-}
-</script>
+}</script>
 <template>
-  <PanelDataGrid class="mt-4">
-    <div class="col-span-2 mt-2 -mb-6 font-semibold">Visibility</div>
-    <div class="self-end">Limit</div>
-    <ToggleField class="mt-4" v-model="limitVisibility" />
-    <template v-if="limitVisibility">
-      <div>Zoom levels</div>
-      <ZoomSelector v-model="range" class="mt-4 flex-auto" />
-    </template>
-  </PanelDataGrid>
-  <div class="mt-4 flex items-center justify-between">
-    <PanelHeading>Range rings</PanelHeading>
+    <PanelDataGrid class="mt-4">
+        <div class="col-span-2 mt-2 -mb-6 font-semibold">Visibility</div>
+        <div class="self-end">Limit</div>
+        <ToggleField class="mt-4" v-model="limitVisibility" />
+        <template v-if="limitVisibility">
+            <div>Zoom levels</div>
+            <ZoomSelector v-model="range" class="mt-4 flex-auto" />
+        </template>
+    </PanelDataGrid>
+    <div class="mt-4 flex items-center justify-between">
+        <PanelHeading>Range rings</PanelHeading>
 
-    <div class="mt-4 sm:mt-0 sm:ml-16 sm:flex-none">
-      <Button @click="addRangeRing()" type="button" :disabled="isLocked" size="sm">
-        + Add
-      </Button>
+        <div class="mt-4 sm:mt-0 sm:ml-16 sm:flex-none">
+            <Button @click="addRangeRing()" type="button" :disabled="isLocked" size="sm">
+                + Add
+            </Button>
+        </div>
     </div>
-  </div>
-  <table v-if="rangeRings.length > 0" class="w-full divide-y divide-gray-300">
-    <thead>
-      <tr>
-        <th
-          scope="col"
-          class="py-3.5 pr-3 pl-4 text-left text-sm font-semibold whitespace-nowrap text-gray-900 sm:pl-0"
-        >
-          Name
-        </th>
-        <th
-          scope="col"
-          class="px-2 py-3.5 text-left text-sm font-semibold whitespace-nowrap text-gray-900"
-        >
-          Range
-        </th>
-        <th
-          scope="col"
-          class="w-20 px-2 py-3.5 text-left text-sm font-semibold whitespace-nowrap text-gray-900"
-        >
-          Visible
-        </th>
-        <th
-          scope="col"
-          class="w-20 px-2 py-3.5 text-left text-sm font-semibold whitespace-nowrap text-gray-900"
-        >
-          Group
-        </th>
-        <th class="w-0"></th>
-      </tr>
-    </thead>
-    <tbody class="divide-y divide-gray-200 bg-white">
-      <tr
-        v-for="(ring, index) in rangeRings"
-        :key="ring.name"
-        @dblclick="!isLocked && editRing(index)"
-        class="group"
-      >
-        <template v-if="index === editedIndex">
-          <td colspan="5">
-            <form
-              @submit.prevent.stop="updateRing()"
-              class="mt-2 grid grid-cols-2 gap-4 rounded border border-gray-300 bg-gray-50 p-2 py-4"
-            >
-              <InputGroup
-                class="col-span-2"
-                autofocus
-                label="Name"
-                v-model="editedRangeRing.name"
-                :disabled="isLocked"
-              />
-              <InputGroupTemplate label="Range" v-slot="{ id }" class="col-span-1">
-                <div class="relative rounded-md shadow-xs">
-                  <input
-                    type="text"
-                    :id="id"
-                    class="block w-full rounded-md border-0 py-1.5 pr-20 text-gray-900 ring-1 ring-gray-300 ring-inset placeholder:text-gray-400 focus:ring-2 focus:ring-indigo-600 focus:ring-inset sm:text-sm sm:leading-6"
-                    v-model="editedRangeRing.range"
-                  />
-                  <div class="absolute inset-y-0 right-0 flex items-center">
-                    <label for="currency" class="sr-only">Currency</label>
-                    <select
-                      id="range"
-                      name="range"
-                      v-model="editedRangeRing.uom"
-                      class="h-full rounded-md border-0 bg-transparent py-0 pr-7 pl-2 text-gray-500 focus:ring-2 focus:ring-indigo-600 focus:ring-inset sm:text-sm"
-                    >
-                      <option>m</option>
-                      <option>km</option>
-                      <option>mi</option>
-                      <option>nmi</option>
-                    </select>
-                  </div>
-                </div>
-              </InputGroupTemplate>
-              <SimpleSelect
-                add-none
-                class="col-span-1"
-                label="Group"
-                v-model="editedRangeRing.group"
-                :items="groupItems"
-              />
+    <table v-if="rangeRings.length > 0" class="w-full divide-y divide-gray-300">
+        <thead>
+            <tr>
+                <th scope="col"
+                    class="py-3.5 pr-3 pl-4 text-left text-sm font-semibold whitespace-nowrap text-gray-900 sm:pl-0">
+                    Name
+                </th>
+                <th scope="col"
+                    class="px-2 py-3.5 text-left text-sm font-semibold whitespace-nowrap text-gray-900">
+                    Range
+                </th>
+                <th scope="col"
+                    class="w-20 px-2 py-3.5 text-left text-sm font-semibold whitespace-nowrap text-gray-900">
+                    Visible
+                </th>
+                <th scope="col"
+                    class="w-20 px-2 py-3.5 text-left text-sm font-semibold whitespace-nowrap text-gray-900">
+                    Group
+                </th>
+                <th class="w-0"></th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-200 bg-white">
+            <tr v-for="(ring, index) in rangeRings"
+                :key="ring.name"
+                @dblclick="!isLocked && editRing(index)"
+                class="group">
+                <template v-if="index === editedIndex">
+                    <td colspan="5">
+                        <form @submit.prevent.stop="updateRing()"
+                              class="mt-2 grid grid-cols-2 gap-4 rounded border border-gray-300 bg-gray-50 p-2 py-4">
+                            <InputGroup class="col-span-2"
+                                        autofocus
+                                        label="Name"
+                                        v-model="editedRangeRing.name"
+                                        :disabled="isLocked" />
 
-              <div class="col-span-2 flex items-center justify-between">
-                <Button
-                  type="button"
-                  variant="link"
-                  size="sm"
-                  @click="toeActions.goToAddGroup()"
-                >
-                  + Add new group
-                </Button>
-                <div>
-                  <Button type="submit" variant="secondary" size="sm">Update</Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    class="ml-2"
-                    @click="editedIndex = -1"
-                  >
-                    Cancel
-                  </Button>
-                </div>
-              </div>
-            </form>
-          </td>
-        </template>
-        <template v-else>
-          <td class="py-2 pr-3 pl-4 text-sm whitespace-nowrap text-gray-900 sm:pl-0">
-            {{ ring.name }}
-            <span v-if="ring._counter" class="text-gray-500">({{ ring._counter }})</span>
-          </td>
-          <td class="px-2 py-2 text-sm font-medium whitespace-nowrap text-gray-900">
-            {{ ring.range }} <span class="text-gray-800">{{ ring.uom || "km" }}</span>
-          </td>
-          <td class="relative">
-            <input
-              type="checkbox"
-              class="absolute top-1/2 left-6 -mt-2 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600 disabled:opacity-50"
-              :checked="!ring.hidden"
-              @change="toggleRingVisibility(ring, index)"
-              :disabled="isLocked"
-            />
-          </td>
-          <td class="px-2 text-sm">{{ getGroupName(ring) }}</td>
-          <td class="flex items-center">
-            <RingStylePopover
-              :ring-style="getRingStyle(ring)"
-              @update="updateRingStyle(ring, index, $event)"
-              :disabled="isLocked"
-            />
-            <DotsMenu
-              class="opacity-0 group-focus-within:opacity-100 group-hover:opacity-100"
-              :items="ringMenuItems"
-              @action="onRangeRingAction($event, index)"
-              portal
-            />
-          </td>
-        </template>
-      </tr>
-    </tbody>
-  </table>
+                            <!-- Range (existing) -->
+                            <InputGroupTemplate label="Range" v-slot="{ id }" class="col-span-1">
+                                <div class="relative rounded-md shadow-xs">
+                                    <input type="text"
+                                           :id="id"
+                                           class="block w-full rounded-md border-0 py-1.5 pr-20 text-gray-900 ring-1 ring-gray-300 ring-inset placeholder:text-gray-400 focus:ring-2 focus:ring-indigo-600 focus:ring-inset sm:text-sm sm:leading-6"
+                                           v-model="editedRangeRing.range"
+                                           :disabled="isLocked" />
+                                    <div class="absolute inset-y-0 right-0 flex items-center">
+                                        <label for="range" class="sr-only">Units</label>
+                                        <select id="range"
+                                                name="range"
+                                                v-model="editedRangeRing.uom"
+                                                class="h-full rounded-md border-0 bg-transparent py-0 pr-7 pl-2 text-gray-500 focus:ring-2 focus:ring-indigo-600 focus:ring-inset sm:text-sm"
+                                                :disabled="isLocked">
+                                            <option>m</option>
+                                            <option>km</option>
+                                            <option>mi</option>
+                                            <option>nmi</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </InputGroupTemplate>
+
+                            <!-- 🔹 NEW: Shape selector -->
+                            <InputGroupTemplate label="Shape" class="col-span-1">
+                                <SimpleSelect v-model="editedRangeRing.shape"
+                                              :items="[
+      { value: 'circle',   label: 'Circle (disc)' },
+      { value: 'square',   label: 'Square (column)' },
+      { value: 'ellipse',  label: 'Ellipse (column)' },
+      { value: 'sphere',   label: 'Sphere (volume)' },
+      { value: 'spheroid', label: 'Spheroid (volume)' },
+    ]"
+                                              :disabled="isLocked" />
+                            </InputGroupTemplate>
+
+                            <!-- 🔹 NEW: Secondary range -->
+                            <InputGroupTemplate v-if="editedRangeRing.shape === 'square' || editedRangeRing.shape === 'ellipse'"
+                                                label="Secondary range"
+                                                v-slot="{ id }"
+                                                class="col-span-1">
+                                <div class="relative rounded-md shadow-xs">
+                                    <input type="text"
+                                           :id="id"
+                                           class="block w-full rounded-md border-0 py-1.5 pr-20 text-gray-900 ring-1 ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-indigo-600 focus:ring-inset sm:text-sm sm:leading-6"
+                                           v-model.number="editedRangeRing.secondaryRange"
+                                           :disabled="isLocked" />
+                                    <div class="absolute inset-y-0 right-0 flex items-center">
+                                        <label class="sr-only">Units</label>
+                                        <select v-model="editedRangeRing.uom"
+                                                class="h-full rounded-md border-0 bg-transparent py-0 pr-7 pl-2 text-gray-500 focus:ring-2 focus:ring-indigo-600 focus:ring-inset sm:text-sm"
+                                                disabled>
+                                            <option>{{ editedRangeRing.uom }}</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </InputGroupTemplate>
+
+                            <!-- Vertical extent (existing) -->
+                            <InputGroupTemplate label="Vertical extent (m)" v-slot="{ id }" class="col-span-1">
+                                <input :id="id"
+                                       type="number"
+                                       min="0"
+                                       class="block w-full rounded-md border-0 py-1.5 text-gray-900 ring-1 ring-gray-300 ring-inset placeholder:text-gray-400 focus:ring-2 focus:ring-indigo-600 focus:ring-inset sm:text-sm sm:leading-6"
+                                       v-model.number="editedRangeRing.verticalMeters"
+                                       :disabled="isLocked" />
+                            </InputGroupTemplate>
+
+                            <SimpleSelect add-none
+                                          class="col-span-1"
+                                          label="Group"
+                                          v-model="editedRangeRing.group"
+                                          :items="groupItems"
+                                          :disabled="isLocked" />
+
+                            <div class="col-span-2 flex items-center justify-between">
+                                <Button type="button"
+                                        variant="link"
+                                        size="sm"
+                                        @click="toeActions.goToAddGroup()">
+                                    + Add new group
+                                </Button>
+                                <div>
+                                    <Button type="submit" variant="secondary" size="sm">Update</Button>
+                                    <Button variant="outline"
+                                            size="sm"
+                                            class="ml-2"
+                                            @click="editedIndex = -1">
+                                        Cancel
+                                    </Button>
+                                </div>
+                            </div>
+                        </form>
+
+                    </td>
+                </template>
+                <template v-else>
+                    <td class="py-2 pr-3 pl-4 text-sm whitespace-nowrap text-gray-900 sm:pl-0">
+                        {{ ring.name }}
+                        <span v-if="ring._counter" class="text-gray-500">({{ ring._counter }})</span>
+                    </td>
+                    <td class="px-2 py-2 text-sm font-medium whitespace-nowrap text-gray-900">
+                        {{ ring.range }} <span class="text-gray-800">{{ ring.uom || "km" }}</span>
+                    </td>
+                    <td class="relative">
+                        <input type="checkbox"
+                               class="absolute top-1/2 left-6 -mt-2 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600 disabled:opacity-50"
+                               :checked="!ring.hidden"
+                               @change="toggleRingVisibility(ring, index)"
+                               :disabled="isLocked" />
+                    </td>
+                    <td class="px-2 text-sm">{{ getGroupName(ring) }}</td>
+                    <td class="flex items-center">
+                        <RingStylePopover :ring-style="getRingStyle(ring)"
+                                          @update="updateRingStyle(ring, index, $event)"
+                                          :disabled="isLocked" />
+                        <DotsMenu class="ml-2"
+                                  :items="ringMenuItems"
+                                  @action="onRangeRingAction($event, index)"
+                                  portal />
+                    </td>
+                </template>
+            </tr>
+        </tbody>
+    </table>
 </template>

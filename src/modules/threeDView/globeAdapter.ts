@@ -40,6 +40,7 @@ import {
     applyGroupFillColors,
     applyGroupFillColorToUnit,
 } from "@/modules/threeDView/graphics/unitparser";
+import { convertToMetric } from "@/utils/convert";
 
 /* ─────────────────────────────── Utils ─────────────────────────────── */
 /** True if the unit should be hidden based on 2D store (side/group/unit flags). */
@@ -553,6 +554,7 @@ const unitMeta = new Map<string, UnitRenderable>();
 const lastFillHex = new Map<string, string | undefined>();
 let exaggerationFactor = 1;
 let groupColorIdx: Map<string | number, string> = new Map();
+const rangeRingEntities = new Map<string, Cesium.Entity>();
 
 /* filter state */
 let _unitFilter: (u: any) => boolean = () => true;
@@ -1273,97 +1275,426 @@ export function createGlobeAdapter(): GlobePort {
         setUnitsInner(_lastUnitsInput);
     }
 
-    /** Core: evaluate all units at time t and apply on/off map + sidc changes. */
-    function updateAllUnitsAtTime(tMs: number) {
-        if (!api) return;
-        const viewer = api.viewer;
-        const now = viewer?.clock?.currentTime;
+/** Resolve final style for a range ring, mirroring 2D logic:
+ *  - prefer ring.style
+ *  - else group style from store.state.rangeRingGroupMap[ring.group]?.style
+ *  - fall back to {}
+ */
+function resolveRangeRingStyle(ring: any): any {
+    if (!ring) return {};
+    // 1) Per-ring style wins
+    if (ring.style) return ring.style;
 
-        for (const [id, u] of unitMeta) {
-            const ent = entities.get(id) ?? viewer.entities.getById(id);
-            if (!ent) continue;
+    // 2) Fallback: group style (same source 2D uses)
+    try {
+        const sc = (window as any).__scenario;
+        const store = sc?.store ?? sc;
+        const groupId = ring.group;
+        if (groupId && store?.state?.rangeRingGroupMap) {
+            const groupStyle = store.state.rangeRingGroupMap[groupId]?.style;
+            if (groupStyle) return groupStyle;
+        }
+    } catch {
+        // ignore
+    }
 
-            // Respect filter + 2D hidden at all times
-            const passes = (_unitFilter ? _unitFilter(u) : true) && !isHidden2D(u);
-            if (!passes) {
-                if (ent.show !== false) ent.show = false;
-                continue;
-            }
+    // 3) Nothing found
+    return {};
+}
 
-            // Decide per events
-            const snap = computeSnapshot(u, tMs);
 
-            // Visibility toggle (location=null ⇒ off map)
-            // If we cannot determine a snapshot (no events + no base loc), we already fail-open above.
-            const prevOn = lastOnMap.get(id);
-            if (prevOn !== snap.onMap || prevOn == null) {
-                ent.show = snap.onMap;
-                lastOnMap.set(id, snap.onMap);
-            }
+function applyRangeRingsForSnapshot(
+  unitId: string,
+  u: UnitRenderable,
+  snap: SnapshotAtTime,
+  unitEnt: Cesium.Entity,
+  viewer: Cesium.Viewer,
+  now: Cesium.JulianDate | undefined,
+  unitMap: any,
+  activeRingIds: Set<string>,
+) {
+  if (!snap.onMap) return;
 
-            // If on-map, update position only for STATIC units.
-            // Dynamic units (CallbackProperty/SampledPositionProperty or getPositionAtTime) are driven by Cesium clock.
-            if (snap.onMap && typeof snap.lon === "number" && typeof snap.lat === "number") {
-                if (!hasDynamicPosition(u, ent)) {
-                    const wouldClamp = u.clampToGround !== false && u.alt == null;
-                    const treatAsAgl = u?.altIsAgl !== false;
-                    const baseAlt = u?.alt ?? 0;
-                    const h = wouldClamp ? 0 : (treatAsAgl ? scaledAlt(baseAlt) : baseAlt);
-                    setEntityPosition(ent, snap.lon, snap.lat, h);
-                }
-            }
+  const baseUnit: any = (u as any).__sourceUnit ?? unitMap?.[unitId] ?? u;
+  const rings: any[] = baseUnit?.rangeRings;
+  if (!Array.isArray(rings) || !rings.length) return;
 
-            // Apply SIDC changes (event-time authoritative)
-            const sidcEvt = snap.sidc ?? u.sidc;                // what *should* be active now
-            const prevSidc = lastSidc.get(id);                  // what we *think* is active
-            const sidcOnBillboard = sidcFromBillboard(ent);     // what the image actually encodes
+  // We still use snapshot for visibility, but we won't rely on it for motion.
+  const snapAlt = (snap as any)?.alt;
+  const baseAlt = snapAlt ?? u?.alt ?? 0;
 
-            // Update if event SIDC moved OR billboard isn’t actually showing it
-            if (sidcEvt && (sidcEvt !== prevSidc || sidcEvt !== sidcOnBillboard)) {
-                // Clear any memoized base so we don’t stick to an old data: URL
-                // (this nudges buildIconUrlSync/applySidcChange to rebuild a proper URL)
-                try { if (u.iconUrl && u.iconUrl.startsWith("data:")) u.iconUrl = undefined as any; } catch { }
+  const wouldClamp =
+    u?.clampToGround !== false &&
+    u?.alt == null &&
+    snapAlt == null;
 
-                applySidcChange(ent, u, sidcEvt, viewer, tMs);
+  const treatAsAgl = u?.altIsAgl !== false;
 
-                // Book-keeping so we only patch when the event SIDC actually changes
-                lastSidc.set(id, sidcEvt);
-                lastFillHex.delete(id);
-            }
+  const baseHeight =
+    wouldClamp ? 0 : (treatAsAgl ? scaledAlt(baseAlt) : baseAlt);
 
-            // ───────────────────── react to fill color changes (replace params) ─────────────────────
-            const curHex = normalizeHex(extractGroupFill(u));
-            const prevHex = lastFillHex.get(id);
+  const hRef = unitHeightRef({
+    ...u,
+    alt: snapAlt ?? u?.alt,
+  } as any);
 
-            if (curHex !== prevHex) {
-                const bb = ent.billboard as Cesium.BillboardGraphics | undefined;
+  for (let idx = 0; idx < rings.length; idx++) {
+    const ring = rings[idx];
+    if (!ring || ring.hidden) continue;
 
-                const resolveImage = (): string | undefined => {
-                    if (!bb) return undefined;
-                    const img: any = bb.image as any;
-                    if (typeof img === "string") return img;
-                    if (img && typeof img.getValue === "function") {
-                        try { return img.getValue(now); } catch { /* ignore */ }
-                    }
-                    return undefined;
-                };
+    const ringId = `rr:${unitId}:${ring.name ?? idx}`;
+    activeRingIds.add(ringId);
 
-                let imgUrl = resolveImage();
-                if (imgUrl && typeof imgUrl === "string") {
-                    const nextUrl = withSymbolColor(imgUrl, curHex) ?? imgUrl;
-                    (bb as any).image = nextUrl;
-                } else {
-                    // If we can't resolve a string URL, rebuild the billboard graphics safely
-                    applyBillboardGraphics(ent, u, viewer);
-                }
+    // Primary / secondary horizontal ranges (meters)
+    let primaryMeters = 0;
+    try {
+      primaryMeters = convertToMetric(ring.range, ring.uom || "km");
+    } catch {
+      primaryMeters = 0;
+    }
+    if (!primaryMeters || !isFinite(primaryMeters)) continue;
 
-                lastFillHex.set(id, curHex);
-            }
-            // ──────────────────── END: fill color change handling ────────────────────
+    let secondaryMeters = primaryMeters;
+    if (ring.secondaryRange != null) {
+      try {
+        secondaryMeters = convertToMetric(ring.secondaryRange, ring.uom || "km");
+      } catch {
+        secondaryMeters = primaryMeters;
+      }
+    }
+
+    // Vertical extent used for extruded *columns* (circle / ellipse / square)
+    const rawVertical = (ring.verticalMeters ?? 0) as number;
+    const columnVertical =
+      rawVertical > 0
+        ? (treatAsAgl ? scaledAlt(rawVertical) : rawVertical)
+        : 0;
+
+    const extrudedHeight =
+      columnVertical > 0 ? baseHeight + columnVertical : undefined;
+
+    // Get or create the *ring* entity (separate from the unit entity)
+    let ringEnt = rangeRingEntities.get(ringId);
+    if (!ringEnt) {
+      ringEnt = viewer.entities.add({ id: ringId });
+      rangeRingEntities.set(ringId, ringEnt);
+    }
+
+    // Style — keep in sync with 2D semantics
+    const style = resolveRangeRingStyle(ring) as any;
+
+    const strokeCss =
+      style.stroke ??
+      style.color ??
+      "red";
+
+    const strokeOpacity =
+      typeof style.strokeOpacity === "number"
+        ? style.strokeOpacity
+        : typeof style.opacity === "number"
+        ? style.opacity
+        : 1.0;
+
+    const outlineWidth =
+      typeof style.width === "number" ? style.width : 2;
+
+    const hasExplicitNoFill = style.fill === null;
+    const fillCss =
+      hasExplicitNoFill
+        ? null
+        : (style.fill ?? strokeCss);
+
+    const fillOpacity =
+      typeof style.fillOpacity === "number"
+        ? style.fillOpacity
+        : typeof style.opacity === "number"
+        ? style.opacity
+        : 0.15;
+
+    const outlineColor = Color.fromCssColorString(strokeCss).withAlpha(strokeOpacity);
+
+    const fillColor = fillCss
+      ? Color.fromCssColorString(fillCss).withAlpha(fillOpacity)
+      : Color.fromCssColorString(strokeCss).withAlpha(0); // no fill
+
+    const shape = ring.shape ?? "circle";
+
+    // 🔹 Make this ring's center follow the unit entity every frame
+    if (!(ringEnt as any).__followUnitCenter) {
+      const unitPosProp = unitEnt.position as any;
+      ringEnt.position = new CallbackProperty((time: JulianDate) => {
+        if (!unitPosProp) return undefined;
+
+        let p: any;
+        try {
+          p = typeof unitPosProp.getValue === "function"
+            ? unitPosProp.getValue(time)
+            : unitPosProp;
+        } catch {
+          p = unitPosProp;
+        }
+        if (!p) return undefined;
+
+        // For spheres/spheroids: peg geometric center to terrain at the unit's lon/lat
+        if (shape === "sphere" || shape === "spheroid") {
+          const carto = Cartographic.fromCartesian(p);
+          let h = viewer.scene.globe.getHeight(carto);
+          if (!Number.isFinite(h)) h = carto.height; // fallback
+          return Cartesian3.fromRadians(carto.longitude, carto.latitude, h);
         }
 
-        viewer.scene.requestRender?.();
+        // For flat rings & columns: just follow the unit position as-is
+        return p;
+      }, false);
+      (ringEnt as any).__followUnitCenter = true;
     }
+
+    // ──────────────────────────────
+    // A. Square → RectangleGraphics (column)
+    //    (coordinates are fixed in WGS84; will not translate with position)
+    //    For now, we keep the footprint static; we can revisit dynamic squares later.
+    // ──────────────────────────────
+    if (shape === "square") {
+      // We still base the footprint on the current snapshot location
+      const lon = snap.lon!;
+      const lat = snap.lat!;
+
+      const R = 6378137; // WGS84
+      const latRad = (lat * Math.PI) / 180;
+
+      const metersToLatDeg = (m: number) => (m / R) * (180 / Math.PI);
+      const metersToLonDeg = (m: number) =>
+        (m / (R * Math.cos(latRad))) * (180 / Math.PI);
+
+      const halfX = primaryMeters;
+      const halfY = secondaryMeters;
+
+      const dLatN = metersToLatDeg(+halfY);
+      const dLatS = -dLatN;
+      const dLonE = metersToLonDeg(+halfX);
+      const dLonW = -dLonE;
+
+      const south = lat + dLatS;
+      const north = lat + dLatN;
+      const west = lon + dLonW;
+      const east = lon + dLonE;
+
+      const rect = Cesium.Rectangle.fromDegrees(west, south, east, north);
+
+      const rectangle = new Cesium.RectangleGraphics({
+        coordinates: rect,
+        height: baseHeight,
+        extrudedHeight,
+        heightReference: hRef,
+        extrudedHeightReference: hRef,
+        material: fillColor,
+        outline: true,
+        outlineColor,
+        outlineWidth,
+      });
+
+      (ringEnt as any).ellipse = undefined;
+      (ringEnt as any).rectangle = rectangle;
+      (ringEnt as any).ellipsoid = undefined;
+      ringEnt.show = true;
+      continue;
+    }
+
+    // ──────────────────────────────
+    // B. Sphere / spheroid → EllipsoidGraphics
+    //    (center pegged to terrain via the callback above)
+    // ──────────────────────────────
+    if (shape === "sphere" || shape === "spheroid") {
+      const radiusX = primaryMeters;
+      const radiusY =
+        shape === "spheroid" ? secondaryMeters : primaryMeters;
+
+      const verticalRadius =
+        typeof ring.verticalMeters === "number" && ring.verticalMeters > 0
+          ? ring.verticalMeters
+          : primaryMeters;
+
+      const radii = new Cesium.Cartesian3(
+        radiusX,
+        radiusY,
+        verticalRadius,
+      );
+
+      const ellipsoid = new Cesium.EllipsoidGraphics({
+        radii,
+        material: fillColor,
+        fill: true,
+        outline: true,
+        outlineColor,
+        outlineWidth,
+      });
+
+      (ringEnt as any).ellipse = undefined;
+      (ringEnt as any).rectangle = undefined;
+      (ringEnt as any).ellipsoid = ellipsoid;
+      ringEnt.show = true;
+      continue;
+    }
+
+    // ──────────────────────────────
+    // C. Circle / ellipse → EllipseGraphics (flat / column)
+    //     Center follows unit via ringEnt.position callback
+    // ──────────────────────────────
+    const semiMajor = primaryMeters;
+    const semiMinor =
+      shape === "ellipse" ? secondaryMeters : primaryMeters;
+
+    const ellipse = new Cesium.EllipseGraphics({
+      semiMajorAxis: semiMajor,
+      semiMinorAxis: semiMinor,
+      height: baseHeight,
+      extrudedHeight,
+      heightReference: hRef,
+      extrudedHeightReference: hRef,
+      material: fillColor,
+      outline: true,
+      outlineColor,
+      outlineWidth,
+    });
+
+    (ringEnt as any).ellipse = ellipse;
+    (ringEnt as any).rectangle = undefined;
+    (ringEnt as any).ellipsoid = undefined;
+    ringEnt.show = true;
+  }
+}
+
+
+
+function cleanupRangeRings(viewer: Cesium.Viewer, activeIds: Set<string>) {
+  for (const [rid, ent] of rangeRingEntities) {
+    if (!activeIds.has(rid)) {
+      // Do NOT remove the entity – just hide it.
+      // This keeps a stable Cesium.Entity per (unit, ring) across the scenario.
+      ent.show = false;
+    }
+  }
+}
+
+
+    /** Core: evaluate all units at time t and apply on/off map + sidc changes. */
+function updateAllUnitsAtTime(tMs: number) {
+    if (!api) return;
+    const viewer = api.viewer;
+    const now = viewer?.clock?.currentTime;
+
+    // Track which ring entity ids are still valid this tick
+    const activeRingIds = new Set<string>();
+
+    // Recover the scenario unitMap once
+    let store: any;
+    try {
+        const sc = (window as any).__scenario;
+        store = sc?.store ?? sc;
+    } catch {
+        store = null;
+    }
+    const unitMap = store?.unitMap ?? store?.state?.unitMap ?? {};
+
+    for (const [id, u] of unitMeta) {
+        const ent = entities.get(id) ?? viewer.entities.getById(id);
+        if (!ent) continue;
+
+        // Respect filter + 2D hidden at all times
+        const passes = (_unitFilter ? _unitFilter(u) : true) && !isHidden2D(u);
+        if (!passes) {
+            if (ent.show !== false) ent.show = false;
+            continue;
+        }
+
+        // Decide per events
+        const snap = computeSnapshot(u, tMs);
+
+        // Visibility toggle (location=null ⇒ off map)
+        const prevOn = lastOnMap.get(id);
+        if (prevOn !== snap.onMap || prevOn == null) {
+            ent.show = snap.onMap;
+            lastOnMap.set(id, snap.onMap);
+        }
+
+        // If on-map, update position only for STATIC units.
+        if (snap.onMap && typeof snap.lon === "number" && typeof snap.lat === "number") {
+            if (!hasDynamicPosition(u, ent)) {
+                const wouldClamp = u.clampToGround !== false && u.alt == null;
+                const treatAsAgl = u?.altIsAgl !== false;
+                const baseAlt = u?.alt ?? 0;
+                const h = wouldClamp ? 0 : (treatAsAgl ? scaledAlt(baseAlt) : baseAlt);
+                setEntityPosition(ent, snap.lon, snap.lat, h);
+            }
+        }
+
+        // Apply SIDC changes (event-time authoritative)
+        const sidcEvt = snap.sidc ?? (u as any).sidc;
+        const prevSidc = lastSidc.get(id);
+        const sidcOnBillboard = sidcFromBillboard(ent, now);
+
+        if (sidcEvt && (sidcEvt !== prevSidc || sidcEvt !== sidcOnBillboard)) {
+            // Clear any memoized base so we don’t stick to an old data: URL
+            try {
+                if (u.iconUrl && u.iconUrl.startsWith("data:")) {
+                    (u as any).iconUrl = undefined as any;
+                }
+            } catch { /* ignore */ }
+
+            applySidcChange(ent, u, sidcEvt, viewer, tMs);
+
+            // Book-keeping so we only patch when the event SIDC actually changes
+            lastSidc.set(id, sidcEvt);
+            lastFillHex.delete(id);
+        }
+
+        // React to fill color changes (replace params)
+        const curHex = normalizeHex(extractGroupFill(u));
+        const prevHex = lastFillHex.get(id);
+
+        if (curHex !== prevHex) {
+            const bb = ent.billboard as Cesium.BillboardGraphics | undefined;
+
+            const resolveImage = (): string | undefined => {
+                if (!bb) return undefined;
+                const img: any = bb.image;
+                if (typeof img === "string") return img;
+                if (img && typeof img.getValue === "function") {
+                    try { return img.getValue(now); } catch { }
+                }
+                return undefined;
+            };
+
+            let imgUrl = resolveImage();
+            if (imgUrl && typeof imgUrl === "string") {
+                const nextUrl = withSymbolColor(imgUrl, curHex) ?? imgUrl;
+                (bb as any).image = nextUrl;
+            } else {
+                // If we can't resolve a string URL, rebuild the billboard graphics safely
+                applyBillboardGraphics(ent, u, viewer);
+            }
+
+            lastFillHex.set(id, curHex);
+        }
+
+        // 🔹 NEW: range rings around this unit
+        applyRangeRingsForSnapshot(
+            id,
+            u,
+            snap,
+            ent,       // 🔹 pass the unit entity
+            viewer,
+            now,       // 🔹 pass the Cesium time actually driving billboards
+            unitMap,
+            activeRingIds,
+        );
+    }
+
+    // Remove any ring entities no longer associated with active units/rings
+    cleanupRangeRings(viewer, activeRingIds);
+
+    viewer.scene.requestRender?.();
+}
 
     return {
         async mount(el) {
@@ -1377,13 +1708,14 @@ export function createGlobeAdapter(): GlobePort {
                 });
 
             api = await useGlobe(el, { imageryProvider: base });
-            refreshGroupIndexFromScenario();
-            wx = new WeatherSkyController(api.viewer);
+refreshGroupIndexFromScenario();
+wx = new WeatherSkyController(api.viewer);
 
-            api.viewer.scene.globe.depthTestAgainstTerrain = true;
+api.viewer.scene.globe.depthTestAgainstTerrain = true;
 
-            // publish viewer + maps for the console
-            publishDebug(api.viewer);
+// publish viewer + maps for the console
+publishDebug(api.viewer);
+
 
             try {
                 (window as any).MentatDebugSIDC = (id?: string) => {
@@ -1728,26 +2060,6 @@ export function createGlobeAdapter(): GlobePort {
         refreshVisibility: reapplyVisibility,
     };
 }
-
-// ── Debug exports (viewer, maps, helpers) ─────────────────────────────
-try {
-    const prev = (window as any).MentatGlobeAdapterDebug ?? {};
-    Object.assign(prev, {
-        getCounts: () => ({
-            entities: api!.viewer.entities.values.length,
-            rawCount: (window as any).__mentatLastSetUnits?.rawCount ?? null,
-            filteredCount: (window as any).__mentatLastSetUnits?.filteredCount ?? null,
-            sample: (window as any).__mentatLastSetUnits?.sample ?? null,
-        }),
-        tick: (tMs: number) => updateAllUnitsAtTime(tMs),
-
-        // NEW: expose internals so we can actually inspect units by id
-        _unitMeta: unitMeta,
-        _entities: entities,
-        viewer: api!.viewer,
-    });
-    (window as any).MentatGlobeAdapterDebug = prev;
-} catch { }
 
 // OPTIONAL: a one-liner inspector you can call from the console
 try {

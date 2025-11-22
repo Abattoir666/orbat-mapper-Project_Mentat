@@ -1,4 +1,4 @@
-import VectorLayer from "ol/layer/Vector";
+﻿import VectorLayer from "ol/layer/Vector";
 import VectorSource from "ol/source/Vector";
 import { injectStrict } from "@/utils";
 import { activeScenarioKey } from "@/components/injects";
@@ -60,23 +60,108 @@ export function useRangeRingsLayer() {
   return { rangeLayer: layer, drawRangeRings };
 }
 
+function buildRangeRingFeature(unit: NUnit, r: any, i: number) {
+  // Default shape
+  const rawShape = r.shape ?? "circle";
+
+  // 2D/top-down interpretation:
+  //  - sphere → circle
+  //  - spheroid → ellipse
+  const shape =
+    rawShape === "sphere"
+      ? "circle"
+      : rawShape === "spheroid"
+      ? "ellipse"
+      : rawShape;
+
+  const center = unit._state!.location!;
+  const [lon, lat] = center as [number, number];
+
+  const primaryM = convertToMetric(r.range, r.uom || "km");
+  const secondaryM =
+    r.secondaryRange != null
+      ? convertToMetric(r.secondaryRange, r.uom || "km")
+      : primaryM;
+
+  const props = {
+    id: r.group ? r.group : `${unit.id}-${i}`,
+    isGroup: !!r.group,
+  };
+
+  // Circle: keep existing Turf circle behavior
+  if (shape === "circle") {
+    return circle(center, primaryM / 1000, { properties: props });
+  }
+
+  // Common helpers for square/ellipse
+  const R = 6378137; // WGS-84 Earth radius (m)
+  const latRad = (lat * Math.PI) / 180;
+
+  const metersToLatDeg = (m: number) => (m / R) * (180 / Math.PI);
+  const metersToLonDeg = (m: number) =>
+    (m / (R * Math.cos(latRad))) * (180 / Math.PI);
+
+  // ── Case 2: Square (axis-aligned) ──
+  if (shape === "square") {
+    // Treat primary/secondary as half-side lengths in meters
+    const halfX = primaryM;
+    const halfY = secondaryM;
+
+    const dLatN = metersToLatDeg(+halfY);
+    const dLatS = -dLatN;
+    const dLonE = metersToLonDeg(+halfX);
+    const dLonW = -dLonE;
+
+    const coords: [number, number][] = [
+      [lon + dLonW, lat + dLatS], // SW
+      [lon + dLonE, lat + dLatS], // SE
+      [lon + dLonE, lat + dLatN], // NE
+      [lon + dLonW, lat + dLatN], // NW
+      [lon + dLonW, lat + dLatS], // close ring
+    ];
+
+    return {
+      type: "Feature",
+      geometry: {
+        type: "Polygon",
+        coordinates: [coords],
+      },
+      properties: props,
+    } as any;
+  }
+
+  // ── Case 3: Ellipse (axis-aligned) ──
+  // Used for both "ellipse" and "spheroid"
+  const steps = 64;
+  const coords: [number, number][] = [];
+
+  for (let j = 0; j <= steps; j++) {
+    const theta = (2 * Math.PI * j) / steps;
+
+    // primaryM = semi-major (E/W), secondaryM = semi-minor (N/S)
+    const dx = primaryM * Math.cos(theta); // meters east
+    const dy = secondaryM * Math.sin(theta); // meters north
+
+    const dLat = metersToLatDeg(dy);
+    const dLon = metersToLonDeg(dx);
+
+    coords.push([lon + dLon, lat + dLat]);
+  }
+
+  return {
+    type: "Feature",
+    geometry: {
+      type: "Polygon",
+      coordinates: [coords],
+    },
+    properties: props,
+  } as any;
+}
+
 function createRangeRings(unit: NUnit) {
   return (
     unit.rangeRings
-      ?.map((r, i) =>
-        !r.hidden
-          ? circle(
-              unit._state!.location!,
-              convertToMetric(r.range, r.uom || "km") / 1000,
-              {
-                properties: {
-                  id: r.group ? r.group : `${unit.id}-${i}`,
-                  isGroup: !!r.group,
-                },
-              },
-            )
-          : null,
-      )
+      ?.map((r, i) => (!r.hidden ? buildRangeRingFeature(unit, r, i) : null))
       .filter((e) => e !== null) || []
   );
 }
