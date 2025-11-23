@@ -77,21 +77,75 @@ function buildRangeRingFeature(unit: NUnit, r: any, i: number) {
   const center = unit._state!.location!;
   const [lon, lat] = center as [number, number];
 
-  const primaryM = convertToMetric(r.range, r.uom || "km");
+  // ── New: outer & inner radii in meters ──
+  const outerM = convertToMetric(r.range, r.uom || "km");
+  const minRaw =
+    r.minRange != null
+      ? convertToMetric(r.minRange, r.uom || "km")
+      : 0;
+
+  // clamp so 0 ≤ inner ≤ outer
+  const innerM = Math.max(0, Math.min(minRaw, outerM));
+
+  // secondary range follows old semantics: "other axis" for square/ellipse
   const secondaryM =
     r.secondaryRange != null
       ? convertToMetric(r.secondaryRange, r.uom || "km")
-      : primaryM;
+      : outerM;
 
   const props = {
     id: r.group ? r.group : `${unit.id}-${i}`,
     isGroup: !!r.group,
   };
 
-  // Circle: keep existing Turf circle behavior
+  // ──────────────────────────────
+  // Case 1: Circle (possibly donut)
+  //   - We avoid Turf.difference because it is fragile.
+  //   - Instead we build a polygon with a hole:
+  //       coordinates: [outerRing, innerRingReversed]
+  // ──────────────────────────────
   if (shape === "circle") {
-    return circle(center, primaryM / 1000, { properties: props });
+    const outer = circle(center, outerM / 1000, { properties: props });
+
+    // Safety: if no inner radius or inner >= outer, just draw a solid disk.
+    const EPS = 1e-3;
+    if (innerM <= 0 || innerM >= outerM - EPS) {
+      return outer;
+    }
+
+    const inner = circle(center, innerM / 1000, { properties: props });
+
+    const outerCoords: any =
+      (outer as any).geometry?.coordinates?.[0] ?? (outer as any).geometry?.coordinates;
+    const innerCoords: any =
+      (inner as any).geometry?.coordinates?.[0] ?? (inner as any).geometry?.coordinates;
+
+    // If we can't get usable coordinates, fall back to solid disk.
+    if (
+      !outerCoords ||
+      !innerCoords ||
+      !Array.isArray(outerCoords) ||
+      !Array.isArray(innerCoords)
+    ) {
+      return outer;
+    }
+
+    // Build a polygon with a hole: [outerRing, innerRingReversed]
+    const donut: any = {
+      type: "Feature",
+      geometry: {
+        type: "Polygon",
+        coordinates: [
+          outerCoords,                // outer boundary
+          [...innerCoords].reverse(), // inner hole, reversed for proper winding
+        ],
+      },
+      properties: props,
+    };
+
+    return donut;
   }
+
 
   // Common helpers for square/ellipse
   const R = 6378137; // WGS-84 Earth radius (m)
@@ -101,10 +155,12 @@ function buildRangeRingFeature(unit: NUnit, r: any, i: number) {
   const metersToLonDeg = (m: number) =>
     (m / (R * Math.cos(latRad))) * (180 / Math.PI);
 
-  // ── Case 2: Square (axis-aligned) ──
+  // ──────────────────────────────
+  // Case 2: Square (axis-aligned)
+  // ──────────────────────────────
   if (shape === "square") {
-    // Treat primary/secondary as half-side lengths in meters
-    const halfX = primaryM;
+    // Treat outerM / secondaryM as half-side lengths in meters
+    const halfX = outerM;
     const halfY = secondaryM;
 
     const dLatN = metersToLatDeg(+halfY);
@@ -130,16 +186,18 @@ function buildRangeRingFeature(unit: NUnit, r: any, i: number) {
     } as any;
   }
 
-  // ── Case 3: Ellipse (axis-aligned) ──
-  // Used for both "ellipse" and "spheroid"
+  // ──────────────────────────────
+  // Case 3: Ellipse (axis-aligned)
+  // Used for both "ellipse" and "spheroid" in top-down 2D
+  // ──────────────────────────────
   const steps = 64;
   const coords: [number, number][] = [];
 
   for (let j = 0; j <= steps; j++) {
     const theta = (2 * Math.PI * j) / steps;
 
-    // primaryM = semi-major (E/W), secondaryM = semi-minor (N/S)
-    const dx = primaryM * Math.cos(theta); // meters east
+    // outerM = semi-major (E/W), secondaryM = semi-minor (N/S)
+    const dx = outerM * Math.cos(theta); // meters east
     const dy = secondaryM * Math.sin(theta); // meters north
 
     const dLat = metersToLatDeg(dy);
@@ -157,6 +215,8 @@ function buildRangeRingFeature(unit: NUnit, r: any, i: number) {
     properties: props,
   } as any;
 }
+
+
 
 function createRangeRings(unit: NUnit) {
   return (

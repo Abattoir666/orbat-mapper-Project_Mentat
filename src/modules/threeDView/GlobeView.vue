@@ -30,7 +30,8 @@
         import("@/stores/selectedStore").then(m => m.useSelectedItems);
     import type { NScenarioEvent } from "@/types/internalModels";
     import CompassWidget from "./widgets/CompassWidget.vue";
-    import PlaybackMenu from "@/modules/scenarioeditor/PlaybackMenu.vue";
+import MeasureWidget from "./widgets/MeasureWidget.vue";
+import PlaybackMenu from "@/modules/scenarioeditor/PlaybackMenu.vue";
 
     /* ───────────────── Globe port + mount target ───────────────── */
 
@@ -49,6 +50,11 @@
     const showCompass = ref(false);
     function openCompass() { showCompass.value = true; }
     function closeCompass() { showCompass.value = false; }
+
+    // Measure tool: open/close via button + close icon in widget
+const showMeasure = ref(false);
+function openMeasure() { showMeasure.value = true; }
+function closeMeasure() { showMeasure.value = false; }
 
     const globeApi = g;
     const mount = (port as any).mount as (el: HTMLDivElement) => Promise<void>;
@@ -1084,6 +1090,21 @@
                              title="Click to hide compass">
                             <CompassWidget :globe="g" />
                         </div>
+                        <!-- Measure tool -->
+                        <div style="display:flex; align-items:center; gap:8px; flex-wrap: wrap;">
+                            <button v-if="!showMeasure"
+                                    @click="openMeasure"
+                                    class="measure-trigger"
+                                    title="Measure distances">
+                                📏 Measure
+                            </button>
+
+                            <div v-else
+                                 class="measure-pop"
+                                 @click.stop>
+                                <MeasureWidget :globe="g" @close="closeMeasure" />
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1400,6 +1421,26 @@
         .compass-trigger span {
             transition: opacity .15s ease;
         }
+
+    .measure-pop {
+        display: inline-flex;
+        padding: 4px;
+        border-radius: 8px;
+        background: rgba(0,0,0,0.35);
+        border: 1px solid rgba(255,255,255,0.25);
+        box-shadow: 0 2px 10px rgba(0,0,0,.45);
+    }
+
+    .measure-trigger {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+        .measure-trigger span {
+            transition: opacity .15s ease;
+        }
+
 
     /* --- Jump to time block --- */
     .jump-row {

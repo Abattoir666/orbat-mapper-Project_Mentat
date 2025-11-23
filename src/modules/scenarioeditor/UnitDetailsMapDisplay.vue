@@ -47,8 +47,11 @@ const editedRangeRing = ref<RangeRing>({
   uom: "km",
   group: undefined,
   verticalMeters: 0,
-  shape: "circle",          // NEW
-  secondaryRange: null,     // NEW
+  shape: "circle",
+  secondaryRange: null,
+  minRange: 0,
+  minVerticalMeters: 0,
+  maxVerticalMeters: 0,
 });
 
 const originalRangeRing = ref<RangeRing | null>(null);
@@ -117,11 +120,19 @@ const ringMenuItems = computed((): MenuItemData<RangeRingAction>[] => [
 
 function addRangeRing() {
   const defaultRing: RangeRing = {
-    name: "New range ring-3 " + nanoid(3),
-    range: 20,
-    uom: "km",
-    group: null,
-  };
+  name: "New range ring-3 " + nanoid(3),
+  range: 20,
+  uom: "km",
+  group: null,
+  // no donut hole by default
+  minRange: 0,
+  // flat at ground unless user edits:
+  minVerticalMeters: 0,
+  maxVerticalMeters: 0,
+  verticalMeters: 0,
+  shape: "circle",
+  secondaryRange: null,
+};
   if (props.isMultiMode && selectedUnitIds.value.size > 1) {
     store.groupUpdate(() => {
       selectedUnitIds.value.forEach((unitId) => {
@@ -212,6 +223,9 @@ function updateRing() {
     verticalMeters,
     shape,
     secondaryRange,
+    minRange,
+    minVerticalMeters,
+    maxVerticalMeters,
   } = editedRangeRing.value;
 
   updateRangeRingOrRings(
@@ -222,12 +236,24 @@ function updateRing() {
       range: +range,
       uom,
       group,
-      verticalMeters: +verticalMeters,
+      verticalMeters: verticalMeters != null ? +verticalMeters : undefined,
       shape: shape ?? "circle",
       secondaryRange:
         secondaryRange != null && !Number.isNaN(+secondaryRange)
           ? +secondaryRange
           : null,
+      minRange:
+        minRange != null && !Number.isNaN(+minRange)
+          ? Math.max(0, +minRange)
+          : 0,
+      minVerticalMeters:
+        minVerticalMeters != null && !Number.isNaN(+minVerticalMeters)
+          ? Math.max(0, +minVerticalMeters)
+          : 0,
+      maxVerticalMeters:
+        maxVerticalMeters != null && !Number.isNaN(+maxVerticalMeters)
+          ? Math.max(0, +maxVerticalMeters)
+          : 0,
     },
     { addIfNameDoesNotExists: true },
   );
@@ -241,8 +267,12 @@ function updateRing() {
     verticalMeters: 0,
     shape: "circle",
     secondaryRange: null,
+    minRange: 0,
+    minVerticalMeters: 0,
+    maxVerticalMeters: 0,
   };
 }
+
 
 function updateRingStyle(ring: RangeRing, index: number, style: Partial<RangeRingStyle>) {
   if (ring.group) {
@@ -391,15 +421,65 @@ function updateVisibilityStyle(style: Partial<VisibilityStyleSpec>) {
                                 </div>
                             </InputGroupTemplate>
 
-                            <!-- Vertical extent (existing) -->
-                            <InputGroupTemplate label="Vertical extent (m)" v-slot="{ id }" class="col-span-1">
+                            <!-- Inner range (optional donut hole) -->
+                            <InputGroupTemplate label="Inner range" v-slot="{ id }" class="col-span-1">
+                                <div class="relative rounded-md shadow-xs">
+                                    <input :id="id"
+                                           type="number"
+                                           min="0"
+                                           class="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm
+             ring-1 ring-inset ring-gray-300 placeholder:text-gray-400
+             focus:ring-2 focus:ring-indigo-600 focus:ring-inset sm:text-sm sm:leading-6"
+                                           v-model.number="editedRangeRing.minRange"
+                                           :disabled="isLocked" />
+                                    <div class="absolute inset-y-0 right-0 flex items-center">
+                                        <label class="sr-only">Units</label>
+                                        <select v-model="editedRangeRing.uom"
+                                                class="h-full rounded-md border-0 bg-transparent py-0 pr-7 text-gray-500
+               focus:ring-2 focus:ring-indigo-600 focus:ring-inset sm:text-sm"
+                                                disabled>
+                                            <option>{{ editedRangeRing.uom }}</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </InputGroupTemplate>
+
+                            <!-- Floor AGL (m) -->
+                            <InputGroupTemplate label="Floor AGL (m)" v-slot="{ id }" class="col-span-1">
                                 <input :id="id"
                                        type="number"
                                        min="0"
-                                       class="block w-full rounded-md border-0 py-1.5 text-gray-900 ring-1 ring-gray-300 ring-inset placeholder:text-gray-400 focus:ring-2 focus:ring-indigo-600 focus:ring-inset sm:text-sm sm:leading-6"
+                                       class="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm
+           ring-1 ring-inset ring-gray-300 placeholder:text-gray-400
+           focus:ring-2 focus:ring-indigo-600 focus:ring-inset sm:text-sm sm:leading-6"
+                                       v-model.number="editedRangeRing.minVerticalMeters"
+                                       :disabled="isLocked" />
+                            </InputGroupTemplate>
+
+                            <!-- Ceiling AGL (m) -->
+                            <InputGroupTemplate label="Ceiling AGL (m)" v-slot="{ id }" class="col-span-1">
+                                <input :id="id"
+                                       type="number"
+                                       min="0"
+                                       class="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm
+           ring-1 ring-inset ring-gray-300 placeholder:text-gray-400
+           focus:ring-2 focus:ring-indigo-600 focus:ring-inset sm:text-sm sm:leading-6"
+                                       v-model.number="editedRangeRing.maxVerticalMeters"
+                                       :disabled="isLocked" />
+                            </InputGroupTemplate>
+
+                            <!-- (Optional) legacy vertical thickness -->
+                            <InputGroupTemplate label="Thickness (m, legacy)" v-slot="{ id }" class="col-span-1">
+                                <input :id="id"
+                                       type="number"
+                                       min="0"
+                                       class="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm
+           ring-1 ring-inset ring-gray-300 placeholder:text-gray-400
+           focus:ring-2 focus:ring-indigo-600 focus:ring-inset sm:text-sm sm:leading-6"
                                        v-model.number="editedRangeRing.verticalMeters"
                                        :disabled="isLocked" />
                             </InputGroupTemplate>
+
 
                             <SimpleSelect add-none
                                           class="col-span-1"

@@ -41,51 +41,70 @@ import {
     applyGroupFillColorToUnit,
 } from "@/modules/threeDView/graphics/unitparser";
 import { convertToMetric } from "@/utils/convert";
+import { buildSphericalShellPrimitive } from "./geo/sphericalShellPrimitive";
 
-/* ─────────────────────────────── Utils ─────────────────────────────── */
-/** True if the unit should be hidden based on 2D store (side/group/unit flags). */
+
+/** True if the unit should be hidden in 3D based ONLY on side/group visibility.
+ *  We deliberately do NOT filter on "has current location" here, because
+ *  time-based on/off-map is handled by updateAllUnitsAtTime(…) via computeSnapshot.
+ */
 function isHidden2D(u: any): boolean {
     try {
         const sc = (window as any).__scenario;
         const store = sc?.store ?? sc;
         if (!store || !u) return false;
 
-        const unitMap = store.unitMap ?? store.state?.unitMap ?? {};
-        const unitById = (id: any) =>
-            unitMap?.[id] ?? (Object.values(unitMap).find((x: any) => x?.id === id) || null);
+        const base = (u as any).__sourceUnit ?? u;
+        const id = base?.id ?? u?.id;
+        if (!id) return false;
 
-        const base = (u as any).__sourceUnit ?? unitById(u.id) ?? u;
+        // Use the same state maps 2D uses for side/group visibility
+        const state = (store as any).state ?? store;
+        const sideGroupMap = state?.sideGroupMap;
+        const sideMap = state?.sideMap;
+        const unitMap = state?.unitMap;
 
-        const sideMap = store.sideMap ?? store.state?.sideMap ?? {};
-        const groupMap = store.groupMap ?? store.state?.groupMap ?? {};
-        const byId = (map: any, id: any) =>
-            (map && (map[id] || Object.values(map).find((x: any) => x?.id === id))) || null;
-
-        const sid =
-            base._sid ?? base.sideId ?? base?.side?.id ?? base.side ??
-            u._sid ?? u.sideId ?? u?.side?.id ?? u.side;
-        const side = sid ? byId(sideMap, sid) : null;
-        if (side?.isHidden === true) return true;
-
-        let gid =
-            base._gid ?? base.groupId ?? base?.group?.id ?? base.group ??
-            u._gid ?? u.groupId ?? u?.group?.id ?? u.group;
-        while (gid) {
-            const g = byId(groupMap, gid);
-            if (!g) break;
-            if (g.isHidden === true) return true;
-            gid = g.parentId ?? g._pid ?? g.parentGroupId ?? null;
+        if (!sideGroupMap || !sideMap || !unitMap) {
+            // If we can't see the same structures 2D uses, don't hide anything.
+            return false;
         }
 
-        return !!(
-            base._hidden || base.hidden || base?._state?.isHidden || base?.state?.isHidden ||
-            u._hidden || u.hidden || u?._state?.isHidden || u?.state?.isHidden
-        );
+        const unit = unitMap[id] ?? base;
+
+        // Rebuild the "hiddenGroups" logic from geo.ts:
+        //   hiddenGroups = groups where group.isHidden || side[group._pid].isHidden
+        const gid =
+            unit._gid ??
+            unit.groupId ??
+            unit.group?.id ??
+            (base as any)._gid ??
+            (base as any).groupId ??
+            (base as any).group?.id;
+
+        // If the unit has no group, don't treat it as hidden here;
+        // its on/off-map is controlled purely by event/location logic.
+        if (!gid) {
+            return false;
+        }
+
+        const group = sideGroupMap[gid];
+        if (!group) {
+            return false;
+        }
+
+        const parentSide = sideMap[group._pid];
+        const groupHidden = !!group.isHidden;
+        const sideHidden = !!parentSide?.isHidden;
+
+        // 3D-hidden ⇔ side/group is hidden. Location is dealt with per-time-tick.
+        return groupHidden || sideHidden;
     } catch {
         return false;
     }
 }
-try { (window as any).isHidden2D = isHidden2D; } catch { }
+
+// Keep the debug export lines as they are:
+try { (window as any).isHidden2D = isHidden2D; } catch {}
 
 try {
     (window as any).lastSidcAtOrBefore = lastSidcAtOrBefore;
@@ -1212,14 +1231,6 @@ export function createGlobeAdapter(): GlobePort {
             };
         } catch { }
 
-        try {
-            (window as any).__mentatLastSetUnits = {
-                rawCount: raw.length,
-                filteredCount: unitsArr.length,
-                sample: raw[0]?.id,
-            };
-        } catch { }
-
         applyGroupFillColors(unitsArr, groupColorIdx, { mirrorToIcon: false });
 
         const seen = new Set<string>();
@@ -1282,10 +1293,8 @@ export function createGlobeAdapter(): GlobePort {
  */
 function resolveRangeRingStyle(ring: any): any {
     if (!ring) return {};
-    // 1) Per-ring style wins
     if (ring.style) return ring.style;
 
-    // 2) Fallback: group style (same source 2D uses)
     try {
         const sc = (window as any).__scenario;
         const store = sc?.store ?? sc;
@@ -1298,283 +1307,501 @@ function resolveRangeRingStyle(ring: any): any {
         // ignore
     }
 
-    // 3) Nothing found
     return {};
 }
 
-
+/**
+ * 3D range-ring renderer:
+ *  - Rings only exist when the unit is conceptually "on map" by event logic
+ *    (i.e. after first non-null location event and not after a location:null).
+ *  - Uses baseUnit._state.location like 2D for horizontal center when possible.
+ *  - Does NOT rely on cleanupRangeRings for visibility; it manages .show itself
+ *    and still adds ring IDs to activeRingIds so cleanup doesn't "kill" rings
+ *    just because we're between events in time playback.
+ */
 function applyRangeRingsForSnapshot(
-  unitId: string,
-  u: UnitRenderable,
-  snap: SnapshotAtTime,
-  unitEnt: Cesium.Entity,
-  viewer: Cesium.Viewer,
-  now: Cesium.JulianDate | undefined,
-  unitMap: any,
-  activeRingIds: Set<string>,
+    unitId: string,
+    u: UnitRenderable,
+    snap: SnapshotAtTime,
+    unitEnt: Cesium.Entity,
+    viewer: Cesium.Viewer,
+    now: Cesium.JulianDate | undefined,
+    unitMap: any,
+    activeRingIds: Set<string>,
+    tMs: number,
 ) {
-  if (!snap.onMap) return;
+    // Use the same base unit 2D uses
+    const baseUnit: any = (u as any).__sourceUnit ?? unitMap?.[unitId] ?? u;
+    const rings: any[] = baseUnit?.rangeRings;
+    if (!Array.isArray(rings) || !rings.length) return;
 
-  const baseUnit: any = (u as any).__sourceUnit ?? unitMap?.[unitId] ?? u;
-  const rings: any[] = baseUnit?.rangeRings;
-  if (!Array.isArray(rings) || !rings.length) return;
+    // ─────────────────────────────
+    // 0. Event-based "on map" semantics for rings
+    //    - before first location event  → no rings
+    //    - last location event = null   → no rings
+    // ─────────────────────────────
+    let allowRingsNow = true;
+    const events: any[] = Array.isArray(baseUnit?.state) ? baseUnit.state : [];
 
-  // We still use snapshot for visibility, but we won't rely on it for motion.
-  const snapAlt = (snap as any)?.alt;
-  const baseAlt = snapAlt ?? u?.alt ?? 0;
+    if (events.length > 0) {
+        const lastEvt = lastLocEventAtOrBefore(baseUnit, tMs);
 
-  const wouldClamp =
-    u?.clampToGround !== false &&
-    u?.alt == null &&
-    snapAlt == null;
-
-  const treatAsAgl = u?.altIsAgl !== false;
-
-  const baseHeight =
-    wouldClamp ? 0 : (treatAsAgl ? scaledAlt(baseAlt) : baseAlt);
-
-  const hRef = unitHeightRef({
-    ...u,
-    alt: snapAlt ?? u?.alt,
-  } as any);
-
-  for (let idx = 0; idx < rings.length; idx++) {
-    const ring = rings[idx];
-    if (!ring || ring.hidden) continue;
-
-    const ringId = `rr:${unitId}:${ring.name ?? idx}`;
-    activeRingIds.add(ringId);
-
-    // Primary / secondary horizontal ranges (meters)
-    let primaryMeters = 0;
-    try {
-      primaryMeters = convertToMetric(ring.range, ring.uom || "km");
-    } catch {
-      primaryMeters = 0;
-    }
-    if (!primaryMeters || !isFinite(primaryMeters)) continue;
-
-    let secondaryMeters = primaryMeters;
-    if (ring.secondaryRange != null) {
-      try {
-        secondaryMeters = convertToMetric(ring.secondaryRange, ring.uom || "km");
-      } catch {
-        secondaryMeters = primaryMeters;
-      }
+        if (!lastEvt) {
+            // Before the first location-bearing event → treat as "not yet on map"
+            allowRingsNow = false;
+        } else if (
+            Object.prototype.hasOwnProperty.call(lastEvt, "location") &&
+            lastEvt.location === null
+        ) {
+            // Explicitly taken off map
+            allowRingsNow = false;
+        }
     }
 
-    // Vertical extent used for extruded *columns* (circle / ellipse / square)
-    const rawVertical = (ring.verticalMeters ?? 0) as number;
-    const columnVertical =
-      rawVertical > 0
-        ? (treatAsAgl ? scaledAlt(rawVertical) : rawVertical)
-        : 0;
+    // ─────────────────────────────
+    // 1. Horizontal center (2D-compatible)
+    //    2D uses unit._state.location as center; fall back to snapshot lon/lat
+    // ─────────────────────────────
+    const stateLoc = baseUnit?._state?.location;
+    const locFromSnap =
+        (typeof snap.lon === "number" && typeof snap.lat === "number")
+            ? [snap.lon, snap.lat]
+            : undefined;
 
-    const extrudedHeight =
-      columnVertical > 0 ? baseHeight + columnVertical : undefined;
+    const centerLonLat: [number, number] | undefined =
+        Array.isArray(stateLoc) && stateLoc.length >= 2
+            ? [stateLoc[0], stateLoc[1]]
+            : locFromSnap;
 
-    // Get or create the *ring* entity (separate from the unit entity)
-    let ringEnt = rangeRingEntities.get(ringId);
-    if (!ringEnt) {
-      ringEnt = viewer.entities.add({ id: ringId });
-      rangeRingEntities.set(ringId, ringEnt);
-    }
+    const haveCenter = !!centerLonLat;
+    const canDrawRings = allowRingsNow && haveCenter;
 
-    // Style — keep in sync with 2D semantics
-    const style = resolveRangeRingStyle(ring) as any;
+    const [snapLon, snapLat] = centerLonLat ?? [NaN, NaN];
 
-    const strokeCss =
-      style.stroke ??
-      style.color ??
-      "red";
+    // ─────────────────────────────
+    // 2. Base alt & height reference
+    // ─────────────────────────────
+    const snapAlt = (snap as any)?.alt;
+    const baseAlt = snapAlt ?? u?.alt ?? 0;
 
-    const strokeOpacity =
-      typeof style.strokeOpacity === "number"
-        ? style.strokeOpacity
-        : typeof style.opacity === "number"
-        ? style.opacity
-        : 1.0;
+    const wouldClamp =
+        u?.clampToGround !== false &&
+        u?.alt == null &&
+        snapAlt == null;
 
-    const outlineWidth =
-      typeof style.width === "number" ? style.width : 2;
+    const treatAsAgl = u?.altIsAgl !== false;
 
-    const hasExplicitNoFill = style.fill === null;
-    const fillCss =
-      hasExplicitNoFill
-        ? null
-        : (style.fill ?? strokeCss);
+    const baseHeight =
+        wouldClamp ? 0 : (treatAsAgl ? scaledAlt(baseAlt) : baseAlt);
 
-    const fillOpacity =
-      typeof style.fillOpacity === "number"
-        ? style.fillOpacity
-        : typeof style.opacity === "number"
-        ? style.opacity
-        : 0.15;
+    const hRef = unitHeightRef({
+        ...u,
+        alt: snapAlt ?? u?.alt,
+    } as any);
 
-    const outlineColor = Color.fromCssColorString(strokeCss).withAlpha(strokeOpacity);
+    // Capture viewer safely for callbacks
+    const safeViewer = viewer;
 
-    const fillColor = fillCss
-      ? Color.fromCssColorString(fillCss).withAlpha(fillOpacity)
-      : Color.fromCssColorString(strokeCss).withAlpha(0); // no fill
+    // ─────────────────────────────
+    // 3. Per-ring loop (outer + optional inner)
+    // ─────────────────────────────
+    for (let idx = 0; idx < rings.length; idx++) {
+        const ring = rings[idx];
+        if (!ring || ring.hidden) continue;
 
-    const shape = ring.shape ?? "circle";
+        const ringId = `rr:${unitId}:${ring.name ?? idx}`;
+        activeRingIds.add(ringId); // always mark as "owned" by this unit
 
-    // 🔹 Make this ring's center follow the unit entity every frame
-    if (!(ringEnt as any).__followUnitCenter) {
-      const unitPosProp = unitEnt.position as any;
-      ringEnt.position = new CallbackProperty((time: JulianDate) => {
-        if (!unitPosProp) return undefined;
+        // If we shouldn't draw rings at this time or we don't know the center,
+        // just hide any existing ring entity (and its shell primitive) and skip
+        if (!canDrawRings) {
+            const existing = rangeRingEntities.get(ringId);
+            if (existing) {
+                existing.show = false;
 
-        let p: any;
+                const prim = (existing as any).__primitive as Cesium.Primitive | undefined;
+                if (prim) {
+                    try {
+                        viewer.scene.primitives.remove(prim);
+                    } catch { /* ignore */ }
+                    (existing as any).__primitive = undefined;
+                }
+            }
+
+            // Hide any inner ring too, if it exists
+            const innerId = `${ringId}::inner`;
+            const innerExisting = rangeRingEntities.get(innerId);
+            if (innerExisting) {
+                innerExisting.show = false;
+                const primInner = (innerExisting as any).__primitive as Cesium.Primitive | undefined;
+                if (primInner) {
+                    try {
+                        viewer.scene.primitives.remove(primInner);
+                    } catch { /* ignore */ }
+                    (innerExisting as any).__primitive = undefined;
+                }
+            }
+
+            continue; // nothing to draw this tick for this ring
+        }
+
+        // At this point, we *want* rings and we know where to place them.
+        const [lonCenter, latCenter] = centerLonLat as [number, number];
+
+        // Ensure we have an entity
+        let ringEnt = rangeRingEntities.get(ringId);
+        if (!ringEnt) {
+            ringEnt = viewer.entities.add({ id: ringId });
+            rangeRingEntities.set(ringId, ringEnt);
+        }
+
+        // ─────────────────────────────
+        // 4. Horizontal ranges
+        // ─────────────────────────────
+        let outerMetersRaw = 0;
         try {
-          p = typeof unitPosProp.getValue === "function"
-            ? unitPosProp.getValue(time)
-            : unitPosProp;
+            outerMetersRaw = convertToMetric(ring.range, ring.uom || "km");
         } catch {
-          p = unitPosProp;
+            outerMetersRaw = 0;
         }
-        if (!p) return undefined;
+        if (!outerMetersRaw || !Number.isFinite(outerMetersRaw)) {
+            ringEnt.show = false;
+            continue;
+        }
 
-        // For spheres/spheroids: peg geometric center to terrain at the unit's lon/lat
+        let innerMetersRaw = 0;
+        if (ring.minRange != null) {
+            try {
+                innerMetersRaw = convertToMetric(ring.minRange, ring.uom || "km");
+            } catch {
+                innerMetersRaw = 0;
+            }
+        }
+
+        const innerMeters = Math.max(0, Math.min(innerMetersRaw, outerMetersRaw));
+        const outerMeters = Math.max(outerMetersRaw, innerMeters);
+
+        let outerMinorMeters = outerMeters;
+        if (ring.secondaryRange != null) {
+            try {
+                outerMinorMeters = convertToMetric(ring.secondaryRange, ring.uom || "km");
+            } catch {
+                outerMinorMeters = outerMeters;
+            }
+        }
+
+        const innerMinorMeters =
+            outerMeters > 0
+                ? (outerMinorMeters * innerMeters) / outerMeters
+                : innerMeters;
+
+        // ─────────────────────────────
+        // 5. Vertical extent
+        // ─────────────────────────────
+        const rawFloor =
+            typeof ring.minVerticalMeters === "number" && Number.isFinite(ring.minVerticalMeters)
+                ? Math.max(0, ring.minVerticalMeters)
+                : 0;
+
+        let rawCeil: number;
+        if (typeof ring.maxVerticalMeters === "number" && Number.isFinite(ring.maxVerticalMeters)) {
+            rawCeil = Math.max(rawFloor, ring.maxVerticalMeters);
+        } else if (
+            typeof ring.verticalMeters === "number" &&
+            Number.isFinite(ring.verticalMeters) &&
+            ring.verticalMeters > 0
+        ) {
+            rawCeil = rawFloor + ring.verticalMeters;
+        } else {
+            rawCeil = rawFloor;
+        }
+
+        let floorMeters = rawFloor;
+        let ceilMeters = rawCeil;
+        if (treatAsAgl) {
+            floorMeters = scaledAlt(rawFloor);
+            ceilMeters = scaledAlt(rawCeil);
+        }
+
+        const hasVerticalSlab = ceilMeters > floorMeters;
+        const height = baseHeight + floorMeters;
+        const extrudedHeight = hasVerticalSlab ? baseHeight + ceilMeters : undefined;
+
+        // ─────────────────────────────
+        // 6. Style
+        // ─────────────────────────────
+        const style = resolveRangeRingStyle(ring) as any;
+
+        const strokeCss =
+            style.stroke ??
+            style.color ??
+            "red";
+
+        const strokeOpacity =
+            typeof style.strokeOpacity === "number"
+                ? style.strokeOpacity
+                : typeof style.opacity === "number"
+                ? style.opacity
+                : 1.0;
+
+        const outlineWidth =
+            typeof style.width === "number" ? style.width : 2;
+
+        const hasExplicitNoFill = style.fill === null;
+        const fillCss =
+            hasExplicitNoFill
+                ? null
+                : (style.fill ?? strokeCss);
+
+        const fillOpacity =
+            typeof style.fillOpacity === "number"
+                ? style.fillOpacity
+                : typeof style.opacity === "number"
+                ? style.opacity
+                : 0.15;
+
+        const outlineColor = Color.fromCssColorString(strokeCss).withAlpha(strokeOpacity);
+
+        const fillColor = fillCss
+            ? Color.fromCssColorString(fillCss).withAlpha(fillOpacity)
+            : Color.fromCssColorString(strokeCss).withAlpha(0);
+
+        const shape = ring.shape ?? "circle";
+
+        // ─────────────────────────────
+        // 7. Center-follow logic – piggyback directly on the unit entity
+        // ─────────────────────────────
+        ringEnt.position = unitEnt.position;
+
+
+        // ─────────────────────────────
+        // 8A. Square → Rectangle
+        // ─────────────────────────────
+        if (shape === "square") {
+            const lon = lonCenter;
+            const lat = latCenter;
+
+            const R = 6378137;
+            const latRad = (lat * Math.PI) / 180;
+
+            const metersToLatDeg = (m: number) => (m / R) * (180 / Math.PI);
+            const metersToLonDeg = (m: number) =>
+                (m / (R * Math.cos(latRad))) * (180 / Math.PI);
+
+            const halfX = outerMeters;
+            const halfY = outerMinorMeters;
+
+            const dLatN = metersToLatDeg(+halfY);
+            const dLatS = -dLatN;
+            const dLonE = metersToLonDeg(+halfX);
+            const dLonW = -dLonE;
+
+            const south = lat + dLatS;
+            const north = lat + dLatN;
+            const west = lon + dLonW;
+            const east = lon + dLonE;
+
+            const rect = Cesium.Rectangle.fromDegrees(west, south, east, north);
+
+            const rectangle = new Cesium.RectangleGraphics({
+                coordinates: rect,
+                height,
+                extrudedHeight,
+                heightReference: hRef,
+                extrudedHeightReference: hRef,
+                material: fillColor,
+                outline: true,
+                outlineColor,
+                outlineWidth,
+            });
+
+            (ringEnt as any).ellipse = undefined;
+            (ringEnt as any).rectangle = rectangle;
+            (ringEnt as any).ellipsoid = undefined;
+            ringEnt.show = true;
+            continue;
+        }
+
+        // 8B. Sphere / spheroid (shell or solid)
         if (shape === "sphere" || shape === "spheroid") {
-          const carto = Cartographic.fromCartesian(p);
-          let h = viewer.scene.globe.getHeight(carto);
-          if (!Number.isFinite(h)) h = carto.height; // fallback
-          return Cartesian3.fromRadians(carto.longitude, carto.latitude, h);
+            const radiusX = outerMeters;
+            const radiusY = shape === "spheroid" ? outerMinorMeters : outerMeters;
+
+            const verticalRadius =
+                hasVerticalSlab
+                    ? Math.max((ceilMeters - floorMeters) / 2, 1)
+                    : outerMeters;
+
+            const useShell = innerMeters > 0;
+
+            // Compute center at current time for the shell
+            let centerNow: Cesium.Cartesian3 | undefined;
+            try {
+                const posProp: any = ringEnt.position;
+                if (posProp && typeof posProp.getValue === "function" && now) {
+                    centerNow = posProp.getValue(now);
+                } else if (posProp) {
+                    centerNow = posProp as Cesium.Cartesian3;
+                }
+            } catch {
+                centerNow = undefined;
+            }
+
+            if (!centerNow) {
+                centerNow = Cesium.Cartesian3.fromDegrees(
+                    lonCenter,
+                    latCenter,
+                    baseHeight,
+                );
+            }
+
+                        const shellColor = fillColor; // includes alpha
+
+            // Reuse existing primitive when possible; only create if missing.
+            let prim = (ringEnt as any).__primitive as Cesium.Primitive | undefined;
+
+            if (useShell && centerNow) {
+                if (!prim) {
+                    prim = buildSphericalShellPrimitive({
+                        outerRadius: outerMeters,
+                        innerRadius: innerMeters,
+                        verticalRadius,
+                        phiSegments: 32,
+                        thetaSegments: 64,
+                        center: centerNow,
+                        color: shellColor,
+                    });
+
+                    viewer.scene.primitives.add(prim);
+                    (ringEnt as any).__primitive = prim;
+                } else {
+                    // Only move the existing primitive so it follows the unit
+                    prim.modelMatrix = Cesium.Transforms.eastNorthUpToFixedFrame(centerNow);
+                }
+
+                // Make sure old graphic types are off
+                (ringEnt as any).ellipse = undefined;
+                (ringEnt as any).rectangle = undefined;
+                (ringEnt as any).ellipsoid = undefined;
+                ringEnt.show = true;
+                continue;
+            }
+
+            // If we're not using a shell anymore but had one, remove it.
+            if (prim && !useShell) {
+                try {
+                    viewer.scene.primitives.remove(prim);
+                } catch { /* ignore */ }
+                (ringEnt as any).__primitive = undefined;
+            }
+
+            // Fallback: solid ellipsoid
+            const radii = new Cesium.Cartesian3(
+                radiusX,
+                radiusY,
+                verticalRadius,
+            );
+
+
+            const ellipsoid = new Cesium.EllipsoidGraphics({
+                radii,
+                material: fillColor,
+                fill: true,
+                outline: true,
+                outlineColor,
+                outlineWidth,
+            });
+
+            (ringEnt as any).ellipse = undefined;
+            (ringEnt as any).rectangle = undefined;
+            (ringEnt as any).ellipsoid = ellipsoid;
+            ringEnt.show = true;
+            continue;
         }
 
-        // For flat rings & columns: just follow the unit position as-is
-        return p;
-      }, false);
-      (ringEnt as any).__followUnitCenter = true;
+        // ─────────────────────────────
+        // 8C. Circle / ellipse → Ellipse
+        // ─────────────────────────────
+        const semiMajorOuter = outerMeters;
+        const semiMinorOuter =
+            shape === "ellipse" ? outerMinorMeters : outerMeters;
+
+        const ellipseOuter = new Cesium.EllipseGraphics({
+            semiMajorAxis: semiMajorOuter,
+            semiMinorAxis: semiMinorOuter,
+            height,
+            extrudedHeight,
+            heightReference: hRef,
+            extrudedHeightReference: hRef,
+            material: fillColor,
+            outline: true,
+            outlineColor,
+            outlineWidth,
+        });
+
+        (ringEnt as any).ellipse = ellipseOuter;
+        (ringEnt as any).rectangle = undefined;
+        (ringEnt as any).ellipsoid = undefined;
+        ringEnt.show = true;
+
+        // Inner "hole" ring if minRange > 0
+        if (innerMeters > 0) {
+            const innerId = `${ringId}::inner`;
+            activeRingIds.add(innerId);
+
+            let innerEnt = rangeRingEntities.get(innerId);
+            if (!innerEnt) {
+                innerEnt = viewer.entities.add({ id: innerId });
+                rangeRingEntities.set(innerId, innerEnt);
+            }
+
+            innerEnt.position = ringEnt.position;
+            (innerEnt as any).__followUnitCenter = true;
+
+            const semiMajorInner = innerMeters;
+            const semiMinorInner =
+                shape === "ellipse" ? innerMinorMeters : innerMeters;
+
+            const ellipseInner = new Cesium.EllipseGraphics({
+                semiMajorAxis: semiMajorInner,
+                semiMinorAxis: semiMinorInner,
+                height,
+                extrudedHeight,
+                heightReference: hRef,
+                extrudedHeightReference: hRef,
+                material: Color.TRANSPARENT,
+                outline: true,
+                outlineColor,
+                outlineWidth,
+            });
+
+            (innerEnt as any).ellipse = ellipseInner;
+            (innerEnt as any).rectangle = undefined;
+            (innerEnt as any).ellipsoid = undefined;
+            innerEnt.show = true;
+        }
     }
-
-    // ──────────────────────────────
-    // A. Square → RectangleGraphics (column)
-    //    (coordinates are fixed in WGS84; will not translate with position)
-    //    For now, we keep the footprint static; we can revisit dynamic squares later.
-    // ──────────────────────────────
-    if (shape === "square") {
-      // We still base the footprint on the current snapshot location
-      const lon = snap.lon!;
-      const lat = snap.lat!;
-
-      const R = 6378137; // WGS84
-      const latRad = (lat * Math.PI) / 180;
-
-      const metersToLatDeg = (m: number) => (m / R) * (180 / Math.PI);
-      const metersToLonDeg = (m: number) =>
-        (m / (R * Math.cos(latRad))) * (180 / Math.PI);
-
-      const halfX = primaryMeters;
-      const halfY = secondaryMeters;
-
-      const dLatN = metersToLatDeg(+halfY);
-      const dLatS = -dLatN;
-      const dLonE = metersToLonDeg(+halfX);
-      const dLonW = -dLonE;
-
-      const south = lat + dLatS;
-      const north = lat + dLatN;
-      const west = lon + dLonW;
-      const east = lon + dLonE;
-
-      const rect = Cesium.Rectangle.fromDegrees(west, south, east, north);
-
-      const rectangle = new Cesium.RectangleGraphics({
-        coordinates: rect,
-        height: baseHeight,
-        extrudedHeight,
-        heightReference: hRef,
-        extrudedHeightReference: hRef,
-        material: fillColor,
-        outline: true,
-        outlineColor,
-        outlineWidth,
-      });
-
-      (ringEnt as any).ellipse = undefined;
-      (ringEnt as any).rectangle = rectangle;
-      (ringEnt as any).ellipsoid = undefined;
-      ringEnt.show = true;
-      continue;
-    }
-
-    // ──────────────────────────────
-    // B. Sphere / spheroid → EllipsoidGraphics
-    //    (center pegged to terrain via the callback above)
-    // ──────────────────────────────
-    if (shape === "sphere" || shape === "spheroid") {
-      const radiusX = primaryMeters;
-      const radiusY =
-        shape === "spheroid" ? secondaryMeters : primaryMeters;
-
-      const verticalRadius =
-        typeof ring.verticalMeters === "number" && ring.verticalMeters > 0
-          ? ring.verticalMeters
-          : primaryMeters;
-
-      const radii = new Cesium.Cartesian3(
-        radiusX,
-        radiusY,
-        verticalRadius,
-      );
-
-      const ellipsoid = new Cesium.EllipsoidGraphics({
-        radii,
-        material: fillColor,
-        fill: true,
-        outline: true,
-        outlineColor,
-        outlineWidth,
-      });
-
-      (ringEnt as any).ellipse = undefined;
-      (ringEnt as any).rectangle = undefined;
-      (ringEnt as any).ellipsoid = ellipsoid;
-      ringEnt.show = true;
-      continue;
-    }
-
-    // ──────────────────────────────
-    // C. Circle / ellipse → EllipseGraphics (flat / column)
-    //     Center follows unit via ringEnt.position callback
-    // ──────────────────────────────
-    const semiMajor = primaryMeters;
-    const semiMinor =
-      shape === "ellipse" ? secondaryMeters : primaryMeters;
-
-    const ellipse = new Cesium.EllipseGraphics({
-      semiMajorAxis: semiMajor,
-      semiMinorAxis: semiMinor,
-      height: baseHeight,
-      extrudedHeight,
-      heightReference: hRef,
-      extrudedHeightReference: hRef,
-      material: fillColor,
-      outline: true,
-      outlineColor,
-      outlineWidth,
-    });
-
-    (ringEnt as any).ellipse = ellipse;
-    (ringEnt as any).rectangle = undefined;
-    (ringEnt as any).ellipsoid = undefined;
-    ringEnt.show = true;
-  }
 }
-
-
 
 function cleanupRangeRings(viewer: Cesium.Viewer, activeIds: Set<string>) {
   for (const [rid, ent] of rangeRingEntities) {
     if (!activeIds.has(rid)) {
-      // Do NOT remove the entity – just hide it.
-      // This keeps a stable Cesium.Entity per (unit, ring) across the scenario.
       ent.show = false;
+
+      // Also remove any shell primitive we attached for this ring
+      const prim = (ent as any).__primitive as Cesium.Primitive | undefined;
+      if (prim) {
+        try {
+          viewer.scene.primitives.remove(prim);
+        } catch {
+          // ignore
+        }
+        (ent as any).__primitive = undefined;
+      }
     }
   }
 }
+
 
 
     /** Core: evaluate all units at time t and apply on/off map + sidc changes. */
@@ -1687,6 +1914,7 @@ function updateAllUnitsAtTime(tMs: number) {
             now,       // 🔹 pass the Cesium time actually driving billboards
             unitMap,
             activeRingIds,
+            tMs,   
         );
     }
 
@@ -2060,21 +2288,6 @@ publishDebug(api.viewer);
         refreshVisibility: reapplyVisibility,
     };
 }
-
-// OPTIONAL: a one-liner inspector you can call from the console
-try {
-    (window as any).MentatDebugSIDC = (id?: string) => {
-        const dbg = (window as any).MentatGlobeAdapterDebug;
-        const viewer = dbg?.viewer;
-        const t = viewer ? Cesium.JulianDate.toDate(viewer.clock.currentTime).getTime() : Date.now();
-        const ent = id ? viewer?.entities?.getById(id) : viewer?.entities?.values?.[0];
-        const u = ent ? dbg?._unitMeta?.get(ent.id) : null;
-        const src = u?.__sourceUnit ?? u ?? null;
-        const sidcFromEvents = src ? (window as any).lastSidcAtOrBefore?.(src, t) : undefined;
-        const sidcFromUnit = src?.sidc ?? u?.sidc;
-        return { id: ent?.id, t, sidcFromEvents, sidcFromUnit, u, src };
-    };
-} catch { }
 
 try {
     (window as any).buildIconUrlSync = (u: any) => buildIconUrlSync(u, (window as any).MentatGlobe?.viewer);

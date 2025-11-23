@@ -1,4 +1,4 @@
-import type { Feature as GeoJsonFeature, Geometry } from "geojson";
+﻿import type { Feature as GeoJsonFeature, Geometry } from "geojson";
 import type { FillStyleSpec, SimpleStyleSpec, StrokeStyleSpec } from "@/geo/simplestyle";
 import type { ScenarioTime } from "@/types/base";
 import type {
@@ -144,18 +144,25 @@ export interface LayerFeatureItem {
 
 export type RangeRingShape = "circle" | "square" | "ellipse";
 
-export interface RangeRing {
+interface RangeRing {
   name: string;
-  range: number;                 // primary radius / semi-major / half-side
+  range: number;          // existing: treat as maxRange
   uom: "m" | "km" | "mi" | "nmi";
   group?: string | null;
-  verticalMeters?: number;
-  hidden?: boolean;
-  style?: RangeRingStyle;
 
-  // NEW:
-  shape?: RangeRingShape;        // defaults to "circle"
-  secondaryRange?: number | null; // secondary radius / semi-minor / other half-side
+  // existing vertical extent (legacy)
+  verticalMeters?: number;
+
+  // existing shape fields
+  shape?: "circle" | "square" | "ellipse" | "sphere" | "spheroid";
+  secondaryRange?: number | null;
+
+  // 🔹 NEW: horizontal inner radius (same units as `range`)
+  minRange?: number;             // default 0 → no donut hole
+
+  // 🔹 NEW: vertical floor (AGL) & ceiling (AGL)
+  minVerticalMeters?: number;    // default 0 → starts at ground/adjusted terrain
+  maxVerticalMeters?: number;    // default verticalMeters or baseAlt + verticalMeters
 }
 
 export interface RangeRingGroup {
