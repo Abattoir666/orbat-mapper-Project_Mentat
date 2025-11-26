@@ -67,9 +67,14 @@
                     <button class="qb-btn" @click="promptSidc">Set SIDC…</button>
                     <button class="qb-btn" @click="promptFill">Set fillColor…</button>
 
-                    <!-- NEW: open delete-events dialog, then close the mini menu -->
+                    <!-- open delete-events dialog, then close the mini menu -->
                     <button class="qb-btn" @click="openDeleteEventsDialog">
                         Delete events in time range…
+                    </button>
+
+                    <!-- 🆕 open copy-range-rings dialog -->
+                    <button class="qb-btn" @click="openCopyRangeRingsDialog">
+                        Copy range-rings…
                     </button>
 
                     <button class="qb-btn qb-cancel" @click="bulkMenuOpen = false">
@@ -78,9 +83,14 @@
                 </div>
             </FloatingPanel>
 
-            <!-- NEW: Pop-out dialog for time-range delete, only for selected units -->
+
+            <!-- Pop-out dialog for time-range delete, only for selected units -->
             <DeleteEventsBulkDialog v-model="deleteEventsDialogOpen"
                                     :selected-unit-ids="selectedUnitIdsArray" />
+
+            <!-- 🆕 Pop-out dialog for copying range-rings in bulk -->
+            <CopyRangeRingsBulkDialog v-model="copyRangeRingsDialogOpen"
+                                      :selected-unit-ids="selectedUnitIdsArray" />
 
             <div class="border-border h-7 border-l-2 sm:mx-1" />
 
@@ -188,6 +198,7 @@ import EchelonPickerPopover from "@/modules/scenarioeditor/EchelonPickerPopover.
 import QuickBulkBar from "@/modules/scenarioeditor/bulkEdit/QuickBulkBar.vue";
 import { Button } from "@/components/ui/button";
 import DeleteEventsBulkDialog from "@/modules/scenarioeditor/bulkEdit/DeleteEventsBulkDialog.vue";
+import CopyRangeRingsBulkDialog from "@/modules/scenarioeditor/bulkEdit/CopyRangeRingsBulkDialog.vue";
 
 /* Stores / DI / composables */
 import { useMainToolbarStore } from "@/stores/mainToolbarStore";
@@ -257,13 +268,20 @@ const { currentSid, currentEchelon, activeSidc } = useToolbarUnitSymbolData();
 const { undo, redo, canRedo, canUndo, groupUpdate, state } =
   scenarioStore;
 
-/* ---------- Bulk menu + dialog ---------- */
+/* ---------- Bulk menu + dialogs ---------- */
 const bulkMenuOpen = ref(false);
 const deleteEventsDialogOpen = ref(false);
+const copyRangeRingsDialogOpen = ref(false);
 
 function openDeleteEventsDialog() {
   if (!selectedCount.value) return;
   deleteEventsDialogOpen.value = true;
+  bulkMenuOpen.value = false;
+}
+
+function openCopyRangeRingsDialog() {
+  if (!selectedCount.value || selectedCount.value < 2) return;
+  copyRangeRingsDialogOpen.value = true;
   bulkMenuOpen.value = false;
 }
 

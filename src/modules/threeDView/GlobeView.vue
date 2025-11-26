@@ -1,4 +1,4 @@
-﻿<!-- src/modules/threeDView/GlobeView.vue -->
+﻿﻿<!-- src/modules/threeDView/GlobeView.vue -->
 <script setup lang="ts">
     /* ───────────────── existing imports ───────────────── */
     import { ref, shallowRef, computed, onMounted, onBeforeUnmount, watch, defineAsyncComponent, nextTick, isRef, onActivated, unref } from "vue";
@@ -549,6 +549,13 @@ function closeMeasure() { showMeasure.value = false; }
         g.value?.enableSkybox?.(isSkybox.value);
     }
 
+    /* ─────────── 3D Range-rings visibility ─────────── */
+    const showRangeRings3D = ref(true);
+    function toggleRangeRings3D() {
+        showRangeRings3D.value = !showRangeRings3D.value;
+        g.value?.setRangeRingsVisible?.(showRangeRings3D.value);
+    }
+
     /* ╔══════════════════════════════════════════════════════════════════╗
        ║     INLINED SCENARIOTIMELINE LOGIC (namespaced with tl*)         ║
        ╚══════════════════════════════════════════════════════════════════╝ */
@@ -1028,6 +1035,7 @@ function closeMeasure() { showMeasure.value = false; }
                     <div style="display:flex; gap:8px; flex-wrap: wrap;">
                         <button @click="toggleDayNight" :class="{ active: isDayNight }">🌞 Day/Night</button>
                         <button @click="toggleSkybox" :class="{ active: isSkybox }">🌌 Skybox</button>
+                        <button @click="toggleRangeRings3D" :class="{ active: showRangeRings3D }">🎯 3D Range-rings</button>
                     </div>
                 </div>
 

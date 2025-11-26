@@ -2,15 +2,14 @@
   "ExpandedNodes": [
     "",
     "\\src",
-    "\\src\\components",
-    "\\src\\components\\ui",
-    "\\src\\geo",
     "\\src\\modules",
+    "\\src\\modules\\charteditor",
+    "\\src\\modules\\grid",
+    "\\src\\modules\\scenarioeditor",
     "\\src\\modules\\threeDView",
-    "\\src\\modules\\threeDView\\widgets",
-    "\\src\\utils",
-    "\\src\\views"
+    "\\src\\modules\\threeDView\\geo",
+    "\\src\\modules\\threeDView\\graphics",
+    "\\src\\modules\\threeDView\\importedLayers"
   ],
-  "SelectedNode": "\\src\\components\\BaseToolbar.vue",
   "PreviewInSolutionExplorer": false
 }

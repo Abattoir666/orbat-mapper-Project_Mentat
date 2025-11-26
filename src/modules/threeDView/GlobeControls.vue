@@ -1,4 +1,4 @@
-﻿<!-- src/modules/threeDView/GlobeControls.vue -->
+﻿﻿<!-- src/modules/threeDView/GlobeControls.vue -->
 <script setup lang="ts">
     import { ref, shallowRef, computed, watch, onMounted, nextTick } from "vue";
 

@@ -1,4 +1,4 @@
-﻿// src/modules/threeDView/globeAdapter.ts
+﻿﻿// src/modules/threeDView/globeAdapter.ts
 import proj4 from "proj4";
 import {
     Cartesian3,
@@ -481,6 +481,10 @@ export interface GlobePort {
     flyToLatLon: (lon: number, lat: number, height?: number) => void;
 
     setExaggeration: (factor: number) => Promise<void>;
+
+    // New: master toggle for 3D range-rings
+    setRangeRingsVisible?: (visible: boolean) => void;
+
     setBaseLayer: (key: string) => void;
     setBaseLayerTemplate: (
         url: string,
@@ -574,6 +578,9 @@ const lastFillHex = new Map<string, string | undefined>();
 let exaggerationFactor = 1;
 let groupColorIdx: Map<string | number, string> = new Map();
 const rangeRingEntities = new Map<string, Cesium.Entity>();
+
+// Global visibility switch for 3D range-rings
+let rangeRingsVisible = true;
 
 /* filter state */
 let _unitFilter: (u: any) => boolean = () => true;
@@ -1330,6 +1337,11 @@ function applyRangeRingsForSnapshot(
     activeRingIds: Set<string>,
     tMs: number,
 ) {
+    // Global master switch: when off, we don't draw rings at all.
+    if (!rangeRingsVisible) {
+        return;
+    }
+
     // Use the same base unit 2D uses
     const baseUnit: any = (u as any).__sourceUnit ?? unitMap?.[unitId] ?? u;
     const rings: any[] = baseUnit?.rangeRings;
@@ -1374,7 +1386,7 @@ function applyRangeRingsForSnapshot(
             : locFromSnap;
 
     const haveCenter = !!centerLonLat;
-    const canDrawRings = allowRingsNow && haveCenter;
+    const canDrawRings = allowRingsNow && haveCenter && rangeRingsVisible;
 
     const [snapLon, snapLat] = centerLonLat ?? [NaN, NaN];
 
@@ -2115,6 +2127,21 @@ publishDebug(api.viewer);
                 }
             }
             api.viewer.scene.requestRender();
+        },
+
+        setRangeRingsVisible(visible: boolean) {
+            rangeRingsVisible = !!visible;
+
+            if (!api) return;
+
+            // Re-run the time-based unit logic at the current viewer time
+            const tMs = currentViewerMs(api.viewer);
+            if (tMs != null) {
+                updateAllUnitsAtTime(tMs);
+            } else {
+                // Fallback: at least force a render
+                api.viewer.scene.requestRender?.();
+            }
         },
 
         setBaseLayer(key: string) {

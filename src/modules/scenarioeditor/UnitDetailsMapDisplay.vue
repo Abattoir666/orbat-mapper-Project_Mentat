@@ -367,6 +367,7 @@ function updateVisibilityStyle(style: Partial<VisibilityStyleSpec>) {
                                 <div class="relative rounded-md shadow-xs">
                                     <input type="text"
                                            :id="id"
+                                           step="0.01"
                                            class="block w-full rounded-md border-0 py-1.5 pr-20 text-gray-900 ring-1 ring-gray-300 ring-inset placeholder:text-gray-400 focus:ring-2 focus:ring-indigo-600 focus:ring-inset sm:text-sm sm:leading-6"
                                            v-model="editedRangeRing.range"
                                            :disabled="isLocked" />
@@ -407,6 +408,7 @@ function updateVisibilityStyle(style: Partial<VisibilityStyleSpec>) {
                                 <div class="relative rounded-md shadow-xs">
                                     <input type="text"
                                            :id="id"
+                                           step="0.01"
                                            class="block w-full rounded-md border-0 py-1.5 pr-20 text-gray-900 ring-1 ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-indigo-600 focus:ring-inset sm:text-sm sm:leading-6"
                                            v-model.number="editedRangeRing.secondaryRange"
                                            :disabled="isLocked" />
@@ -427,6 +429,7 @@ function updateVisibilityStyle(style: Partial<VisibilityStyleSpec>) {
                                     <input :id="id"
                                            type="number"
                                            min="0"
+                                           step="0.01"
                                            class="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm
              ring-1 ring-inset ring-gray-300 placeholder:text-gray-400
              focus:ring-2 focus:ring-indigo-600 focus:ring-inset sm:text-sm sm:leading-6"

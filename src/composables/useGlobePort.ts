@@ -1,4 +1,4 @@
-// src/composables/useGlobePort.ts
+﻿// src/composables/useGlobePort.ts
 import { onMounted, onBeforeUnmount, shallowRef } from "vue";
 import {
     createGlobeAdapter,

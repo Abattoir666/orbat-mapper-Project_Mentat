@@ -324,3 +324,135 @@ export function deleteEventsInTimeRangeForUnitsBulk(
     },
   });
 }
+
+        export type RangeRingsBulkCopyMode = "replace" | "append";
+
+export type RangeRingsBulkCopyOptions = {
+  mode?: RangeRingsBulkCopyMode;
+};
+
+/**
+ * Copy the rangeRings structure from a single source unit
+ * to multiple destination units.
+ *
+ * - Only the *structure* is copied (radii, style, etc.).
+ * - Positions remain unit-relative, so each unit's own position is used.
+ * - Undo/redo is wired through store.history.
+ */
+export function copyRangeRingsFromUnitToUnitsBulk(
+  store: ScenarioStoreLike,
+  sourceId: string,
+  ids: Iterable<string>,
+  options: RangeRingsBulkCopyOptions = {}
+) {
+  const mode: RangeRingsBulkCopyMode = options.mode ?? "replace";
+
+  const source = getUnit(store, sourceId);
+  if (!source) {
+    console.warn(
+      "[copyRangeRingsFromUnitToUnitsBulk] source unit not found",
+      sourceId
+    );
+    return;
+  }
+
+  const sourceRingsRaw = (source as any).rangeRings;
+  const sourceRings = Array.isArray(sourceRingsRaw)
+    ? sourceRingsRaw.map((r: any) => ({ ...(r ?? {}) }))
+    : null;
+
+  if (!sourceRings || sourceRings.length === 0) {
+    console.warn(
+      "[copyRangeRingsFromUnitToUnitsBulk] source has no rangeRings",
+      sourceId
+    );
+    return;
+  }
+
+  type Snapshot = {
+    id: string;
+    prevRangeRings: any[] | null;
+    nextRangeRings: any[] | null;
+  };
+
+  const snapshots: Snapshot[] = [];
+
+  for (const id of ids) {
+    if (id === sourceId) continue; // don't copy onto self
+
+    const unit = getUnit(store, id);
+    if (!unit) continue;
+
+    const prevRaw = (unit as any).rangeRings;
+    const prevRings = Array.isArray(prevRaw)
+      ? prevRaw.map((r: any) => ({ ...(r ?? {}) }))
+      : null;
+
+    let nextRings: any[] | null;
+
+    if (mode === "replace" || !Array.isArray(prevRings)) {
+      // full overwrite
+      nextRings = sourceRings.map((r: any) => ({ ...(r ?? {}) }));
+    } else {
+      // append to existing
+      nextRings = [
+        ...prevRings.map((r: any) => ({ ...(r ?? {}) })),
+        ...sourceRings.map((r: any) => ({ ...(r ?? {}) })),
+      ];
+    }
+
+    snapshots.push({
+      id,
+      prevRangeRings: prevRings,
+      nextRangeRings: nextRings,
+    });
+
+    const updated: any = { ...unit };
+    if (nextRings && nextRings.length > 0) {
+      updated.rangeRings = nextRings;
+    } else if ("rangeRings" in updated) {
+      delete updated.rangeRings;
+    }
+
+    setUnit(store, updated);
+  }
+
+  if (snapshots.length === 0) return;
+
+  store?.history?.push?.({
+    undo: () => {
+      for (const snap of snapshots) {
+        const cur = getUnit(store, snap.id);
+        if (!cur) continue;
+        const updated: any = { ...cur };
+
+        if (snap.prevRangeRings && snap.prevRangeRings.length > 0) {
+          updated.rangeRings = snap.prevRangeRings.map((r: any) => ({
+            ...(r ?? {}),
+          }));
+        } else if ("rangeRings" in updated) {
+          delete updated.rangeRings;
+        }
+
+        setUnit(store, updated);
+      }
+    },
+    redo: () => {
+      for (const snap of snapshots) {
+        const cur = getUnit(store, snap.id);
+        if (!cur) continue;
+        const updated: any = { ...cur };
+
+        if (snap.nextRangeRings && snap.nextRangeRings.length > 0) {
+          updated.rangeRings = snap.nextRangeRings.map((r: any) => ({
+            ...(r ?? {}),
+          }));
+        } else if ("rangeRings" in updated) {
+          delete updated.rangeRings;
+        }
+
+        setUnit(store, updated);
+      }
+    },
+  });
+}
