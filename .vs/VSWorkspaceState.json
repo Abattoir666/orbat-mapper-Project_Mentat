@@ -2,8 +2,8 @@
   "ExpandedNodes": [
     "",
     "\\src",
+    "\\src\\composables",
     "\\src\\modules",
-    "\\src\\modules\\charteditor",
     "\\src\\modules\\grid",
     "\\src\\modules\\scenarioeditor",
     "\\src\\modules\\threeDView",
@@ -11,5 +11,6 @@
     "\\src\\modules\\threeDView\\graphics",
     "\\src\\modules\\threeDView\\importedLayers"
   ],
+  "SelectedNode": "\\src\\modules\\charteditor\\OrbatChartSettingsChart.vue",
   "PreviewInSolutionExplorer": false
 }
