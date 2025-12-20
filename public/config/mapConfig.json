@@ -49,6 +49,26 @@
     }
   },
   {
+    "title": "Yandex Satellite",
+    "name": "Yandex Satellite",
+    "layerSourceType": "xyz",
+    "sourceOptions": {
+      "crossOrigin": "anonymous",
+      "url": "https://sat04.maps.yandex.net/tiles?l=sat&x={x}&y={y}&z={z}",
+      "attributions": "<a href=\"http://www.yandex.ru/\">Yandex</a>"
+    }
+  },
+  {
+    "title": "ArcGis Geographic",
+    "name": "ArcGis Geographic",
+    "layerSourceType": "xyz",
+    "sourceOptions": {
+      "crossOrigin": "anonymous",
+      "url": "https://services.arcgisonline.com/ArcGIS/rest/services/NatGeo_World_Map/MapServer/tile/{z}/{y}/{x}",
+      "attributions": "<a href=\"https://docs.mapbox.com/data/tilesets/reference/mapbox-satellite/\">ArcGis</a>"
+    }
+  },
+  {
     "title": "Topographic Map Norway",
     "name": "kartverketTopo4",
     "layerSourceType": "xyz",
@@ -58,7 +78,7 @@
       "attributions": "<a href=\"http://www.kartverket.no/\">Kartverket</a>"
     },
     "tileLayerConfig": {
-      "extent": [2, 57, 33, 72]
+      "extent": [ 2, 57, 33, 72 ]
     }
   }
 ]

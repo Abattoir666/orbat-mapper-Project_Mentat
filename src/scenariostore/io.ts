@@ -410,20 +410,33 @@ export function useScenarioIO(store: ShallowRef<NewScenarioStore>) {
     loadFromObject(scn);
   }
 
-  async function loadDemoScenario(id: string | "falkland82" | "narvik40") {
-    isLoading.value = true;
-    const idUrlMap: Record<string, string> = {
-      falkland82: "/scenarios/falkland82.json",
-      narvik40: "/scenarios/narvik40.json",
-    };
-    const url = idUrlMap[id];
-    if (!url) {
-      console.warn("Unknown scenario id", id);
-      return;
+    // Helper to respect Vite's base ("/wp-content/orbat/" in vite.config)
+    const BASE_URL =
+        (import.meta.env.BASE_URL ?? "/").endsWith("/")
+            ? import.meta.env.BASE_URL
+            : import.meta.env.BASE_URL + "/";
+
+    async function loadDemoScenario(
+        id: "falkland82" | "narvik40" | "venezuelamk5" | string
+    ) {
+        isLoading.value = true;
+
+        const idUrlMap: Record<string, string> = {
+            falkland82: `${BASE_URL}scenarios/falkland82.json`,
+            narvik40: `${BASE_URL}scenarios/narvik40.json`,
+            venezuelamk5: `${BASE_URL}scenarios/venezuelamk5.json`,
+        };
+
+        const url = idUrlMap[id];
+        if (!url) {
+            console.warn("Unknown scenario id", id);
+            isLoading.value = false;
+            return;
+        }
+
+        await loadFromUrl(url);
+        isLoading.value = false;
     }
-    await loadFromUrl(url);
-    isLoading.value = false;
-  }
 
   async function downloadAsJson(fileName?: string) {
     let name = fileName;

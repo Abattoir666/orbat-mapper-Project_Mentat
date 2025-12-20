@@ -8,7 +8,6 @@ import { truncate } from "@turf/truncate";
 import { point } from "@turf/helpers";
 import type { Position } from "geojson";
 
-const s = useMapSettingsStore();
 
 export const UTC2MILITARY: Record<string, string> = {
   "-12": "Y",
@@ -54,17 +53,20 @@ export function formatDTG(value: number, timeZone: string) {
 }
 
 export function formatPosition(
-  value?: number[],
-  options: { format?: CoordinateFormatType; mgrsPrecision?: MGRSPrecision } = {},
+    value?: number[],
+    options: { format?: CoordinateFormatType; mgrsPrecision?: MGRSPrecision } = {},
 ) {
-  if (value) {
-    const format = options.format ?? s.coordinateFormat;
-    const mgrsPrecision = options.mgrsPrecision ?? 4;
-    if (format === "DegreeMinuteSeconds") return toStringHDMS(value, 0);
-    if (format === "MGRS") return formatMGRS(value, mgrsPrecision);
-    return formatDecimalDegrees(value, 3);
-  }
-  return "";
+    if (value) {
+        // Get the Pinia store *inside* the function, after Pinia is active
+        const { coordinateFormat } = useMapSettingsStore();
+        const format = options.format ?? coordinateFormat;
+        const mgrsPrecision = options.mgrsPrecision ?? 4;
+
+        if (format === "DegreeMinuteSeconds") return toStringHDMS(value, 0);
+        if (format === "MGRS") return formatMGRS(value, mgrsPrecision);
+        return formatDecimalDegrees(value, 3);
+    }
+    return "";
 }
 
 export function formatLength(length: number, unit: MeasurementUnit = "metric") {

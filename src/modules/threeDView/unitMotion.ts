@@ -1,5 +1,6 @@
 ﻿// src/modules/threeDView/unitMotion.ts
 import {
+  Cesium,
   Cartesian3,
   Cartographic,
   CallbackProperty,

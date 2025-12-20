@@ -195,7 +195,7 @@ import PanelSymbolButton from "@/components/PanelSymbolButton.vue";
 import FloatingPanel from "@/components/FloatingPanel.vue";
 import SymbolPickerPopover from "@/modules/scenarioeditor/SymbolPickerPopover.vue";
 import EchelonPickerPopover from "@/modules/scenarioeditor/EchelonPickerPopover.vue";
-import QuickBulkBar from "@/modules/scenarioeditor/bulkEdit/QuickBulkBar.vue";
+import * as QuickBulkActions from "@/modules/scenarioeditor/bulkEdit/quickBulkActions";
 import { Button } from "@/components/ui/button";
 import DeleteEventsBulkDialog from "@/modules/scenarioeditor/bulkEdit/DeleteEventsBulkDialog.vue";
 import CopyRangeRingsBulkDialog from "@/modules/scenarioeditor/bulkEdit/CopyRangeRingsBulkDialog.vue";

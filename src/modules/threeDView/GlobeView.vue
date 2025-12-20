@@ -33,6 +33,12 @@
 import MeasureWidget from "./widgets/MeasureWidget.vue";
 import PlaybackMenu from "@/modules/scenarioeditor/PlaybackMenu.vue";
 
+    // baseLayers.ts
+    const BASE_URL =
+        (import.meta.env.BASE_URL ?? "/").endsWith("/")
+            ? import.meta.env.BASE_URL
+            : import.meta.env.BASE_URL + "/";
+
     /* ───────────────── Globe port + mount target ───────────────── */
 
     const mountRef = ref<HTMLDivElement | null>(null);
@@ -402,7 +408,7 @@ function closeMeasure() { showMeasure.value = false; }
         }
 
         try {
-            const res = await fetch("/config/mapConfig.json");
+            const res = await fetch(`${BASE_URL}config/mapConfig.json`);
             const data = await res.json();
             layers.value = normalizeConfig(data);
         } catch (e) {

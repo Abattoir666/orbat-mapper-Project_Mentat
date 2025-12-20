@@ -23,7 +23,15 @@ export const DEMO_SCENARIOS = [
       "A series of naval and land engagements fought between German and Allied forces from April to June 1940. The battles marked the first Allied victory against Germany in the war.",
     imageUrl:
       "https://upload.wikimedia.org/wikipedia/commons/5/5f/Norwegian_Army_Colt_heavy_machine_gun_at_the_Narvik_front.jpg",
-  },
+    },
+    {
+        name: "Order of Battle and Locations of the Venezuelan Military",
+        id: "venezuelamk5",
+        summary:
+            "A detailed overview of the organizational structure and strategic positioning of the Venezuelan military as of December 9th, 2025.",
+        imageUrl:
+            "https://upload.wikimedia.org/wikipedia/commons/a/a0/%D0%92%D1%81%D1%82%D1%80%D0%B5%D1%87%D0%B0_%D1%81_%D0%9F%D1%80%D0%B5%D0%B7%D0%B8%D0%B4%D0%B5%D0%BD%D1%82%D0%BE%D0%BC_%D0%92%D0%B5%D0%BD%D0%B5%D1%81%D1%83%D1%8D%D0%BB%D1%8B_%D0%9D%D0%B8%D0%BA%D0%BE%D0%BB%D0%B0%D1%81%D0%BE%D0%BC_%D0%9C%D0%B0%D0%B4%D1%83%D1%80%D0%BE_-_4.jpeg",
+    },
 ];
 
 export function useBrowserScenarios() {

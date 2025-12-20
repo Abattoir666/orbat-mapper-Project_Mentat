@@ -185,6 +185,12 @@ type AnyViewAdapter = {
     removeUnit: (id: string) => void;
 };
 
+function getViewer(adapter: AnyViewAdapter | GlobePort): any {
+    const a: any = adapter;
+    // Prefer a direct .viewer, but fall back to a getter if you ever add one
+    return a.viewer ?? (typeof a.getViewer === "function" ? a.getViewer() : undefined);
+}
+
 export type BindUnitsOptions = {
     scenarioStore?: any;
     getNowMs?: () => number;
@@ -335,7 +341,7 @@ export function bindUnitsToView(adapter: AnyViewAdapter | GlobePort, opts: BindU
     // Drive SIDC/icon updates only when SIDC changes at the current time
     function tickForSidc(nowMs: number) {
         const srcUnits = pluckUnitsFromAnyStore(store);
-        const v = (adapter as GlobePort).viewer;
+        const v = getViewer(adapter);
         if (!v) return;
 
         for (const u of srcUnits) {
@@ -368,7 +374,7 @@ export function bindUnitsToView(adapter: AnyViewAdapter | GlobePort, opts: BindU
     const w = window as any;
     w.MentatBinderRefresh = () => rebuild();
     w.MentatBinderStatus = () => {
-        const v = (adapter as GlobePort).viewer;
+        const v = getViewer(adapter);
         const m = (window as any).__mentatLastSetUnitsPayload || {};
         return {
             attempts: retryAttempt,
@@ -379,12 +385,12 @@ export function bindUnitsToView(adapter: AnyViewAdapter | GlobePort, opts: BindU
         };
     };
     w.MentatList3D = (limit = 50) => {
-        const v = (adapter as GlobePort).viewer;
+        const v = getViewer(adapter);
         const ids = v ? v.entities.values.map((e: any) => e.id) : [];
         return ids.slice(0, limit);
     };
     w.MentatWhyNo3D = (id: string) => {
-        const v = (adapter as GlobePort).viewer;
+        const v = getViewer(adapter);
         const ent = v?.entities?.getById?.(id);
         const srcUnits = pluckUnitsFromAnyStore(store);
         const src = srcUnits.find(u => (u as any)?.id === id);

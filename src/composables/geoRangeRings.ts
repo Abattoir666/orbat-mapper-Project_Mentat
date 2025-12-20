@@ -38,21 +38,32 @@ export function useRangeRingsLayer() {
     );
 
     const unGrouped = featureCollection(
-      rangeRings.features.filter((r) => !r.properties.isGroup),
+        rangeRings.features.filter((r) => r.properties && !r.properties.isGroup),
     );
     const grouped = featureCollection(
       rangeRings.features.filter((r) => r.properties.isGroup),
     );
 
-    clusterEach(grouped, "id", (cluster) => {
-      const merged =
-        cluster.features.length > 1
-          ? union(cluster, {
-              properties: { id: cluster.features[0].properties.id, isGroup: true },
-            })
-          : cluster.features[0];
-      layer.getSource()?.addFeature(gjf.readFeature(merged) as Feature);
-    });
+      clusterEach(grouped, "id", (cluster: any) => {
+          if (!cluster.features || cluster.features.length === 0) return;
+
+          // Start from the first feature in the cluster
+          let merged: any = cluster.features[0];
+
+          // Union all remaining features into one polygon/multipolygon.
+          for (let i = 1; i < cluster.features.length; i++) {
+              merged = union(merged as any, cluster.features[i] as any) as any;
+          }
+
+          const baseProps = merged.properties || cluster.features[0].properties || {};
+          merged.properties = {
+              ...baseProps,
+              id: baseProps.id,
+              isGroup: true,
+          };
+
+          layer.getSource()?.addFeature(gjf.readFeature(merged) as Feature);
+      });
 
     layer.getSource()?.addFeatures(gjf.readFeatures(unGrouped) as Feature[]);
   }

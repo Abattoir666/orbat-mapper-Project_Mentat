@@ -144,7 +144,7 @@ export interface LayerFeatureItem {
 
 export type RangeRingShape = "circle" | "square" | "ellipse";
 
-interface RangeRing {
+export interface RangeRing {
   name: string;
   range: number;          // existing: treat as maxRange
   uom: "m" | "km" | "mi" | "nmi";

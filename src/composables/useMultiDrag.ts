@@ -142,12 +142,17 @@ export function useMultiDrag() {
         return res;
     }
 
-    // (export your public API as needed, e.g.)
-    export const multiDragUtils = {
+    const multiDragUtils = {
         orderIdsAsInList,
         makeParentLookup,
         topLevelSelection,
         removeIds,
         insertBlock,
+    };
+
+    return {
+        beginDrag,
+        readPayload,
+        multiDragUtils,
     };
 }

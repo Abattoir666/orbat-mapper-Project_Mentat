@@ -172,11 +172,9 @@
         category: "Places";
     }
 
-    const groupedHits = ref<
-        | ReturnType<typeof search>["groups"]
-        | Map<"Places", ExtendedPhotonSearchResult[]>
-        | Map<"Actions", ActionSearchResult[]>
-    >();
+    // Allow arbitrary groups like "Units", "Features", "Map layers", "Places",
+    // and our custom "Coordinates"
+    const groupedHits = ref<Map<string, any[]> | null>(null);
     const mapCenter = ref<number[] | null | undefined>();
 
     const hitCount = ref(0);

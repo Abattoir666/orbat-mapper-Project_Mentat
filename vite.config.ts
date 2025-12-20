@@ -7,6 +7,10 @@ import cesium from "vite-plugin-cesium";
 
 // https://vite.dev/config/
 export default defineConfig({
+    base: "/wp-content/orbat/",
+    build: {
+    sourcemap: true,            // <<< add this
+  },
     plugins: [vue(), vueDevTools(), tailwindcss(), cesium()],
     resolve: {
         alias: {

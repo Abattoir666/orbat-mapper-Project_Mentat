@@ -603,23 +603,9 @@
             const rootState = (store as any)?.state ?? store;
             const { startMs, currentMs } = resolveScenarioTimesFromActiveStore(rootState);
 
-            // Then when choosing t for each row:
-            let t: number;
-            switch (mode) {
-                case "csv":
-                    t = typeof tFromCsv === "number" ? tFromCsv : startMs; // default to scenario start
-                    break;
-                case "scenario-current":
-                    t = currentMs;
-                    break;
-                case "scenario-start":
-                default:
-                    t = startMs;
-            }
-
             // normalize rows → placement records
             const normalized = rows.map((r) => {
-                // local numeric helper (kept inside map to avoid name clashes)
+                // local numeric helper
                 const toNumLoose = (v: unknown) =>
                     v == null || v === "" || Number.isNaN(Number(v as any)) ? undefined : Number(v as any);
 
@@ -629,12 +615,15 @@
                 // time selection policy
                 let tFromCsv = toNumLoose((r as any).t);
                 // If CSV time looks like seconds, promote to ms
-                if (typeof tFromCsv === "number" && tFromCsv < 1e12) tFromCsv = Math.round(tFromCsv * 1000);
+                if (typeof tFromCsv === "number" && tFromCsv < 1e12) {
+                    tFromCsv = Math.round(tFromCsv * 1000);
+                }
 
                 let t: number;
                 switch (mode) {
                     case "csv":
-                        t = typeof tFromCsv === "number" ? tFromCsv : startMs; // default to scenario start if CSV missing/invalid
+                        // default to scenario start if CSV time missing/invalid
+                        t = typeof tFromCsv === "number" ? tFromCsv : startMs;
                         break;
                     case "scenario-current":
                         t = currentMs;
@@ -665,6 +654,7 @@
             });
 
             __lastPlacements.value = normalized;
+
 
             // --- write to store ---
             // --- write to store ---
@@ -863,14 +853,13 @@
                 }
             });
 
-            console.table(normalized, ["id", "name", "sideId", "groupId", "parentId", "sidc", "lat", "lon", "t"]);
-            emit("loaded");
-        } catch (err: any) {
-            console.error(err);
-            send({ type: "error", message: err?.message || "CSV import failed." });
+                console.table(normalized, ["id", "name", "sideId", "groupId", "parentId", "sidc", "lat", "lon", "t"]);
+                emit("loaded");
+            } catch (err: any) {
+                console.error(err);
+                send({ type: "error", message: err?.message || "CSV import failed." });
         }
-    }
-
+}
 
     const expandTemplates = ref(true);
     const includeEquipment = ref(true);

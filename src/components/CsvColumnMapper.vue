@@ -286,7 +286,7 @@
                 // … whatever you already do next with normalized …
             },
             error: (err: any) => {
-                console.error("[CSV] parse error:", err);
+                console.error("[CsvColumnMapper] parse error", err);
             },
         });
     }

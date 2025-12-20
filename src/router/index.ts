@@ -1,29 +1,27 @@
-import { createRouter, createWebHistory, type RouteRecordRaw } from "vue-router";
+import { createRouter, createWebHashHistory, type RouteRecordRaw } from "vue-router";
 import NProgress from "nprogress";
 import "nprogress/nprogress.css";
 import LandingPage from "../views/LandingPage.vue";
 import {
-  CHART_EDIT_MODE_ROUTE,
-  GRID_EDIT_ROUTE,
-  LANDING_PAGE_ROUTE,
-  MAP_EDIT_MODE_ROUTE,
-  NEW_SCENARIO_ROUTE,
-  ORBAT_CHART_ROUTE,
-  STORY_MODE_ROUTE,
-  GLOBE_EDIT_ROUTE,
+    CHART_EDIT_MODE_ROUTE,
+    GRID_EDIT_ROUTE,
+    LANDING_PAGE_ROUTE,
+    MAP_EDIT_MODE_ROUTE,
+    NEW_SCENARIO_ROUTE,
+    ORBAT_CHART_ROUTE,
+    STORY_MODE_ROUTE,
+    GLOBE_EDIT_ROUTE,
 } from "@/router/names";
 import GlobeTestView from "@/views/GlobeTestView.vue";
 
-
 declare module "vue-router" {
-  interface RouteMeta {
-    // is optional
-    helpUrl?: string;
-  }
+    interface RouteMeta {
+        helpUrl?: string;
+    }
 }
 
 const ScenarioEditorWrapper = () =>
-  import("../modules/scenarioeditor/ScenarioEditorWrapper.vue");
+    import("../modules/scenarioeditor/ScenarioEditorWrapper.vue");
 const NewScenarioView = () => import("../modules/scenarioeditor/NewScenarioView.vue");
 const StoryModeView = () => import("../modules/storymode/StoryModeWrapper.vue");
 const OrbatChartView = () => import("../modules/charteditor/OrbatChartViewWrapper.vue");
@@ -35,82 +33,85 @@ const GridEditView = () => import("@/modules/scenarioeditor/GridEditView.vue");
 const ChartEditView = () => import("@/modules/scenarioeditor/ChartEditView.vue");
 const ScenarioEditorMap = () => import("@/modules/scenarioeditor/ScenarioEditorMap.vue");
 const GlobeEditView = () => import("../modules/threeDView/GlobeView.vue");
+
 const routes = [
-  {
-    path: "/scenario/:scenarioId",
-    props: true,
-    component: ScenarioEditorWrapper,
-    beforeEnter: (to, from) => {
-      NProgress.start();
-    },
-    children: [
-      {
-        path: "",
-        name: MAP_EDIT_MODE_ROUTE,
-        component: ScenarioEditorMap,
-        meta: { helpUrl: "https://docs.orbat-mapper.app/guide/map-edit-mode" },
-       },
-      {
-        path: "Globe",
-        name: GLOBE_EDIT_ROUTE,
-        component: GlobeEditView,
-      },
-      {
-        path: "grid-edit",
-        name: GRID_EDIT_ROUTE,
-        component: GridEditView,
-        meta: { helpUrl: "https://docs.orbat-mapper.app/guide/grid-edit-mode" },
-      },
-      {
-        path: "chart-edit",
-        name: CHART_EDIT_MODE_ROUTE,
-        component: ChartEditView,
-        meta: { helpUrl: "https://docs.orbat-mapper.app/guide/chart-edit-mode" },
-       },
-    ],
-  },
-  {
-    path: "/newscenario",
-    name: NEW_SCENARIO_ROUTE,
-    component: NewScenarioView,
-    beforeEnter: (to, from) => {
-      NProgress.start();
-    },
-  },
-  {
-    path: "/storymode",
-    name: STORY_MODE_ROUTE,
-    component: StoryModeView,
-    beforeEnter: (to, from) => {
-      NProgress.start();
-    },
-  },
-  {
-    path: "/chart",
-    name: ORBAT_CHART_ROUTE,
-    component: OrbatChartView,
-    beforeEnter: (to, from) => {
-      NProgress.start();
-    },
-  },
-  {
-    path: "/testcomponents",
-    component: ComponentsTestView,
-  },
-  {
-    path: "/testgeo",
-    component: GeoTestView,
-  },
-  {
-    path: "/testgrid",
-    component: GridTestView,
-  },
-  {
-    path: "/testgrid2",
-    component: TanstackGridTestView,
-  },
     {
-        path: "/", name: LANDING_PAGE_ROUTE, component: LandingPage
+        path: "/scenario/:scenarioId",
+        props: true,
+        component: ScenarioEditorWrapper,
+        beforeEnter: (to, from) => {
+            NProgress.start();
+        },
+        children: [
+            {
+                path: "",
+                name: MAP_EDIT_MODE_ROUTE,
+                component: ScenarioEditorMap,
+                meta: { helpUrl: "https://docs.orbat-mapper.app/guide/map-edit-mode" },
+            },
+            {
+                path: "Globe",
+                name: GLOBE_EDIT_ROUTE,
+                component: GlobeEditView,
+            },
+            {
+                path: "grid-edit",
+                name: GRID_EDIT_ROUTE,
+                component: GridEditView,
+                meta: { helpUrl: "https://docs.orbat-mapper.app/guide/grid-edit-mode" },
+            },
+            {
+                path: "chart-edit",
+                name: CHART_EDIT_MODE_ROUTE,
+                component: ChartEditView,
+                meta: { helpUrl: "https://docs.orbat-mapper.app/guide/chart-edit-mode" },
+            },
+        ],
+    },
+    {
+        path: "/newscenario",
+        name: NEW_SCENARIO_ROUTE,
+        component: NewScenarioView,
+        beforeEnter: (to, from) => {
+            NProgress.start();
+        },
+    },
+    {
+        path: "/storymode",
+        name: STORY_MODE_ROUTE,
+        component: StoryModeView,
+        beforeEnter: (to, from) => {
+            NProgress.start();
+        },
+    },
+    {
+        path: "/chart",
+        name: ORBAT_CHART_ROUTE,
+        component: OrbatChartView,
+        beforeEnter: (to, from) => {
+            NProgress.start();
+        },
+    },
+    {
+        path: "/testcomponents",
+        component: ComponentsTestView,
+    },
+    {
+        path: "/testgeo",
+        component: GeoTestView,
+    },
+    {
+        path: "/testgrid",
+        component: GridTestView,
+    },
+    {
+        path: "/testgrid2",
+        component: TanstackGridTestView,
+    },
+    {
+        path: "/",
+        name: LANDING_PAGE_ROUTE,
+        component: LandingPage,
     },
     {
         path: "/scenario/:sid/globe",
@@ -118,22 +119,23 @@ const routes = [
         component: () => import("@/views/GlobeTestView.vue"),
         props: true,
         meta: { title: "3D Globe" },
-    }
+    },
 ] as RouteRecordRaw[];
 
 export const router = createRouter({
-  history: createWebHistory(),
-  routes,
-  scrollBehavior(to, from, savedPosition) {
-    if (savedPosition) {
-      return savedPosition;
-    } else {
-      return { top: 0 };
-    }
-  },
+    history: createWebHashHistory(import.meta.env.BASE_URL),
+    routes,
+    scrollBehavior(to, from, savedPosition) {
+        if (savedPosition) {
+            return savedPosition;
+        } else {
+            return { top: 0 };
+        }
+    },
 });
 
+export default router;
+
 router.afterEach((to, from) => {
-  // Complete the animation of the route progress bar.
-  NProgress.done();
+    NProgress.done();
 });

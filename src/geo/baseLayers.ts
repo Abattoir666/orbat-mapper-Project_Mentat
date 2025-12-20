@@ -6,6 +6,12 @@ import { transformExtent } from "ol/proj";
 import { klona } from "klona";
 import type { LayerConfigFile } from "@/geo/layerConfigTypes";
 
+// baseLayers.ts
+const BASE_URL =
+    (import.meta.env.BASE_URL ?? "/").endsWith("/")
+        ? import.meta.env.BASE_URL
+        : import.meta.env.BASE_URL + "/";
+
 function createFallbackLayers() {
   return [
     new TileLayer({
@@ -24,7 +30,7 @@ function createFallbackLayers() {
 export async function createBaseLayers(view: View, currentBaseLayerName = "osm") {
   let layers;
   try {
-    const res = await fetch("/config/mapConfig.json");
+    const res = await fetch(`${BASE_URL}config/mapConfig.json`);
     layers = (await res.json()) as LayerConfigFile;
   } catch (e) {
     console.error("Failed to fetch mapConfig.json", e);

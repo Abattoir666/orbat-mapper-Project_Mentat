@@ -330,15 +330,33 @@ export function useScenarioTime(store: NewScenarioStore) {
 
     function addScenarioEvent(event: NScenarioEvent | ScenarioEvent) {
         let newEvent = klona(event) as NScenarioEvent;
-        if (!newEvent.id) newEvent.id = nanoid();
         if (!newEvent._type) newEvent._type = "scenario";
+
+        // If no id provided, mint one
+        if (!newEvent.id) newEvent.id = nanoid();
+
+        // ACCUMULATION DEFAULT: if id already exists, mint a new id instead of overwriting.
+        if ((state as any).eventMap?.[newEvent.id]) {
+            const oldId = newEvent.id;
+            newEvent.id = nanoid();
+            // Optional: keep lineage so you can trace "same type/source" events later
+            (newEvent as any).sourceEventId = oldId;
+
+            console.warn("[events] ID collision; accumulating as new event", {
+                incomingId: oldId,
+                mintedId: newEvent.id,
+            });
+        }
+
         update((s) => {
             s.events.push(newEvent.id);
             s.eventMap[newEvent.id] = newEvent;
             s.events.sort((a, b) => s.eventMap[a].startTime - s.eventMap[b].startTime);
         });
+
         return newEvent.id;
     }
+
 
     function deleteScenarioEvent(id: EntityId) {
         update((s) => {

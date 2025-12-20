@@ -120,8 +120,6 @@ export function importRows(
         if (tRaw !== undefined && lat !== undefined && lon !== undefined) {
             unit.state.push({ id: newId(), t: tRaw, location: [lon, lat] });
         }
-        unit.state.push({ id: newId(), t: r.t, location: [r.lon, r.lat] });
-
         staged.push({ row: r, unit });
     }
 

@@ -9,6 +9,37 @@ import { symbolGenerator } from "@/symbology/milsymbwrapper";
 import { useSelectedItems } from "@/stores/selectedStore.ts";
 import type { UnitSymbolOptions } from "@/types/scenarioModels.ts";
 
+type KmlKmzExportSettings = ExportSettings & {
+    includeUnits: boolean;
+    includeFeatures: boolean;
+    includeSelectedUnitsOnly?: boolean;
+    folderMode?: "one" | "side" | "sideGroup";
+    timeMode?: "current" | "event" | "multiple";
+    exportEventId?: string;
+    exportEventIds: string[];
+    embedIcons?: boolean;
+    drawSymbolOutline?: boolean;
+    outlineWidth?: number;
+    outlineColor?: string;
+    labelScale: number;
+    iconScale: number;
+    useShortName?: boolean;
+    renderAmplifiers?: boolean;
+};
+
+function hashObject(obj: unknown): string {
+    try {
+        const json = JSON.stringify(obj, Object.keys(obj as any).sort());
+        let hash = 0;
+        for (let i = 0; i < json.length; i++) {
+            hash = (hash * 31 + json.charCodeAt(i)) | 0;
+        }
+        return hash.toString(16);
+    } catch {
+        return "0";
+    }
+}
+
 const walkUnitTree = (rootId: string, visit: (u: any) => void, state: any) => {
     const m = state?.unitMap ?? {};
     const stack = [rootId];
@@ -37,13 +68,14 @@ type OffsetItem = {
 
 // This composable provides KML/KMZ export functions, parameterized with required dependencies.
 export function useKmlExport(scenario: TScenario) {
-  const { convertUnitsToGeoJson, convertScenarioFeaturesToGeoJson } =
-    useGeoJsonConverter(scenario);
-  const { geo, store, unitActions } = scenario;
-  const { sideMap } = store.state;
+    const { convertUnitsToGeoJson, convertScenarioFeaturesToGeoJson } =
+        useGeoJsonConverter(scenario);
+    const { geo, store, unitActions } = scenario;
+    const { sideMap } = store.state;
 
-  const symbolSettings = useSymbolSettingsStore();
-  const { selectedUnitIds } = useSelectedItems();
+    const state = store.state;
+    const symbolSettings = useSymbolSettingsStore();
+    const { selectedUnitIds } = useSelectedItems();
 
   function createKMLString(opts: KmlKmzExportSettings) {
     const root: Root = { type: "root", children: [] };

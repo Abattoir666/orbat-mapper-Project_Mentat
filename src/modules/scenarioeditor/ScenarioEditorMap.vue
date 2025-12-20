@@ -144,6 +144,8 @@ import { storeToRefs } from "pinia";
 import { usePlaybackStore } from "@/stores/playbackStore";
 import UnitBreadcrumbs from "@/modules/scenarioeditor/UnitBreadcrumbs.vue";
 import ParentLinkCanvas from "@/modules/scenarioeditor/ParentLinkCanvas.vue";
+import { useScenarioEventLayer } from "@/modules/scenarioeditor/ExtendedScenarioEvents/useScenarioEventLayer";
+
 
 const emit = defineEmits(["showExport", "showLoad", "show-settings"]);
 const activeScenario = injectStrict(activeScenarioKey);
@@ -157,6 +159,8 @@ const toolbarStore = useMainToolbarStore();
 const activeUnitStore = useActiveUnitStore();
 const ui = useUiStore();
 const playback = usePlaybackStore();
+
+useScenarioEventLayer();
 
 const mapRef = shallowRef<OLMap>();
 const featureSelectInteractionRef = shallowRef<Select>();
