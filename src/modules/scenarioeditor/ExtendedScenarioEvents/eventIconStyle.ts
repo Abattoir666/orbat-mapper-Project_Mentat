@@ -12,6 +12,9 @@ import { resolveEventIcon } from "./eventIconRegistry";
 const svgTintCache = new Map<string, string>();
 const svgTintInflight = new Map<string, Promise<void>>();
 
+// Cached intrinsic SVG size (keyed by `src`). Used to compute a sane scale for data: URIs.
+const svgIntrinsicPxCache = new Map<string, number>();
+
 /**
  * Override fill/stroke inside an SVG markup string so that OpenLayers Icon tinting works
  * even when the SVG has explicit colors. We do a conservative replacement:
@@ -25,12 +28,10 @@ function tintSvgMarkup(svgText: string, tint: string): string {
     if (!svgText || !tint) return svgText;
 
     // Replace fill="..." except fill="none"
-    svgText = svgText.replace(/\bfill\s*=\s*(['"])(?!none\b)[^'"]*\1/gi, `fill="${tint
-        }"`);
+    svgText = svgText.replace(/\bfill\s*=\s*(['"])(?!none\b)[^'"]*\1/gi, `fill="${tint}"`);
 
     // Replace stroke="..." except stroke="none"
-    svgText = svgText.replace(/\bstroke\s*=\s*(['"])(?!none\b)[^'"]*\1/gi, `stroke="${tint
-        }"`);
+    svgText = svgText.replace(/\bstroke\s*=\s*(['"])(?!none\b)[^'"]*\1/gi, `stroke="${tint}"`);
 
     // Also handle inline style="...fill:...; stroke:...;"
     svgText = svgText.replace(/style\s*=\s*(['"])([^'"]*)\1/gi, (_m, q, body) => {
@@ -46,6 +47,65 @@ function tintSvgMarkup(svgText: string, tint: string): string {
 function encodeSvgDataUri(svgText: string): string {
     // Use encodeURIComponent to keep it robust; OL accepts utf8 data uri.
     return `data:image/svg+xml;utf8,${encodeURIComponent(svgText)}`;
+}
+
+function decodeSvgFromDataUri(src: string): string {
+    if (!src.startsWith("data:image/svg+xml")) return "";
+
+    try {
+        if (src.startsWith("data:image/svg+xml;base64,")) {
+            const b64 = src.slice("data:image/svg+xml;base64,".length);
+            return atob(b64);
+        }
+
+        // data:image/svg+xml,<svg ...> or data:image/svg+xml;utf8,...
+        const comma = src.indexOf(",");
+        const payload = comma >= 0 ? src.slice(comma + 1) : "";
+        return decodeURIComponent(payload);
+    } catch {
+        return "";
+    }
+}
+
+/**
+ * Best-effort: infer an SVG's intrinsic pixel size from its markup (viewBox or width/height).
+ * Returns the larger of (viewBox width/height) or (width/height), if parseable.
+ */
+function inferSvgIntrinsicPx(src: string): number | null {
+    if (!src.startsWith("data:image/svg+xml")) return null;
+
+    const cached = svgIntrinsicPxCache.get(src);
+    if (cached) return cached;
+
+    const svgText = decodeSvgFromDataUri(src);
+    if (!svgText) return null;
+
+    // viewBox="minX minY width height"
+    const vb = svgText.match(
+        /viewBox\s*=\s*(['"])\s*[-\d.]+\s+[-\d.]+\s+([-\d.]+)\s+([-\d.]+)\s*\1/i
+    );
+    if (vb) {
+        const w = Number(vb[2]);
+        const h = Number(vb[3]);
+        if (Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0) {
+            const px = Math.max(w, h);
+            svgIntrinsicPxCache.set(src, px);
+            return px;
+        }
+    }
+
+    // width="26" height="26" (ignore non-numeric like "1em")
+    const wMatch = svgText.match(/\bwidth\s*=\s*(['"])([\d.]+)\s*(?:px)?\1/i);
+    const hMatch = svgText.match(/\bheight\s*=\s*(['"])([\d.]+)\s*(?:px)?\1/i);
+    const w = wMatch ? Number(wMatch[2]) : NaN;
+    const h = hMatch ? Number(hMatch[2]) : NaN;
+    if (Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0) {
+        const px = Math.max(w, h);
+        svgIntrinsicPxCache.set(src, px);
+        return px;
+    }
+
+    return null;
 }
 
 /**
@@ -75,20 +135,15 @@ function tintSvgDataUri(src: string, tint: string, feature?: any): string {
     if (src.startsWith("data:image/svg+xml")) {
         const p = (async () => {
             try {
-                let svgText = "";
-
-                if (src.startsWith("data:image/svg+xml;base64,")) {
-                    const b64 = src.slice("data:image/svg+xml;base64,".length);
-                    svgText = atob(b64);
-                } else {
-                    // data:image/svg+xml,<svg ...> or data:image/svg+xml;utf8,...
-                    const comma = src.indexOf(",");
-                    const payload = comma >= 0 ? src.slice(comma + 1) : "";
-                    svgText = decodeURIComponent(payload);
-                }
+                const svgText = decodeSvgFromDataUri(src);
+                if (!svgText) return;
 
                 const tintedText = tintSvgMarkup(svgText, tint);
                 const tintedUri = encodeSvgDataUri(tintedText);
+
+                // Preserve intrinsic sizing for the tinted variant so scaling stays consistent.
+                const intrinsic = inferSvgIntrinsicPx(src);
+                if (intrinsic) svgIntrinsicPxCache.set(tintedUri, intrinsic);
 
                 svgTintCache.set(cacheKey, tintedUri);
             } finally {
@@ -145,7 +200,7 @@ function makeFallbackCircle(displacement: [number, number] = [0, 0], color?: str
 
 function normalizedScaleForSrc(src: string, category: string): number {
     const TARGET_PX = 28;
-    const MDI_BASE_SCALE = 1.2;
+    const VISUAL_BOOST = 1.15; // minor bump so icons read well vs labels
 
     const key = (category ?? "").toLowerCase().trim();
     const CATEGORY_SCALE: Record<string, number> = {
@@ -163,13 +218,13 @@ function normalizedScaleForSrc(src: string, category: string): number {
     };
 
     if (src.startsWith("data:image/svg+xml")) {
-        // Heuristic: many MDI SVGs are authored at ~512px viewBox
-        const assumedIntrinsic = 512;
-        const downscaleTo24 = TARGET_PX / assumedIntrinsic; // 0.046875
-        return MDI_BASE_SCALE * downscaleTo24 * (CATEGORY_SCALE[key] ?? 1);
+        // Data URIs can be authored at many sizes (e.g., 24, 26, 512). Infer size to avoid microscopic rendering.
+        const intrinsic = inferSvgIntrinsicPx(src) ?? 24;
+        return (TARGET_PX / intrinsic) * VISUAL_BOOST * (CATEGORY_SCALE[key] ?? 1);
     }
 
-    return MDI_BASE_SCALE * (CATEGORY_SCALE[key] ?? 1);
+    // For URL-based icons, OL will use the image's natural size (Iconify MDI is typically 24px). A modest boost is fine.
+    return VISUAL_BOOST * (CATEGORY_SCALE[key] ?? 1);
 }
 
 function makeIconFromSrc(src: string, category: string, displacement: [number, number], color?: string): Icon {
