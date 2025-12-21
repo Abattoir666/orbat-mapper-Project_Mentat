@@ -25,6 +25,8 @@ import { type LayerUpdateOptions } from "@/composables/geoMapLayers";
 import { useUiStore } from "@/stores/uiStore";
 import MapLayerMetaSettings from "@/modules/scenarioeditor/MapLayerMetaSettings.vue";
 import TabWrapper from "@/components/TabWrapper.vue";
+import FIRMSMapLayerSettings from "@/modules/scenarioeditor/FIRMSLayer/FIRMSMapLayerSettings.vue";
+
 
 interface Props {
   layerId: FeatureId;
@@ -142,18 +144,17 @@ function toggleLayerVisibility() {
         ><MapLayerMetaSettings :layer="mapLayer" @update="updateLayer"
       /></TabPanel>
       <TabPanel>
-        <ImageMapLayerSettings
-          v-if="mapLayer.type === 'ImageLayer'"
-          :layer="mapLayer"
-          :key="mapLayer.id"
-          @update="updateLayer"
-        />
-        <TileJSONMapLayerSettings
-          v-else-if="mapLayer.type === 'TileJSONLayer' || mapLayer.type === 'XYZLayer'"
-          :layer="mapLayer"
-          @update="updateLayer"
-          @action="onImageLayerAction"
-        />
+          <ImageMapLayerSettings v-if="mapLayer.type === 'ImageLayer'"
+                                 :layer="mapLayer"
+                                 :key="mapLayer.id"
+                                 @update="updateLayer" />
+          <TileJSONMapLayerSettings v-else-if="mapLayer.type === 'TileJSONLayer' || mapLayer.type === 'XYZLayer'"
+                                    :layer="mapLayer"
+                                    @update="updateLayer"
+                                    @action="onImageLayerAction" />
+          <FIRMSMapLayerSettings v-else-if="mapLayer.type === 'FIRMSLayer'"
+                                 :layer="mapLayer"
+                                 @update="updateLayer" />
       </TabPanel>
       <TabPanel v-if="uiStore.debugMode" class="prose prose-sm max-w-none">
         <pre>{{ mapLayer }}</pre>

@@ -28,6 +28,7 @@ import type {
   ScenarioLayer,
   ScenarioTileJSONLayer,
   ScenarioXYZLayer,
+  ScenarioFIRMSLayer,
 } from "@/types/scenarioGeoModels";
 import type { Optional } from "@/types/helpers";
 
@@ -143,11 +144,14 @@ export interface ScenarioTileJSONLayerUpdate
 export interface ScenarioXYZLayerUpdate extends Partial<Omit<ScenarioXYZLayer, "id">> {}
 export interface ScenarioKMLLayerUpdate extends Partial<Omit<ScenarioKMLLayer, "id">> {}
 
+export interface ScenarioFIRMSLayerUpdate extends Partial<Omit<ScenarioFIRMSLayer, "id">> { }
+
 export type ScenarioMapLayerUpdate =
-  | ScenarioImageLayerUpdate
-  | ScenarioTileJSONLayerUpdate
-  | ScenarioXYZLayerUpdate
-  | ScenarioKMLLayerUpdate;
+    | ScenarioImageLayerUpdate
+    | ScenarioTileJSONLayerUpdate
+    | ScenarioXYZLayerUpdate
+    | ScenarioKMLLayerUpdate
+    | ScenarioFIRMSLayerUpdate;
 
 export interface SideGroupUpdate extends Partial<Omit<NSideGroup, "id" | "subUnits">> {}
 export interface UnitUpdate extends Partial<Omit<NUnit, "id">> {}

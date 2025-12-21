@@ -23,7 +23,7 @@ export type OverlayApi = {
 
 type MinimalScenarioLike = unknown;
 
-/** Extract identity + render-relevant props we’ll diff on */
+/** Extract identity + render-relevant props weâ€™ll diff on */
 function keyOf(l: Imported2DLayer) {
     // Only imagery-like layers are supported in this first pass.
     // For future vector support, extend this key and the apply() switch below.
@@ -79,9 +79,9 @@ function removeOverlay(globe: OverlayApi, id: string) {
 }
 
 /** Ensure ordering by re-adding in the provided order when identities changed.
- *  This is conservative but reliable across adapters that don’t expose z-index setters. */
+ *  This is conservative but reliable across adapters that donâ€™t expose z-index setters. */
 function reapplyInOrder(globe: OverlayApi, layers: Imported2DLayer[]) {
-    // Remove only imagery-like layers we’re managing (leave other overlays alone).
+    // Remove only imagery-like layers weâ€™re managing (leave other overlays alone).
     if (globe.listOverlays) {
         const managedIds = new Set(layers.filter(isImageryLike).map(l => l.id));
         for (const o of globe.listOverlays()) {

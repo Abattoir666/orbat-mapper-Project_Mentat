@@ -13,7 +13,7 @@ export interface RankDisplay {
 
 export interface RankProfile {
     id: string; // e.g. "US_ARMY"
-    label: string; // e.g. "United States — Army"
+    label: string; // e.g. "United States â€” Army"
     description?: string;
     /** Map canonical grade keys (e.g. "O-3") to display properties */
     map: Record<string, RankDisplay>;
@@ -36,7 +36,7 @@ export const RANK_PROFILES: Record<string, RankProfile> = {
 
     US_ARMY: {
         id: "US_ARMY",
-        label: "United States — Army",
+        label: "United States â€” Army",
         description: "US Army ranks mapped from O/W/E grades.",
         map: {
             // Officers
