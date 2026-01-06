@@ -122,6 +122,7 @@ const {
 const availableColumns: TableColumn[] = [
   { value: "name", label: "Name", type: "text" },
   { value: "shortName", label: "Short name", type: "text" },
+  { value: "unitNumber" as ColumnField, label: "Unit number", type: "text" },
   { value: "sidc", label: "Symbol code", type: "sidc" },
   { value: "externalUrl", label: "URL", type: "text", hidden: true },
   { value: "description", label: "Description", type: "markdown", hidden: true },

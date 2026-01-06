@@ -12,6 +12,9 @@ import type { RankGrade, GradeType } from "./rankGrades";
 import { DEFAULT_GRADE, normalizeGrade, gradeKey, gradesByType } from "./rankGrades";
 import { listProfiles, displayForGrade } from "./rankProfiles";
 import { resolveInsigniaUrl } from "./rankAssets";
+import { enableMapSet } from "immer";
+
+ enableMapSet();
 
 type UnitUpdateLike = any;
 
@@ -47,6 +50,8 @@ const props = defineProps<{
   unit: NUnit;
   isLocked?: boolean;
 }>();
+
+const isLocked = computed(() => !!props.isLocked);
 
 const activeScenario = injectStrict(activeScenarioKey);
 const {
@@ -147,11 +152,16 @@ function setLeaderMenuOpen(id: string, open: boolean) {
 }
 
 function commit() {
-  const payload: UnitUpdateLike = { leaders: leadersLocal.value.map(normalizeLeader) };
-  updateUnit((props.unit as any).id, payload);
+  try {
+    const payload: UnitUpdateLike = { leaders: leadersLocal.value.map(normalizeLeader) };
+    updateUnit((props.unit as any).id, payload);
 
-  lastSavedAt.value = Date.now();
-  collapseAll();
+    lastSavedAt.value = Date.now();
+    collapseAll();
+  } catch (err) {
+    console.error("[UnitDetailsLeaders] commit failed", err);
+    throw err;
+  }
 }
 
 const savedRecently = computed(() => {

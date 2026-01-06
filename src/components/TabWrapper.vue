@@ -10,11 +10,12 @@
         modelValue?: number;
         /**
          * When true, tabs wrap into multiple rows instead of using horizontal scroll.
+         * In wrap mode, we render tabs in a 3-column grid (i.e., 3xN).
          */
         wrapTabs?: boolean;
 
         /**
-         * When true, the tab panel area gets its own vertical scrollbar (overflow-auto).
+         * When true, the TabPanels area gets its own vertical scrollbar (overflow-auto).
          * When false (default), panels "splay out" and rely on the parent container to scroll.
          */
         scrollPanels?: boolean;
@@ -36,8 +37,8 @@
         get() {
             return props.modelValue === undefined ? internalSelected.value : props.modelValue;
         },
-        set(v) {
-            if (props.modelValue === undefined) internalSelected.value = v;
+        set(v: number) {
+            internalSelected.value = v;
             emit("update:modelValue", v);
         },
     });
@@ -86,7 +87,7 @@
                 <!-- Scroll buttons only in non-wrapping mode -->
                 <button v-if="showLeft"
                         type="button"
-                        class="absolute left-0 top-1/2 z-10 -translate-y-1/2 rounded-md bg-white/90 p-1 shadow-sm ring-1 ring-slate-200 hover:bg-white dark:bg-slate-900/90 dark:ring-slate-700"
+                        class="absolute left-0 top-1/2 z-10 -translate-y-1/2 rounded-full bg-white/90 p-1 ring-1 ring-slate-200 hover:bg-white dark:bg-slate-900/90 dark:ring-slate-700"
                         aria-label="Scroll tabs left"
                         @click="scrollTabsBy(-260)">
                     <ChevronLeftIcon class="h-5 w-5 text-slate-700 dark:text-slate-200" />
@@ -94,7 +95,7 @@
 
                 <button v-if="showRight"
                         type="button"
-                        class="absolute right-0 top-1/2 z-10 -translate-y-1/2 rounded-md bg-white/90 p-1 shadow-sm ring-1 ring-slate-200 hover:bg-white dark:bg-slate-900/90 dark:ring-slate-700"
+                        class="absolute right-0 top-1/2 z-10 -translate-y-1/2 rounded-full bg-white/90 p-1 ring-1 ring-slate-200 hover:bg-white dark:bg-slate-900/90 dark:ring-slate-700"
                         aria-label="Scroll tabs right"
                         @click="scrollTabsBy(260)">
                     <ChevronRightIcon class="h-5 w-5 text-slate-700 dark:text-slate-200" />
@@ -102,8 +103,9 @@
 
                 <TabList v-slot="{ selectedIndex: si }"
                          :class="[
-            props.wrapTabs ? 'flex flex-wrap gap-x-4 gap-y-2 py-2' : 'flex gap-4 py-2',
-            props.wrapTabs ? '' : 'overflow-x-auto no-scrollbar scroll-smooth px-8',
+            props.wrapTabs
+              ? 'grid grid-cols-3 gap-x-4 gap-y-2 py-2'
+              : 'flex gap-4 py-2 overflow-x-auto no-scrollbar scroll-smooth px-8',
           ]"
                          ref="scrollRef">
                     <div v-if="!wrapTabs" ref="startTarget" class="w-4 shrink-0"></div>
@@ -116,6 +118,7 @@
                 ? 'border-army text-army dark:text-indigo-400'
                 : 'border-transparent text-slate-600 dark:text-slate-300',
               'border-b-2 px-1 py-1 text-sm font-medium whitespace-nowrap',
+              props.wrapTabs ? 'w-full text-center truncate' : '',
             ]">
                         {{ label }}
                     </Tab>

@@ -60,6 +60,7 @@
     import { setCustomNativeDragPreview } from "@atlaskit/pragmatic-drag-and-drop/element/set-custom-native-drag-preview";
     import MilSymbol from "@/components/MilSymbol.vue";
     import UnitDetailsLeaders from "@/modules/scenarioeditor/Leaders/UnitDetailsLeaders.vue";
+    import UnitDetailsPersonnel from "@/modules/scenarioeditor/Personnel/UnitDetailsPersonnel.vue";
 
     const FeatureTransformations = defineAsyncComponent(
         () => import("@/modules/scenarioeditor/FeatureTransformations.vue"),
@@ -89,9 +90,12 @@
 
     const unitName = ref("");
     const shortName = ref("");
+    const unitNumber = ref("");
     const truncateUnits = ref(true);
     const isDragged = ref(false);
     const elRef = useTemplateRef("elRef");
+
+    const uiStore = useUiStore();
 
     const tabList = computed(() =>
         uiStore.debugMode
@@ -100,6 +104,7 @@
                 "Map symbol",
                 "Unit state",
                 "Leaders",
+                "Personnel", // <-- add
                 { label: "TO&E/S", title: "Table of organization, equipment and supplies" },
                 "Map display",
                 "Properties",
@@ -111,6 +116,7 @@
                 "Map symbol",
                 "Unit state",
                 "Leaders",
+                "Personnel", // <-- add
                 { label: "TO&E/S", title: "Table of organization, equipment and supplies" },
                 "Map display",
                 "Properties",
@@ -206,6 +212,14 @@
     );
 
     watch(
+        () => unit.value?.unitNumber,
+        () => {
+            unitNumber.value = unit.value?.unitNumber || "";
+        },
+        { immediate: true },
+    );
+
+    watch(
         () => unitSettings.editHistory,
         (v) => {
             if (v && !unitSettings.showHistory) {
@@ -225,7 +239,6 @@
         isActive: isGetLocationActive,
         onGetLocation,
     } = useGetMapLocation(geoStore.olMap as OLMap);
-    const uiStore = useUiStore();
     const { selectedUnitIds, clear: clearSelection } = useSelectedItems();
     const isMultiMode = computed(() => selectedUnitIds.value.size > 1);
     const selectedUnits = computed(() =>
@@ -417,6 +430,11 @@
                                    @update-value="updateUnit(unitId, { shortName: $event })"
                                    text-class="text-sm text-gray-500 dark:text-slate-300"
                                    :disabled="isLocked" />
+                    <EditableLabel class="relative -top-4"
+                                   v-model="unitNumber"
+                                   @update-value="updateUnit(unitId, { unitNumber: $event })"
+                                   text-class="text-sm text-gray-500 dark:text-slate-300"
+                                   :disabled="isLocked" />
                 </div>
                 <IconLockOutline v-if="isLocked" class="size-5 text-gray-400" />
                 <div v-if="unitStatus">
@@ -499,6 +517,9 @@
                         <DescriptionItem v-if="unit.shortName" label="Short name">
                             {{ unit.shortName }}
                         </DescriptionItem>
+                        <DescriptionItem v-if="unit.unitNumber" label="Unit number">
+                            {{ unit.unitNumber }}
+                        </DescriptionItem>
                         <DescriptionItem v-if="unit.externalUrl"
                                          label="External URL"
                                          dd-class="truncate">
@@ -537,6 +558,12 @@
                 <UnitDetailsLeaders v-if="!isMultiMode" :unit="unit" :is-locked="isLocked" />
                 <p v-else class="p-2 pt-4 text-sm">Multi edit mode not supported yet.</p>
             </TabPanel>
+
+            <TabPanel>
+                <UnitDetailsPersonnel v-if="!isMultiMode" :unit="unit" :is-locked="isLocked" />
+                <p v-else class="p-2 pt-4 text-sm">Multi edit mode not supported yet.</p>
+            </TabPanel>
+
             <TabPanel>
                 <UnitDetailsToe :unit="unit" :is-locked="isLocked" />
             </TabPanel>

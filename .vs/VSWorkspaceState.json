@@ -1,12 +1,17 @@
 {
   "ExpandedNodes": [
     "",
-    "\\docs",
-    "\\images",
     "\\public",
-    "\\public\\config",
     "\\public\\scenarios",
-    "\\src"
+    "\\src",
+    "\\src\\composables",
+    "\\src\\geo",
+    "\\src\\modules",
+    "\\src\\modules\\scenarioeditor",
+    "\\src\\modules\\scenarioeditor\\Personnel",
+    "\\src\\scenariostore",
+    "\\src\\stores"
   ],
+  "SelectedNode": "\\src\\modules\\scenarioeditor\\Personnel\\UnitDetailsPersonnel.vue",
   "PreviewInSolutionExplorer": false
 }

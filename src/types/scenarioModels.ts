@@ -95,6 +95,7 @@ export interface Unit {
     name: string;
     sidc: string;
     shortName?: string;
+    unitNumber?: string;
     description?: string;
     externalUrl?: string;
     subUnits?: Unit[];
@@ -111,6 +112,7 @@ export interface Unit {
     status?: string;
     template?: EntityId;
     leaders?: UnitLeader[];
+    personnelRoster?: UnitPerson[];
     rankProfileId?: string;
     properties?: UnitProperties;
     locked?: boolean;
@@ -123,6 +125,31 @@ export interface Unit {
     _isOpen?: boolean;
 }
 
+export interface UnitPerson {
+    id: EntityId;
+    name?: string;
+    role?: string;
+
+    // Canonical, service-agnostic grade (recommended)
+    grade?: RankGrade;
+
+    // Optional rank profile used to map grade -> display name (no images in Personnel tab)
+    rankProfileId?: string;
+
+    // Optional free-text override. Prefer full title (e.g. "Captain") over abbreviations.
+    rankOverride?: string;
+
+    callsign?: string;
+
+    // NEW: Personnel-specific status (e.g. Active / KIA / WIA / Detached / POW / etc.)
+    status?: string;
+
+    start?: string; // YYYY-MM-DD
+    end?: string;   // YYYY-MM-DD
+    notes?: string;
+
+    externalUrl?: string;
+}
 
 export type GradeType = "O" | "W" | "E";
 

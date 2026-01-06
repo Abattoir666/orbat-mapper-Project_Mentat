@@ -1,5 +1,6 @@
 import { createUnitFeatureAt, createUnitLayer } from "@/geo/layers";
 // import Fade from "ol-ext/featureanimation/Fade";
+
 import { computed, onMounted, onUnmounted, ref, type Ref, unref, watch } from "vue";
 import OLMap from "ol/Map";
 import VectorLayer from "ol/layer/Vector";
@@ -9,410 +10,443 @@ import { DragBox, Modify, Select } from "ol/interaction";
 import { ModifyEvent } from "ol/interaction/Modify";
 import { Feature } from "ol";
 import { type MaybeRef } from "@vueuse/core";
+
 import {
-  clearUnitStyleCache,
-  createUnitStyle,
-  selectedUnitStyleCache,
-  unitStyleCache,
+    clearUnitStyleCache,
+    createUnitStyle,
+    unitStyleCache,
+    selectedUnitStyleCache,
 } from "@/geo/unitStyles";
+
 import {
-  altKeyOnly,
-  click as clickCondition,
-  platformModifierKeyOnly,
+    altKeyOnly,
+    click as clickCondition,
+    platformModifierKeyOnly,
 } from "ol/events/condition";
+
 import { SelectEvent } from "ol/interaction/Select";
-import { useOlEvent } from "./openlayersHelpers";
+import { useSelectedItems } from "@/stores/selectedStore";
+
 import { injectStrict } from "@/utils";
 import { activeScenarioKey } from "@/components/injects";
-import type { EntityId } from "@/types/base";
-import type { TScenario } from "@/scenariostore";
-import { useSelectedItems } from "@/stores/selectedStore";
-import type { FeatureLike } from "ol/Feature";
-import BaseEvent from "ol/events/Event";
-import { dropTargetForElements } from "@atlaskit/pragmatic-drag-and-drop/element/adapter";
-import { isScenarioFeatureDragItem, isUnitDragItem } from "@/types/draggables";
-import type { Coordinate } from "ol/coordinate";
-import type { Position } from "geojson";
-import { getCoordinateFormatFunction } from "@/utils/geoConvert";
-import { useMapSettingsStore } from "@/stores/mapSettingsStore";
-import { coordEach } from "@turf/meta";
+import type { TScenario } from "@/types/internalModels";
+
+import { useUiStore } from "@/stores/uiStore";
+import { useGeoStore } from "@/stores/geoStore";
+
+import { formatPosition } from "@/geo/utils";
+
 import { centroid } from "@turf/centroid";
 
-import { klona } from "klona";
 import View from "ol/View";
+import type { FeatureLike } from "ol/Feature";
+
+import Fill from "ol/style/Fill";
+import Stroke from "ol/style/Stroke";
+import type Style from "ol/style/Style";
+
+export type Position = [number, number];
 
 let zoomResolutions: number[] = [];
 
-export function calculateZoomToResolution(view: View) {
-  zoomResolutions = [];
-  for (let i = 0; i <= 24; i++) {
-    zoomResolutions.push(view.getResolutionForZoom(i));
-  }
+/** Local minimal drag payload typing/guards (avoids repo-specific types modules). */
+type DragData = any;
+function isUnitDragItem(d: any): d is { unit: any } {
+    return !!d && typeof d === "object" && "unit" in d;
+}
+function isScenarioFeatureDragItem(d: any): d is { feature: any } {
+    return !!d && typeof d === "object" && "feature" in d;
 }
 
+export function calculateZoomToResolution(view: View) {
+    zoomResolutions = [];
+    for (let i = 0; i <= 24; i++) {
+        zoomResolutions.push(view.getResolutionForZoom(i));
+    }
+}
 calculateZoomToResolution(new View());
 
+/**
+ * Apply label highlight styling to a Style or Style[] produced by createUnitStyle().
+ * - Yellow fill + dark stroke for legibility.
+ * - Boldens existing font while preserving size/family.
+ */
+function applySelectedLabelStyle(styleOrStyles: any) {
+    const styles: Style[] = Array.isArray(styleOrStyles) ? styleOrStyles : [styleOrStyles];
+    for (const s of styles) {
+        const text = s?.getText?.();
+        if (!text) continue;
+
+        text.setFill(new Fill({ color: "rgba(255,255,0,1)" }));
+        text.setStroke(new Stroke({ color: "rgba(0,0,0,0.90)", width: 4 }));
+
+        const font = text.getFont?.();
+        if (font && !/^\s*bold\b/i.test(font)) {
+            text.setFont(`bold ${font}`);
+        }
+    }
+}
+
 export function useUnitLayer({ activeScenario }: { activeScenario?: TScenario } = {}) {
-  const {
-    store: { state, onUndoRedo },
-    geo,
-    unitActions: { getCombinedSymbolOptions },
-    helpers: { getUnitById },
-  } = activeScenario || injectStrict(activeScenarioKey);
+    const {
+        store: { state, onUndoRedo },
+        geo,
+        unitActions: { getCombinedSymbolOptions },
+        helpers: { getUnitById },
+    } = activeScenario || injectStrict(activeScenarioKey);
 
-  const unitLayer = createUnitLayer();
-  unitLayer.setStyle(unitStyleFunction);
+    const { selectedUnitIds } = useSelectedItems();
 
-  function unitStyleFunction(feature: FeatureLike, resolution: number) {
-    const unitId = feature?.getId() as string;
-    let unitStyle = unitStyleCache.get(unitId);
+    const unitLayer = createUnitLayer();
 
-    const unit = getUnitById(unitId);
-    if (!unitStyle) {
-      if (unit) {
-        const symbolOptions = getCombinedSymbolOptions(unit);
-        unitStyle = createUnitStyle(unit, symbolOptions);
-        unitStyleCache.set(unitId, unitStyle);
-      }
+    /**
+     * Keep features stable and update geometry in-place.
+     * This avoids expensive source.clear() + re-add cycles on every redraw/time tick.
+     */
+    const featureByUnitId = new Map<string, Feature<Point>>();
+
+    function unitStyleFunction(feature: FeatureLike, resolution: number) {
+        const unitId = feature?.getId() as string;
+        if (!unitId) return;
+
+        const unit = getUnitById(unitId);
+
+        // Zoom gating (applies to both selected and unselected)
+        const { limitVisibility, minZoom = 0, maxZoom = 24 } = unit?.style ?? {};
+        if (
+            limitVisibility &&
+            (resolution > zoomResolutions[minZoom ?? 0] ||
+                resolution < zoomResolutions[maxZoom ?? 24])
+        ) {
+            return;
+        }
+
+        // Selected variant: MilSymbol outline stroke + label highlight (cached)
+        if (selectedUnitIds.value?.has(unitId) && unit) {
+            let sel = selectedUnitStyleCache.get(unitId);
+            if (!sel) {
+                const symbolOptions = getCombinedSymbolOptions(unit);
+
+                sel = createUnitStyle(unit, {
+                    ...symbolOptions,
+                    outlineColor: "yellow",
+                    outlineWidth: 14,
+                } as any);
+
+                // Highlight the label (fill/stroke/bold) on the selected style.
+                applySelectedLabelStyle(sel);
+
+                selectedUnitStyleCache.set(unitId, sel);
+            }
+            return sel;
+        }
+
+        // Normal variant (cached)
+        let base = unitStyleCache.get(unitId);
+        if (!base && unit) {
+            const symbolOptions = getCombinedSymbolOptions(unit);
+            base = createUnitStyle(unit, symbolOptions);
+            unitStyleCache.set(unitId, base);
+        }
+        return base;
     }
-    const { limitVisibility, minZoom = 0, maxZoom = 24 } = unit.style ?? {};
 
-    if (
-      limitVisibility &&
-      (resolution > zoomResolutions[minZoom ?? 0] ||
-        resolution < zoomResolutions[maxZoom ?? 24])
-    ) {
-      return;
+    unitLayer.setStyle(unitStyleFunction);
+
+    onUndoRedo(() => {
+        clearUnitStyleCache();
+        state.unitStateCounter++;
+    });
+
+    function setFeaturePosition(feature: Feature<Point>, lonLat: [number, number]) {
+        const geom = feature.getGeometry();
+        if (!geom) return;
+
+        const newCoord = fromLonLat(lonLat);
+        const cur = geom.getCoordinates();
+
+        // Avoid OL change churn if coord identical
+        if (cur && cur[0] === newCoord[0] && cur[1] === newCoord[1]) return;
+
+        geom.setCoordinates(newCoord);
     }
 
-    return unitStyle;
-  }
+    /**
+     * Full sync: create/update features for the current visible unit set,
+     * and remove features that are no longer visible.
+     *
+     * Call this when visibility membership changes (filters/toggles).
+     */
+    const drawUnits = () => {
+        const source = unitLayer.getSource();
+        if (!source) return;
 
-  onUndoRedo(() => {
-    clearUnitStyleCache();
-    state.unitStateCounter++;
-  });
+        const visible = geo.everyVisibleUnit.value;
+        const seen = new Set<string>();
 
-  const drawUnits = () => {
-    unitLayer.getSource()?.clear();
-    const units = geo.everyVisibleUnit.value.map((unit) => {
-      return createUnitFeatureAt(unit._state!.location!, unit);
-    });
-    unitLayer.getSource()?.addFeatures(units);
-  };
+        for (const unit of visible) {
+            const unitId = unit?.id as string;
+            if (!unitId) continue;
 
-  const animateUnits = () => {
-    unitLayer.getSource()?.clear();
-    const units = geo.everyVisibleUnit.value.map((unit) => {
-      return createUnitFeatureAt(unit._state!.location!, unit);
-    });
-    unitLayer.getSource()?.addFeatures(units);
-    // units.forEach((f) =>
-    //   //@ts-ignore
-    //   unitLayer.animateFeature(f, new Fade({ duration: 1000 }))
-    // );
-  };
-  return { unitLayer, drawUnits, animateUnits };
+            const lonLat = (unit._state?.location ?? unit.location) as [number, number] | undefined;
+
+            if (!lonLat) {
+                const existing = featureByUnitId.get(unitId);
+                if (existing) {
+                    source.removeFeature(existing);
+                    featureByUnitId.delete(unitId);
+                    unitStyleCache.delete(unitId);
+                    selectedUnitStyleCache.delete(unitId);
+                }
+                continue;
+            }
+
+            seen.add(unitId);
+
+            let f = featureByUnitId.get(unitId);
+            if (!f) {
+                f = createUnitFeatureAt(lonLat, unit) as Feature<Point>;
+                if (!f.getId()) f.setId(unitId);
+                featureByUnitId.set(unitId, f);
+                source.addFeature(f);
+            } else {
+                if (!f.getId()) f.setId(unitId);
+                setFeaturePosition(f, lonLat);
+            }
+        }
+
+        // Prune features that are no longer visible
+        for (const [unitId, f] of featureByUnitId) {
+            if (!seen.has(unitId)) {
+                source.removeFeature(f);
+                featureByUnitId.delete(unitId);
+                unitStyleCache.delete(unitId);
+                selectedUnitStyleCache.delete(unitId);
+            }
+        }
+    };
+
+    /**
+     * Fast path: update positions only.
+     * Intended for every time tick (scrub/playback).
+     *
+     * Does not prune non-visible features; use drawUnits() for membership changes.
+     */
+    const updateUnitPositions = () => {
+        const source = unitLayer.getSource();
+        if (!source) return;
+
+        const visible = geo.everyVisibleUnit.value;
+
+        for (const unit of visible) {
+            const unitId = unit?.id as string;
+            if (!unitId) continue;
+
+            const lonLat = (unit._state?.location ?? unit.location) as [number, number] | undefined;
+            if (!lonLat) continue;
+
+            let f = featureByUnitId.get(unitId);
+            if (!f) {
+                // Lazily create if drawUnits() hasn't run yet.
+                f = createUnitFeatureAt(lonLat, unit) as Feature<Point>;
+                if (!f.getId()) f.setId(unitId);
+                featureByUnitId.set(unitId, f);
+                source.addFeature(f);
+            } else {
+                if (!f.getId()) f.setId(unitId);
+                setFeaturePosition(f, lonLat);
+            }
+        }
+    };
+
+    const animateUnits = () => {
+        // Keep existing call sites working; animations can be reintroduced later.
+        drawUnits();
+    };
+
+    return { unitLayer, drawUnits, animateUnits, updateUnitPositions };
 }
 
 export function useMapDrop(
-  mapRef: MaybeRef<OLMap | null | undefined>,
-  unitLayer: MaybeRef<VectorLayer<any>>,
+    mapRef: MaybeRef<OLMap | null | undefined>,
+    unitLayer: MaybeRef<VectorLayer<any>>,
 ) {
-  const { geo } = injectStrict(activeScenarioKey);
-  const mStore = useMapSettingsStore();
-  let dndCleanup = () => {};
-  const isDragging = ref(false);
-  const dropPosition = ref<Position>([0, 0]);
+    const { geo } = injectStrict(activeScenarioKey);
 
-  const formattedPosition = computed(() =>
-    isDragging.value
-      ? getCoordinateFormatFunction(mStore.coordinateFormat)(dropPosition.value)
-      : "",
-  );
+    let dndCleanup = () => { };
+    const isDragging = ref(false);
+    const dropPosition = ref<Position>([0, 0]);
 
-  onMounted(() => {
-    const olMap = unref(mapRef)!;
-    dndCleanup = dropTargetForElements({
-      element: olMap.getTargetElement(),
-      canDrop: ({ source }) =>
-        isUnitDragItem(source.data) || isScenarioFeatureDragItem(source.data),
-      getData: ({ input }) => {
-        return { position: toLonLat(olMap.getEventCoordinate(input as MouseEvent)) };
-      },
-      onDragEnter: () => {
+    const formattedPosition = computed(() =>
+        isDragging.value ? formatPosition(dropPosition.value) : "",
+    );
+
+    function onDragOver(event: DragEvent) {
+        event.preventDefault();
         isDragging.value = true;
-      },
-      onDragLeave: () => {
+
+        const coordinates = unref(mapRef)
+            ?.getEventCoordinate(event as any)
+            ?.map((v) => +v);
+
+        if (!coordinates) return;
+        dropPosition.value = toLonLat(coordinates) as Position;
+    }
+
+    function onDragLeave(event: DragEvent) {
+        event.preventDefault();
         isDragging.value = false;
-      },
-      onDrag: ({ self }) => {
-        dropPosition.value = self.data.position as Coordinate;
-      },
-      onDrop: ({ source, self }) => {
-        const dragData = source.data;
+    }
+
+    function onDrop(event: DragEvent) {
+        event.preventDefault();
         isDragging.value = false;
 
-        const dropPosition = self.data.position as Coordinate;
+        const data = event.dataTransfer?.getData("application/orbatmapper");
+        if (!data) return;
+
+        const dragData: DragData = JSON.parse(data);
+
         if (isUnitDragItem(dragData)) {
-          const unitSource = unref(unitLayer).getSource();
-          const existingUnitFeature = unitSource?.getFeatureById(dragData.unit.id);
+            const pos = dropPosition.value;
+            const unitSource = unref(unitLayer).getSource();
+            const existingUnitFeature = unitSource?.getFeatureById(dragData.unit.id);
 
-          geo.addUnitPosition(dragData.unit.id, dropPosition);
+            geo.addUnitPosition(dragData.unit.id, pos);
 
-          if (existingUnitFeature) {
-            existingUnitFeature.setGeometry(new Point(fromLonLat(dropPosition)));
-          } else {
-            unitSource?.addFeature(createUnitFeatureAt(dropPosition, dragData.unit));
-          }
+            if (existingUnitFeature) {
+                existingUnitFeature.setGeometry(new Point(fromLonLat(pos)));
+            } else {
+                unitSource?.addFeature(createUnitFeatureAt(pos, dragData.unit));
+            }
         } else if (isScenarioFeatureDragItem(dragData)) {
-          const geometryCenter = centroid(dragData.feature).geometry.coordinates;
-          const to = dropPosition;
-          const diff = [to[0] - geometryCenter[0], to[1] - geometryCenter[1]];
-          const geometryCopy = klona(dragData.feature.geometry);
-          coordEach(geometryCopy, (coord) => {
-            coord[0] += diff[0];
-            coord[1] += diff[1];
-          });
+            const geometryCenter = centroid(dragData.feature).geometry.coordinates;
+            const to = dropPosition.value;
+            const diff = [to[0] - geometryCenter[0], to[1] - geometryCenter[1]];
 
-          geo.updateFeature(dragData.feature.id, { geometry: geometryCopy });
+            geo.addFeaturePosition(dragData.feature.id, diff);
         }
-      },
+    }
+
+    onMounted(() => {
+        document.addEventListener("dragover", onDragOver);
+        document.addEventListener("dragleave", onDragLeave);
+        document.addEventListener("drop", onDrop);
+
+        dndCleanup = () => {
+            document.removeEventListener("dragover", onDragOver);
+            document.removeEventListener("dragleave", onDragLeave);
+            document.removeEventListener("drop", onDrop);
+        };
     });
-  });
 
-  onUnmounted(() => dndCleanup());
+    onUnmounted(() => {
+        dndCleanup();
+    });
 
-  return { isDragging, dropPosition, formattedPosition };
-}
-
-export function useMoveInteraction(
-  mapRef: OLMap,
-  unitLayer: VectorLayer,
-  enabled: Ref<boolean>,
-) {
-  const {
-    geo,
-    unitActions: { isUnitLocked },
-    store: { state },
-  } = injectStrict(activeScenarioKey);
-  const modifyInteraction = new Modify({
-    hitDetection: unitLayer,
-    source: unitLayer.getSource()!,
-  });
-
-  modifyInteraction.on(["modifystart", "modifyend"], (evt) => {
-    mapRef.getTargetElement().style.cursor =
-      evt.type === "modifystart" ? "grabbing" : "pointer";
-    if (evt.type === "modifystart") {
-      (evt as ModifyEvent).features.forEach((f) => {
-        const unitId = f.getId() as string;
-        if (isUnitLocked(unitId)) {
-          f.set("_geometry", f.getGeometry()?.clone(), true);
-        }
-      });
-    }
-    if (evt.type === "modifyend") {
-      const unitFeature = (evt as ModifyEvent).features.pop() as Feature<Point>;
-      if (unitFeature) {
-        const movedUnitId = unitFeature.getId() as string;
-        if (!movedUnitId) return;
-
-        const oldGeometry = unitFeature.get("_geometry");
-        if (oldGeometry) {
-          unitFeature.setGeometry(oldGeometry);
-          unitFeature.set("_geometry", undefined, true);
-          return;
-        }
-        const newCoordinate = unitFeature.getGeometry()?.getCoordinates();
-        if (newCoordinate) geo.addUnitPosition(movedUnitId, toLonLat(newCoordinate));
-      }
-    }
-  });
-  const overlaySource = modifyInteraction.getOverlay().getSource();
-  overlaySource?.on(["addfeature", "removefeature"], function (evt: Event | BaseEvent) {
-    mapRef.getTargetElement().style.cursor = evt.type === "addfeature" ? "pointer" : "";
-  });
-
-  watch(enabled, (v) => modifyInteraction.setActive(v), { immediate: true });
-  return { moveInteraction: modifyInteraction };
+    return { isDragging, formattedPosition };
 }
 
 export function useUnitSelectInteraction(
-  layers: VectorLayer<any>[],
-  olMap: OLMap,
-  options: Partial<{
-    enable: MaybeRef<boolean>;
-    enableBoxSelect: MaybeRef<boolean>;
-  }> = {},
+    layers: VectorLayer<any>[],
+    _map: OLMap,
+    { enable }: { enable: Ref<boolean> },
 ) {
-  let isInternal = false;
-  const enableRef = ref(options.enable ?? true);
-  const enableBoxSelectRef = ref(options.enableBoxSelect ?? true);
+    const { selectedUnitIds } = useSelectedItems();
 
-  const { selectedUnitIds: selectedIds, clear: clearSelectedItems } = useSelectedItems();
-  const {
-    geo,
-    unitActions: { getCombinedSymbolOptions },
-    helpers: { getUnitById },
-  } = injectStrict(activeScenarioKey);
+    /**
+     * IMPORTANT:
+     * style: null => Select will NOT override the feature style.
+     * This prevents selected units from disappearing.
+     *
+     * Highlighting is handled in the unit layer style function (selectedUnitStyleCache).
+     */
+    const unitSelectInteraction = new Select({
+        condition: clickCondition,
+        layers,
+        style: null,
+    });
 
-  const unitSelectInteraction = new Select({
-    layers,
-    style: selectedUnitStyleFunction,
-    condition: clickCondition,
-    removeCondition: altKeyOnly,
-  });
+    const boxSelectInteraction = new DragBox({
+        condition: platformModifierKeyOnly,
+    });
 
-  function selectedUnitStyleFunction(feature: FeatureLike, resolution: number) {
-    const unitId = feature?.getId() as string;
-    let unitStyle = selectedUnitStyleCache.get(unitId);
-    const unit = getUnitById(unitId);
-    if (!unitStyle) {
-      if (unit) {
-        const symbolOptions = getCombinedSymbolOptions(unit);
-        unitStyle = createUnitStyle(unit, {
-          ...symbolOptions,
-          infoOutlineColor: "yellow",
-          infoOutlineWidth: 8,
-          outlineColor: "yellow",
-          outlineWidth: 21,
-        })!;
-        selectedUnitStyleCache.set(unitId, unitStyle);
-      }
+    unitSelectInteraction.on("select", (e: SelectEvent) => {
+        const set = selectedUnitIds.value;
+
+        for (const f of e.deselected) {
+            const id = f.getId() as string;
+            if (id) set.delete(id);
+        }
+        for (const f of e.selected) {
+            const id = f.getId() as string;
+            if (id) set.add(id);
+        }
+
+        // Force immediate style re-evaluation so highlights appear/disappear now.
+        for (const layer of layers) layer.changed();
+    });
+
+    boxSelectInteraction.on("boxend", () => {
+        const extent = boxSelectInteraction.getGeometry().getExtent();
+        const set = selectedUnitIds.value;
+
+        for (const layer of layers) {
+            const source = layer.getSource();
+            if (!source) continue;
+
+            source.forEachFeatureIntersectingExtent(extent, (feature) => {
+                const id = feature.getId() as string;
+                if (id) set.add(id);
+            });
+        }
+
+        for (const layer of layers) layer.changed();
+    });
+
+    function setActive(active: boolean) {
+        unitSelectInteraction.setActive(active);
+        boxSelectInteraction.setActive(active);
     }
-    const { limitVisibility, minZoom = 0, maxZoom = 24 } = unit.style ?? {};
 
-    if (
-      limitVisibility &&
-      (resolution > zoomResolutions[minZoom ?? 0] ||
-        resolution < zoomResolutions[maxZoom ?? 24])
-    ) {
-      return;
+    watch(enable, (v) => setActive(!!v), { immediate: true });
+
+    function redraw() {
+        for (const layer of layers) layer.changed();
     }
 
-    return unitStyle;
-  }
+    return { unitSelectInteraction, boxSelectInteraction, redraw };
+}
 
-  const boxSelectInteraction = new DragBox({ condition: platformModifierKeyOnly });
+export function useMoveInteraction(
+    _map: OLMap,
+    unitLayer: VectorLayer<any>,
+    enable: Ref<boolean>,
+) {
+    const geoStore = useGeoStore();
+    const uiStore = useUiStore();
 
-  const selectedUnitFeatures = unitSelectInteraction.getFeatures();
+    const moveInteraction = new Modify({
+        source: unitLayer.getSource()!,
+        condition: altKeyOnly,
+    });
 
-  watch(
-    enableRef,
-    (enabled) => {
-      unitSelectInteraction.setActive(enabled);
-      if (!enabled) selectedUnitFeatures.clear();
-    },
-    { immediate: true },
-  );
+    moveInteraction.on("modifyend", (e: ModifyEvent) => {
+        const features = e.features.getArray();
+        for (const f of features) {
+            const id = f.getId() as string;
+            const geom = f.getGeometry() as Point;
+            const coords = toLonLat(geom.getCoordinates()) as Position;
 
-  watch(
-    enableBoxSelectRef,
-    (enabled) => {
-      boxSelectInteraction.setActive(enabled);
-      selectedUnitFeatures.clear();
-    },
-    { immediate: true },
-  );
+            // Update scenario geo state
+            geoStore.activeScenario?.geo?.addUnitPosition(id, coords);
 
-  useOlEvent(
-    unitSelectInteraction.on("select", (event: SelectEvent) => {
-      isInternal = true;
-      if (selectedIds.value.size && !event.mapBrowserEvent.originalEvent.shiftKey) {
-        clearSelectedItems();
-      }
-      if (
-        selectedUnitFeatures.getLength() === 0 &&
-        !event.mapBrowserEvent.originalEvent.shiftKey
-      ) {
-        clearSelectedItems();
-        return;
-      }
-      event.selected.forEach((f) => selectedIds.value.add(f.getId() as string));
-      event.deselected.forEach((f) => selectedIds.value.delete(f.getId() as string));
-    }),
-  );
+            // Disable drag mode when modification ends
+            uiStore.setMoveUnitMode(false);
+        }
+    });
 
-  useOlEvent(
-    boxSelectInteraction.on("boxend", function () {
-      // from https://openlayers.org/en/latest/examples/box-selection.html
-      const extent = boxSelectInteraction.getGeometry().getExtent();
-      const boxFeatures = layers
-        .map((layer) =>
-          layer
-            .getSource()
-            ?.getFeaturesInExtent(extent)
-            .filter((feature: Feature) =>
-              feature.getGeometry()!.intersectsExtent(extent),
-            ),
-        )
-        .flat();
+    watch(enable, (v) => moveInteraction.setActive(!!v), { immediate: true });
 
-      // features that intersect the box geometry are added to the
-      // collection of selected features
-
-      // if the view is not obliquely rotated the box geometry and
-      // its extent are equalivalent so intersecting features can
-      // be added directly to the collection
-      const rotation = olMap.getView().getRotation();
-      const oblique = rotation % (Math.PI / 2) !== 0;
-
-      // when the view is obliquely rotated the box extent will
-      // exceed its geometry so both the box and the candidate
-      // feature geometries are rotated around a common anchor
-      // to confirm that, with the box geometry aligned with its
-      // extent, the geometries intersect
-      if (oblique) {
-        const anchor = [0, 0];
-        const geometry = boxSelectInteraction.getGeometry().clone();
-        geometry.rotate(-rotation, anchor);
-        const extent = geometry.getExtent();
-        boxFeatures.forEach(function (feature) {
-          const geometry = feature.getGeometry().clone();
-          geometry.rotate(-rotation, anchor);
-          if (geometry.intersectsExtent(extent)) {
-            selectedIds.value.add(feature.getId() as string);
-            // selectedFeatures.push(feature);
-          }
-        });
-      } else {
-        boxFeatures.forEach((f) => selectedIds.value.add(f.getId() as string));
-      }
-    }),
-  );
-
-  useOlEvent(
-    boxSelectInteraction.on("boxstart", function () {
-      clearSelectedItems();
-    }),
-  );
-
-  watch(
-    () => [...selectedIds.value],
-    (v) => redrawSelectedLayer(v),
-    { immediate: true },
-  );
-
-  watch(geo.everyVisibleUnit, () => {
-    isInternal = false;
-    redrawSelectedLayer([...selectedIds.value]);
-  });
-
-  function redrawSelectedLayer(v: EntityId[]) {
-    if (!isInternal) {
-      selectedUnitFeatures.clear();
-      v.forEach((fid) => {
-        const feature = layers[0]?.getSource()?.getFeatureById(fid);
-        if (feature) selectedUnitFeatures.push(feature);
-      });
-    }
-    isInternal = false;
-  }
-
-  function redraw() {
-    redrawSelectedLayer([...selectedIds.value]);
-  }
-
-  return { unitSelectInteraction, isEnabled: enableRef, boxSelectInteraction, redraw };
+    return { moveInteraction };
 }
