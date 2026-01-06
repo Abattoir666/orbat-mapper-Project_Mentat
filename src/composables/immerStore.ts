@@ -4,10 +4,11 @@
 import { createEventHook } from "@vueuse/core";
 import { computed, reactive, shallowReactive, toRaw } from "vue";
 import type { Patch } from "immer";
-import { enablePatches, produceWithPatches, setAutoFreeze } from "immer";
+import { enablePatches, enableMapSet, produceWithPatches, setAutoFreeze } from "immer";
 import { applyPatch } from "rfc6902";
 
 enablePatches();
+enableMapSet();
 setAutoFreeze(false);
 function applyPatchWrapper<T>(state: T, patches: Patch[]) {
   const convertedPatches = patches.map(({ value, path, op }) => {
