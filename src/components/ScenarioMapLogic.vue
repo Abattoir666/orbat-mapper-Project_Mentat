@@ -18,7 +18,7 @@
         useMoveInteraction,
         useUnitLayer,
         useUnitSelectInteraction,
-    } from "@/composables/geoUnitLayers";
+    } from "@/symbology/underbars/geoUnitLayers_toeUnderbar";
     import LayerGroup from "ol/layer/Group";
     import { useScenarioMapLayers } from "@/modules/scenarioeditor/scenarioMapLayers";
     import { useScenarioFeatureSelect } from "@/modules/scenarioeditor/featureLayerUtils";

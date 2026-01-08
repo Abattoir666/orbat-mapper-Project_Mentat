@@ -123,6 +123,7 @@ export interface Unit {
     _gid?: EntityId; // group
     _sid?: EntityId; // side
     _isOpen?: boolean;
+    unitNumber?: string;
 }
 
 export interface UnitPerson {
@@ -425,6 +426,25 @@ export type UnitOrSide = Unit | Side;
 export interface OrbatItemData {
     unit: Unit;
     children: OrbatItemData[];
+}
+
+export interface ToeBaseline {
+    /** Non-time-sensitive doctrinal authorized counts (no onHand expected). */
+    personnel?: UnitPersonnel[];
+
+    /**
+     * Optional key to remember which template produced this baseline
+     * (e.g., "RU_MSD_2016_v1", "US_ABCT_MTOE_2020").
+     */
+    templateKey?: string;
+
+    /** Optional provenance (file name, URL, notes). */
+    source?: string;
+}
+
+export interface Unit {
+    // ...existing fields...
+    toeBaseline?: ToeBaseline;
 }
 
 const exampleData: UnitOfMeasure[] = [

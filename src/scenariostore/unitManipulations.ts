@@ -651,6 +651,13 @@ export function useUnitManipulations(store: NewScenarioStore) {
       name: data.name || parent.name + counter++,
       sidc: sidc.toString(),
       id: nanoid(),
+
+      // carry these through if provided (and ensure field exists for later editing)
+      shortName: data.shortName,
+      unitNumber: data.unitNumber, // <-- key fix
+      description: data.description,
+      externalUrl: data.externalUrl,
+
       state: [],
       _state: null,
       _pid: parent.id,

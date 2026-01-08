@@ -8,28 +8,27 @@
         <LayersPanel />
       </TabItem>
       <TabItem label="ORBAT">
-        <div class="space-y-4 p-1">
-          <NumberInputGroup
-            InputGroup
-            label="Map symbol size"
-            v-model="settings.mapIconSize"
-          />
-          <NumberInputGroup
-            InputGroup
-            label="ORBAT symbol size"
-            v-model="settings.orbatIconSize"
-          />
-          <ToggleField v-model="settings.orbatShortName"
-            >Use short names in ORBAT
-          </ToggleField>
-          <ToggleField v-model="symbolSettings.simpleStatusModifier"
-            >Use simple status modifier
-          </ToggleField>
-          <ToggleField v-model="uiSettings.debugMode">Debug mode</ToggleField>
-          <ToggleField v-if="uiSettings.debugMode" v-model="isDarkMode"
-            >Dark mode
-          </ToggleField>
-        </div>
+          <div class="space-y-4 p-1">
+              <NumberInputGroup InputGroup
+                                label="Map symbol size"
+                                v-model="settings.mapIconSize" />
+              <NumberInputGroup InputGroup
+                                label="ORBAT symbol size"
+                                v-model="settings.orbatIconSize" />
+              <ToggleField v-model="settings.orbatShortName">
+                  Use short names in ORBAT
+              </ToggleField>
+              <ToggleField v-model="symbolSettings.simpleStatusModifier">
+                  Use simple status modifier
+              </ToggleField>
+              <ToggleField v-model="underbarsEnabled">
+                           Use fancy status symbols </ToggleField>
+              <ToggleField v-model="uiSettings.debugMode">Debug mode</ToggleField>
+
+              <ToggleField v-if="uiSettings.debugMode" v-model="isDarkMode">
+                  Dark mode
+              </ToggleField>
+          </div>
       </TabItem>
       <TabItem label="Time and date">
         <TimeDateSettingsPanel />
@@ -50,7 +49,7 @@ import MapSettingsPanel from "@/components/MapSettingsPanel.vue";
 import ToggleField from "@/components/ToggleField.vue";
 import { useUiStore } from "@/stores/uiStore";
 import TimeDateSettingsPanel from "@/components/TimeDateSettingsPanel.vue";
-
+import { underbarsEnabled } from "@/symbology/underbars/underbarSettings";
 const props = defineProps({ modelValue: Boolean });
 
 const open = useVModel(props, "modelValue");
