@@ -83,6 +83,21 @@ export function useGeo(store: NewScenarioStore) {
     );
   });
 
+    function mergeAltitude(
+        prev: Position | null | undefined,
+        next: Position | null,
+    ): Position | null {
+        if (!next) return null;
+
+        const nextZ = typeof (next as any)[2] === "number" ? (next as any)[2] : undefined;
+        if (nextZ != null) return next;
+
+        const prevZ = prev && typeof (prev as any)[2] === "number" ? (prev as any)[2] : undefined;
+        if (prevZ != null) return [next[0], next[1], prevZ];
+
+        return [next[0], next[1]];
+    }
+
   function addUnitPosition(
     unitId: EntityId,
     coordinates: Position | null,
@@ -93,7 +108,10 @@ export function useGeo(store: NewScenarioStore) {
       (s) => {
         const u = s.unitMap[unitId];
         const t = atTime ?? s.currentTime;
-        newState = { t, location: coordinates };
+            const existingAtT =
+                u.state?.find((e) => e.t === t)?.location ?? u._state?.location ?? u.location;
+
+            newState = { t, location: mergeAltitude(existingAtT, coordinates) };
         if (t === s.currentTime) u._state = newState;
         if (!u.state) u.state = [];
         for (let i = 0, len = u.state.length; i < len; i++) {

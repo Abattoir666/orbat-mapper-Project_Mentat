@@ -18,6 +18,12 @@ export interface ZoomOptions {
   duration?: number;
 }
 
+type LonLat2D = [number, number];
+
+function toLonLat2D(pos: Position): LonLat2D {
+    return [pos[0] as number, pos[1] as number];
+}
+
 export const useGeoStore = defineStore("geo", {
   state: () => ({
     olMap: shallowRef<OLMap | null | undefined>(null),
@@ -30,7 +36,7 @@ export const useGeoStore = defineStore("geo", {
       const view = this.olMap.getView();
       view.animate({
         zoom: 15,
-        center: fromLonLat(location, view.getProjection()),
+        center: fromLonLat(toLonLat2D(location), view.getProjection()),
         duration,
       });
     },
@@ -39,7 +45,7 @@ export const useGeoStore = defineStore("geo", {
       const { duration = 900, maxZoom = 15 } = options;
       const points = units
         .filter((u) => u._state?.location)
-        .map((u) => turfPoint(u._state?.location!));
+        .map((u) => turfPoint(toLonLat2D(u._state?.location!)));
       if (!points.length) return;
       const c = featureCollection(points);
       this.zoomToGeometry(c, { duration, maxZoom });
@@ -62,7 +68,7 @@ export const useGeoStore = defineStore("geo", {
       const view = this.olMap!.getView();
       view.animate({
         zoom: 10,
-        center: fromLonLat(location, view.getProjection()),
+        center: fromLonLat(toLonLat2D(location), view.getProjection()),
         duration,
       });
     },
@@ -73,7 +79,7 @@ export const useGeoStore = defineStore("geo", {
       if (!location) return;
       const view = this.olMap.getView();
       view.animate({
-        center: fromLonLat(location, view.getProjection()),
+        center: fromLonLat(toLonLat2D(location), view.getProjection()),
         duration,
       });
     },
@@ -83,7 +89,7 @@ export const useGeoStore = defineStore("geo", {
       if (!location) return;
       const view = this.olMap.getView();
       view.animate({
-        center: fromLonLat(location, view.getProjection()),
+        center: fromLonLat(toLonLat2D(location), view.getProjection()),
         duration,
       });
     },

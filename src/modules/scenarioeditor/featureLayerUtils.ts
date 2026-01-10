@@ -128,7 +128,9 @@ export function createScenarioLayerFeatures(
         feature.meta.radius,
       );
       const circle = new Circle(
-        fromLonLat(feature.geometry.coordinates as number[]),
+          fromLonLat(
+              [feature.geometry.coordinates[0], feature.geometry.coordinates[1]] as [number, number],
+          ),
         newRadius,
       );
       let f = new Feature({

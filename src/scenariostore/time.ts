@@ -17,6 +17,7 @@ import { createEventHook } from "@vueuse/core";
 import { invalidateUnitStyle } from "@/geo/unitStyles";
 import type { CurrentScenarioFeatureState } from "@/types/scenarioGeoModels";
 import { nanoid } from "@/utils";
+import type { Position } from "@/types/scenarioGeoModels";
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Public types (unchanged)
@@ -76,7 +77,7 @@ type UnitRt = {
     lastScrubTs: number;
     cursor: number;          // index of first state with t > lastScrubTs (in sortedStates)
     anchorT: number;         // last DISCRETE state time applied (not interpolated)
-    anchorLoc?: [number, number];
+    anchorLoc?: Position;
 
     // sorted copy only when needed; NEVER mutates unit.state (important for Immer/freeze)
     sortedStates?: any[];
@@ -89,11 +90,15 @@ type UnitRt = {
 
     // interpolation segment cache
     seg?: {
-        nextIndex: number; // cursor at which "next" lives
+        nextIndex: number;
         line: ReturnType<typeof lineString>;
         pathLengthKm: number;
         startMs: number;
         avgSpeedKmPerMs: number;
+
+        // Z support
+        cumKm: number[];
+        alts: (number | undefined)[];
     };
 };
 
@@ -172,23 +177,95 @@ function clearInterpolation(rt: UnitRt) {
     rt.seg = undefined;
 }
 
+function to2d(pos: Position): [number, number] {
+    return [pos[0], pos[1]];
+}
+
+function altOf(pos: Position): number | undefined {
+    const z = (pos as any)[2];
+    return typeof z === "number" && Number.isFinite(z) ? z : undefined;
+}
+
+function makePos(lon: number, lat: number, alt?: number): Position {
+    return alt == null ? [lon, lat] : [lon, lat, alt];
+}
+
+function lerp(a: number, b: number, t: number) {
+    return a + (b - a) * t;
+}
+
+function haversineKm(a: [number, number], b: [number, number]): number {
+    const R = 6371; // km
+    const toRad = (d: number) => (d * Math.PI) / 180;
+
+    const dLat = toRad(b[1] - a[1]);
+    const dLon = toRad(b[0] - a[0]);
+    const lat1 = toRad(a[1]);
+    const lat2 = toRad(b[1]);
+
+    const s =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+
+    return 2 * R * Math.asin(Math.min(1, Math.sqrt(s)));
+}
+
+function buildCumKm(coords2d: [number, number][]): number[] {
+    const cum: number[] = new Array(coords2d.length).fill(0);
+    for (let i = 1; i < coords2d.length; i++) {
+        cum[i] = (cum[i - 1] ?? 0) + haversineKm(coords2d[i - 1], coords2d[i]);
+    }
+    return cum;
+}
+
+function altAtDistanceKm(
+    cumKm: number[],
+    alts: (number | undefined)[],
+    distKm: number,
+): number | undefined {
+    if (!cumKm.length) return undefined;
+
+    const lastKm = cumKm[cumKm.length - 1] ?? 0;
+    if (distKm <= 0) return alts[0];
+    if (distKm >= lastKm) return alts[alts.length - 1];
+
+    // find segment i such that cumKm[i] <= dist < cumKm[i+1]
+    let i = 0;
+    while (i < cumKm.length - 1 && (cumKm[i + 1] ?? 0) < distKm) i++;
+
+    const aKm = cumKm[i] ?? 0;
+    const bKm = cumKm[i + 1] ?? aKm;
+    const t = bKm > aKm ? (distKm - aKm) / (bKm - aKm) : 0;
+
+    const aAlt = alts[i];
+    const bAlt = alts[i + 1];
+
+    if (typeof aAlt === "number" && typeof bAlt === "number") return lerp(aAlt, bAlt, t);
+    if (typeof aAlt === "number") return aAlt;
+    if (typeof bAlt === "number") return bAlt;
+    return undefined;
+}
+
+
 function maybeInterpolate(rt: UnitRt, st: any, next: any, timestamp: number) {
     if (!st?.location || !next?.location) return;
     if (next.interpolate === false) return;
 
-    const startLoc: [number, number] | undefined = rt.anchorLoc ?? st.location;
-    if (!startLoc) return;
+    // Treat stored locations as Position (2D or 3D)
+    const startPos: Position | undefined = (rt.anchorLoc as any) ?? (st.location as any);
+    if (!startPos) return;
 
     const startMs = next.viaStartTime ?? (rt.anchorT ?? st.t ?? Number.NEGATIVE_INFINITY);
     if (startMs > timestamp) return;
 
     // Rebuild segment cache only when "next" changes (cursor changes)
     if (!rt.seg || rt.seg.nextIndex !== rt.cursor) {
-        const coords: [number, number][] = next.via
-            ? [startLoc, ...next.via, next.location]
-            : [startLoc, next.location];
+        const route: Position[] = next.via
+            ? [startPos, ...(next.via as Position[]), next.location as Position]
+            : [startPos, next.location as Position];
 
-        const line = lineString(coords);
+        const coords2d = route.map(to2d);
+        const line = lineString(coords2d);
         const pathLengthKm = turfLength(line);
         const timeDiffMs = next.t - startMs;
 
@@ -203,6 +280,10 @@ function maybeInterpolate(rt: UnitRt, st: any, next: any, timestamp: number) {
             pathLengthKm,
             startMs,
             avgSpeedKmPerMs: pathLengthKm / timeDiffMs,
+
+            // Z support
+            cumKm: buildCumKm(coords2d),
+            alts: route.map(altOf),
         };
     }
 
@@ -211,12 +292,19 @@ function maybeInterpolate(rt: UnitRt, st: any, next: any, timestamp: number) {
 
     const elapsedMs = Math.max(0, timestamp - seg.startMs);
     const distKm = Math.min(seg.pathLengthKm, seg.avgSpeedKmPerMs * elapsedMs);
-    const p = turfAlong(seg.line, distKm);
 
-    st.location = p.geometry.coordinates as [number, number];
+    // XY from Turf
+    const p = turfAlong(seg.line, distKm);
+    const [lon, lat] = p.geometry.coordinates as [number, number];
+
+    // Z interpolated by distance along the polyline
+    const alt = altAtDistanceKm(seg.cumKm, seg.alts, distKm);
+
+    st.location = makePos(lon, lat, alt);
     st.type = "interpolated";
     st.t = timestamp;
 }
+
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Unit state updater (same signature; faster implementation; does NOT mutate unit.state)
@@ -724,13 +812,79 @@ function upperBoundState(states: any[], tMs: number): number {
  * Never mutates the unit.
  */
 export function getUnitPositionAtTime(
-    unit: { state?: any[]; location?: [number, number]; _state?: any },
+    unit: { state?: any[]; location?: Position; _state?: any },
     tMs: number,
 ): LonLatAlt | undefined {
+    // Local helpers (scoped here so you don't need to worry about duplicates elsewhere)
+    function isPosition(v: any): v is Position {
+        return Array.isArray(v) && typeof v[0] === "number" && typeof v[1] === "number";
+    }
+    function altOf(pos: Position): number | undefined {
+        const z = (pos as any)[2];
+        return typeof z === "number" && Number.isFinite(z) ? z : undefined;
+    }
+    function to2d(pos: Position): [number, number] {
+        return [pos[0], pos[1]];
+    }
+    function lerp(a: number, b: number, t: number) {
+        return a + (b - a) * t;
+    }
+    function haversineKm(a: [number, number], b: [number, number]): number {
+        const R = 6371; // km
+        const toRad = (d: number) => (d * Math.PI) / 180;
+
+        const dLat = toRad(b[1] - a[1]);
+        const dLon = toRad(b[0] - a[0]);
+        const lat1 = toRad(a[1]);
+        const lat2 = toRad(b[1]);
+
+        const s =
+            Math.sin(dLat / 2) ** 2 +
+            Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+
+        return 2 * R * Math.asin(Math.min(1, Math.sqrt(s)));
+    }
+    function buildCumKm(coords2d: [number, number][]): number[] {
+        const cum: number[] = new Array(coords2d.length).fill(0);
+        for (let i = 1; i < coords2d.length; i++) {
+            cum[i] = (cum[i - 1] ?? 0) + haversineKm(coords2d[i - 1], coords2d[i]);
+        }
+        return cum;
+    }
+    function altAtDistanceKm(
+        cumKm: number[],
+        alts: (number | undefined)[],
+        distKm: number,
+    ): number | undefined {
+        if (!cumKm.length) return undefined;
+
+        const lastKm = cumKm[cumKm.length - 1] ?? 0;
+        if (distKm <= 0) return alts[0];
+        if (distKm >= lastKm) return alts[alts.length - 1];
+
+        let i = 0;
+        while (i < cumKm.length - 1 && (cumKm[i + 1] ?? 0) < distKm) i++;
+
+        const aKm = cumKm[i] ?? 0;
+        const bKm = cumKm[i + 1] ?? aKm;
+        const t = bKm > aKm ? (distKm - aKm) / (bKm - aKm) : 0;
+
+        const aAlt = alts[i];
+        const bAlt = alts[i + 1];
+
+        if (typeof aAlt === "number" && typeof bAlt === "number") return lerp(aAlt, bAlt, t);
+        if (typeof aAlt === "number") return aAlt;
+        if (typeof bAlt === "number") return bAlt;
+        return undefined;
+    }
+
     const raw = unit?.state ?? [];
     if (!raw.length) {
         const fallback = unit._state?.location ?? unit.location;
-        if (isLonLat(fallback)) return { lon: fallback[0], lat: fallback[1] };
+        if (isPosition(fallback)) {
+            const alt = altOf(fallback);
+            return alt == null ? { lon: fallback[0], lat: fallback[1] } : { lon: fallback[0], lat: fallback[1], alt };
+        }
         return undefined;
     }
 
@@ -739,34 +893,33 @@ export function getUnitPositionAtTime(
     const u = unit as any;
     if (!(u.__posSorted && u.__posSortedSrc === raw)) {
         if (states.length > 1 && !isMonotonicStatesByT(states)) {
-            u.__posSorted = raw.slice().sort((a: any, b: any) => a.t - b.t);
-            u.__posSortedSrc = raw;
-        } else {
-            u.__posSorted = raw;
-            u.__posSortedSrc = raw;
+            states = [...states].sort((a, b) => (a?.t ?? 0) - (b?.t ?? 0));
         }
+        u.__posSorted = states;
+        u.__posSortedSrc = raw;
+    } else {
+        states = u.__posSorted;
     }
-    states = u.__posSorted;
 
-    const ub = upperBoundState(states, tMs);
-    const prevIdx = ub - 1;
+    const idx = upperBoundState(states, tMs);
 
-    // Find prev location by scanning backward to a state with a location.
-    let prevLoc: [number, number] | undefined;
+    // Find prev state WITH a location.
+    let prevLoc: Position | undefined;
     let prevT: number | undefined;
-
+    let prevIdx = idx - 1;
     for (let i = prevIdx; i >= 0; i--) {
         const s = states[i];
-        if (isLonLat(s.location)) {
-            prevLoc = s.location;
-            prevT = s.t;
+        if (isPosition(s?.location)) {
+            prevLoc = s.location as Position;
+            prevT = s?.t ?? Number.NEGATIVE_INFINITY;
+            prevIdx = i;
             break;
         }
     }
 
     if (!prevLoc) {
         const fallback = unit._state?.location ?? unit.location;
-        if (isLonLat(fallback)) {
+        if (isPosition(fallback)) {
             prevLoc = fallback;
             prevT = states[Math.max(0, prevIdx)]?.t ?? Number.NEGATIVE_INFINITY;
         }
@@ -774,39 +927,54 @@ export function getUnitPositionAtTime(
 
     // Find next state WITH a location.
     let next: any | undefined;
-    for (let i = ub; i < states.length; i++) {
+    for (let i = idx; i < states.length; i++) {
         const s = states[i];
-        if (isLonLat(s.location)) {
+        if (isPosition(s?.location)) {
             next = s;
             break;
         }
     }
 
-    if (
-        prevLoc &&
-        next &&
-        !(next.interpolate === false) &&
-        (next.viaStartTime ?? prevT ?? Number.NEGATIVE_INFINITY) <= tMs
-    ) {
-        const coords: [number, number][] = next.via
-            ? [prevLoc, ...next.via, next.location]
-            : [prevLoc, next.location];
+    // If we have a next location and a prev location, and next is interpolatable, interpolate along via/segment.
+    if (next && prevLoc && next.interpolate !== false) {
+        const nextLoc = next.location as Position | undefined;
+        if (nextLoc) {
+            const startMs = next.viaStartTime ?? prevT ?? tMs;
+            if (tMs < startMs) {
+                const alt = altOf(prevLoc);
+                return alt == null ? { lon: prevLoc[0], lat: prevLoc[1] } : { lon: prevLoc[0], lat: prevLoc[1], alt };
+            }
 
-        const line = lineString(coords);
-        const pathLengthKm = turfLength(line);
-        const startMs = next.viaStartTime ?? prevT ?? tMs;
-        const timeDiffMs = next.t - startMs;
+            const route: Position[] = next.via
+                ? [prevLoc, ...(next.via as Position[]), nextLoc]
+                : [prevLoc, nextLoc];
 
-        if (timeDiffMs > 0 && pathLengthKm > 0) {
-            const avgSpeedKmPerMs = pathLengthKm / timeDiffMs;
-            const elapsedMs = Math.max(0, tMs - startMs);
-            const distKm = Math.min(pathLengthKm, avgSpeedKmPerMs * elapsedMs);
-            const pt = turfAlong(line, distKm);
-            const [lon, lat] = pt.geometry.coordinates as [number, number];
-            return { lon, lat };
+            const coords2d = route.map(to2d);
+            const line = lineString(coords2d);
+            const pathLengthKm = turfLength(line);
+
+            const timeDiffMs = (next.t ?? 0) - startMs;
+            if (timeDiffMs > 0 && pathLengthKm > 0) {
+                const avgSpeedKmPerMs = pathLengthKm / timeDiffMs;
+                const elapsedMs = Math.max(0, tMs - startMs);
+                const distKm = Math.min(pathLengthKm, avgSpeedKmPerMs * elapsedMs);
+
+                const pt = turfAlong(line, distKm);
+                const [lon, lat] = pt.geometry.coordinates as [number, number];
+
+                const cumKm = buildCumKm(coords2d);
+                const alts = route.map(altOf);
+                const alt = altAtDistanceKm(cumKm, alts, distKm);
+
+                return alt == null ? { lon, lat } : { lon, lat, alt };
+            }
         }
     }
 
-    if (prevLoc) return { lon: prevLoc[0], lat: prevLoc[1] };
+    if (prevLoc) {
+        const alt = altOf(prevLoc);
+        return alt == null ? { lon: prevLoc[0], lat: prevLoc[1] } : { lon: prevLoc[0], lat: prevLoc[1], alt };
+    }
     return undefined;
 }
+

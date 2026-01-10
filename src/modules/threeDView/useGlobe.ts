@@ -3,7 +3,6 @@
 import * as CesiumNS from "cesium";
 import {
     Viewer,
-    Ion,
     Globe,
     Ellipsoid,
     Color,
@@ -16,24 +15,27 @@ import {
     UrlTemplateImageryProvider,
     WebMercatorTilingScheme,
     WebMercatorProjection,
-    Rectangle,
     JulianDate,
     Math as CesiumMath,
-    Terrain,
-    EllipsoidTerrainProvider,
     SkyBox,
     SunLight,
     type Credit,
 } from "cesium";
 import type { Unit } from "@/types/scenarioModels";
+import {
+    initCesiumIonFromEnv,
+    hasCesiumIonToken,
+    createTerrain,
+    syncTerrainProviderReferences,
+    setSceneVerticalExaggeration,
+    runtimeExagSupported,
+} from "@/geo/cesiumTerrain";
 
 // Expose Cesium for console debugging
 (globalThis as any).Cesium = CesiumNS;
 
-// Ion token: enable World Terrain if present
-Ion.defaultAccessToken = import.meta.env.VITE_CESIUM_ION_TOKEN || "";
-
-
+// Ion token init (shared helper)
+initCesiumIonFromEnv();
 
 /* ─────────────────────────────── Types ─────────────────────────────── */
 
@@ -82,7 +84,6 @@ export type GlobeApi = {
     enableSkybox: (on: boolean) => void;
     onCameraChange: (cb: (o: { heading: number; pitch: number; roll: number }) => void) => () => void;
 
-
     // units (for bindUnitsToView)
     setUnits: (units: Unit[]) => void;
     upsertUnit: (u: Unit) => void;
@@ -104,7 +105,6 @@ function clamp(v: number, a: number, b: number) {
     return Math.max(a, Math.min(b, v));
 }
 function zoomToHeight(zoom: number, latDeg: number) {
-    // Tuned for similar footprint “feel” vs OL, not exact math
     const table: Array<[number, number]> = [
         [2, 20_000_000],
         [4, 10_000_000],
@@ -124,7 +124,6 @@ function zoomToHeight(zoom: number, latDeg: number) {
     const t = z1 === z0 ? 0 : (z - z0) / (z1 - z0);
     let h = h0 + (h1 - h0) * t;
 
-    // Compensate Mercator scale toward poles
     h *= clamp(Math.cos((latDeg * Math.PI) / 180), 0.2, 1);
     return clamp(h, 1_500, 30_000_000);
 }
@@ -139,7 +138,7 @@ export async function useGlobe(
     let elevationEnabled =
         typeof opts.elevationEnabled === "boolean"
             ? opts.elevationEnabled
-            : !!Ion.defaultAccessToken;
+            : hasCesiumIonToken();
 
     let exag = Math.max(0, opts.exaggeration ?? (elevationEnabled ? 1 : 0));
 
@@ -153,16 +152,11 @@ export async function useGlobe(
         g.depthTestAgainstTerrain = false;
         return g;
     }
-    function makeTerrain(): Terrain {
-        if (!elevationEnabled || exag <= 0) {
-            return new Terrain(new EllipsoidTerrainProvider());
-        }
-        try {
-            return Terrain.fromWorldTerrain({ requestVertexNormals: true });
-        } catch {
-            console.warn("[useGlobe] World terrain unavailable; using ellipsoid");
-            return new Terrain(new EllipsoidTerrainProvider());
-        }
+
+    function makeTerrainNow() {
+        // only enable terrain when elevation is enabled AND exaggeration is non-zero
+        const enabled = elevationEnabled && exag > 0;
+        return createTerrain(enabled, true);
     }
 
     const defaultOSM = new OpenStreetMapImageryProvider({
@@ -183,33 +177,26 @@ export async function useGlobe(
         skyBox: false,
         skyAtmosphere: false,
         globe: makeGlobe(),
-        terrain: makeTerrain(),
+        terrain: makeTerrainNow(),
         imageryProvider: opts.imageryProvider ?? defaultOSM,
     });
 
     try {
-        (viewer.scene as any).requestRenderMode = false; // continuous render loop
+        (viewer.scene as any).requestRenderMode = false;
         (viewer as any).useDefaultRenderLoop = true;
     } catch { }
 
-    // Clock control: driven externally
     viewer.clock.shouldAnimate = false;
     viewer.clock.clockRange = ClockRange.CLAMPED;
 
-    // Scene defaults
     const scene = viewer.scene as any;
     scene.backgroundColor = Color.BLACK;
     scene.clearColor = Color.BLACK;
     scene.fog.enabled = false;
     scene.highDynamicRange = false;
 
-    // Initial exaggeration on Scene
-    try {
-        scene.verticalExaggeration = Math.max(0, exag || 0);
-        scene.verticalExaggerationRelativeHeight = 0;
-    } catch {
-        console.warn("[useGlobe] Could not set scene.verticalExaggeration at init");
-    }
+    // Initial exaggeration
+    setSceneVerticalExaggeration(scene, exag);
 
     // Canvas background
     try {
@@ -269,7 +256,6 @@ export async function useGlobe(
             return;
         }
         if (k.includes("esri") || k.includes("world") || k.includes("imagery")) {
-            // ESRI World Imagery via ArcGIS tiles
             setImageryProvider(
                 new UrlTemplateImageryProvider({
                     url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{x}/{y}.png",
@@ -285,22 +271,12 @@ export async function useGlobe(
     }
 
     // —— Exaggeration / Elevation
-    function runtimeExagSupported(): boolean {
-        return "verticalExaggeration" in scene && "verticalExaggerationRelativeHeight" in scene;
-    }
-
     async function setElevationEnabled(enabled: boolean): Promise<void> {
         elevationEnabled = enabled;
 
-        // Swap terrain
-        viewer.terrain = makeTerrain();
+        viewer.terrain = makeTerrainNow();
+        syncTerrainProviderReferences(viewer);
 
-        // keep older references in sync
-        (viewer as any).terrainProvider = (viewer.terrain as any)?.provider ?? null;
-        (viewer.scene as any).terrainProvider = (viewer.terrain as any)?.provider ?? null;
-        (viewer.scene.globe as any).terrainProvider = (viewer.terrain as any)?.provider ?? null;
-
-        // nudge + render
         try { viewer.camera.moveForward(0.001); viewer.camera.moveBackward(0.001); } catch { }
         viewer.scene.requestRender();
         console.log("[useGlobe] Elevation:", elevationEnabled, "exag(scene):", scene.verticalExaggeration);
@@ -309,15 +285,14 @@ export async function useGlobe(
     async function setExaggeration(factor: number): Promise<void> {
         exag = Math.max(0, factor);
 
-        if (!runtimeExagSupported()) {
-            // fallback (older Cesium) – rebuild
+        if (!runtimeExagSupported(scene)) {
             await rebuild();
             console.log("[useGlobe] Exaggeration set (fallback rebuild):", exag);
             return;
         }
 
-        scene.verticalExaggeration = exag;
-        scene.verticalExaggerationRelativeHeight = 0;
+        setSceneVerticalExaggeration(scene, exag);
+
         const wantElevation = exag > 0;
         if (wantElevation !== elevationEnabled) {
             await setElevationEnabled(wantElevation);
@@ -334,12 +309,10 @@ export async function useGlobe(
         | null {
         const w: any = window;
 
-        // 1) If scenario/editor publishes a camera object
         if (w.__scenario_camera?.center3857 && typeof w.__scenario_camera.zoom === "number") {
             return w.__scenario_camera;
         }
 
-        // 2) If 2D map is exposed (recommended: window.Mentat2D = { map })
         const olMap = w.Mentat2D?.map ?? w.__olMap ?? null;
         try {
             const view = olMap?.getView?.();
@@ -351,7 +324,6 @@ export async function useGlobe(
             }
         } catch { }
 
-        // 3) Try scenario store (if someone stashes it there)
         try {
             const sc = (w.__scenario?.store ?? w.__scenario)?.state;
             const cam = sc?.ui?.last2dCamera;
@@ -371,7 +343,7 @@ export async function useGlobe(
             viewer.camera.setView({
                 destination: Cartesian3.fromDegrees(lon, lat, h),
                 orientation: {
-                    heading: 0,                  // mirror rotation if you like: -cam.rotation!
+                    heading: 0,
                     pitch: -Math.PI / 2,
                     roll: 0,
                 },
@@ -382,7 +354,6 @@ export async function useGlobe(
         }
     }
 
-    // If we can’t seed from 2D, use a global fallback
     if (!seedCameraFrom2D(readScenario2DCamera())) {
         viewer.camera.setView({ destination: Cartesian3.fromDegrees(-20, 25, 2_500_000) });
     }
@@ -432,7 +403,7 @@ export async function useGlobe(
         ssc.minimumZoomDistance = 50;
     }
 
-    // ── Camera change pub/sub (place this right after viewer is created)
+    // ── Camera change pub/sub
     type CamPayload = { heading: number; pitch: number; roll: number };
     const cameraListeners = new Set<(o: CamPayload) => void>();
 
@@ -454,15 +425,11 @@ export async function useGlobe(
         const moveStartHandler = () => emitCamera();
         const moveEndHandler = () => emitCamera();
 
-        // 1) Always-on: postRender gives us a pulsing feed while interacting
         try { viewer.scene.postRender.addEventListener(postRenderHandler); } catch { }
-
-        // 2) Extra signals (some builds only fire these)
         try { (viewer.camera as any).changed?.addEventListener?.(cameraChangedHandler); } catch { }
         try { (viewer.camera as any).moveStart?.addEventListener?.(moveStartHandler); } catch { }
         try { (viewer.camera as any).moveEnd?.addEventListener?.(moveEndHandler); } catch { }
 
-        // First publish so the compass paints immediately
         try { emitCamera(); } catch { }
 
         detachCameraEvents = () => {
@@ -481,11 +448,10 @@ export async function useGlobe(
         return () => cameraListeners.delete(cb);
     }
 
-
     wireReadiness();
     attachCameraEvents();
 
-    // Tile diagnostics (console)
+    // Tile diagnostics
     let detachTileDiag: (() => void) | null = null;
     (function attachTileDiagnostics() {
         if (detachTileDiag) { try { detachTileDiag(); } catch { } detachTileDiag = null; }
@@ -545,7 +511,6 @@ export async function useGlobe(
         if (ent) { try { viewer.entities.remove(ent); } catch { } unitPrims.delete(id); }
     }
     function setUnits(units: Unit[]) {
-        // simple naive sync: clear & re-add
         for (const id of unitPrims.keys()) removeUnit(id);
         if (!Array.isArray(units)) return;
         for (const u of units) upsertUnit(u);
@@ -579,7 +544,7 @@ export async function useGlobe(
         const lat = CesiumMath.toDegrees(carto.latitude);
         const lon = CesiumMath.toDegrees(carto.longitude);
         const h = zoomToHeight(zoom, lat);
-        await flyToLatLon(lon, lat, h, { heading: 0 /* or -rotationRad for rotated */, pitch: -Math.PI / 2, roll: 0 });
+        await flyToLatLon(lon, lat, h, { heading: 0, pitch: -Math.PI / 2, roll: 0 });
     }
 
     async function frameFromScenario2D(): Promise<boolean> {
@@ -631,7 +596,6 @@ export async function useGlobe(
                         negativeZ: CesiumNS.buildModuleUrl("Assets/Textures/SkyBox/tycho2t3_80_mz.jpg"),
                     },
                 });
-                // Optional: show atmosphere with the skybox
                 (viewer.scene as any).skyAtmosphere = (viewer.scene as any).skyAtmosphere || new CesiumNS.SkyAtmosphere();
                 (viewer.scene as any).skyAtmosphere.show = true;
             } else {
@@ -647,9 +611,8 @@ export async function useGlobe(
     /* ─────────────────────────── Rebuild / Destroy ─────────────────────────── */
 
     function cloneImageryProvider(p?: ImageryProvider): ImageryProvider {
-        if (!p) {
-            return new OpenStreetMapImageryProvider({ url: "https://tile.openstreetmap.org/" });
-        }
+        if (!p) return new OpenStreetMapImageryProvider({ url: "https://tile.openstreetmap.org/" });
+
         const ap: any = p;
         const name = ap?.constructor?.name;
 
@@ -676,7 +639,6 @@ export async function useGlobe(
         console.log("[useGlobe] Rebuild start", { elevationEnabled, exag });
         const container = viewer.container as HTMLDivElement;
 
-        // snapshot camera & imagery
         const pos = viewer.camera.positionWC.clone();
         const dir = viewer.camera.directionWC.clone();
         const up = viewer.camera.upWC.clone();
@@ -702,11 +664,9 @@ export async function useGlobe(
             skyBox: false,
             skyAtmosphere: false,
             globe: makeGlobe(),
-            terrain: makeTerrain(),
+            terrain: makeTerrainNow(),
             imageryProvider: baseProv,
         });
-
-        attachCameraEvents();
 
         const sc: any = viewer.scene;
         sc.backgroundColor = Color.BLACK;
@@ -714,12 +674,11 @@ export async function useGlobe(
         sc.fog.enabled = false;
         sc.highDynamicRange = false;
 
-        try { sc.verticalExaggeration = Math.max(0, exag || 0); sc.verticalExaggerationRelativeHeight = 0; } catch { }
+        setSceneVerticalExaggeration(sc, exag);
 
         viewer.camera.setView({ destination: pos, orientation: { direction: dir, up } });
         viewer.scene.screenSpaceCameraController.minimumZoomDistance = 50;
 
-        // rewire readiness/diagnostics
         wireReadiness();
         attachCameraEvents();
 
@@ -739,7 +698,7 @@ export async function useGlobe(
     function destroy() {
         try { detachTileDiag?.(); } catch { }
         try { viewer.scene.postRender.removeEventListener(clampAGL); } catch { }
-        try { detachCameraEvents?.(); } catch { }     
+        try { detachCameraEvents?.(); } catch { }
         try { viewer.destroy(); } catch { }
     }
 
@@ -762,7 +721,6 @@ export async function useGlobe(
         frameFromWebMercator,
         frameFromScenario2D,
 
-        // camera change hook for overlays (compass)
         onCameraChange,
 
         enableDayNight,
@@ -776,8 +734,6 @@ export async function useGlobe(
         destroy,
     };
 
-    // handy in console
     (window as any).MentatGlobe = api;
-
     return api;
 }

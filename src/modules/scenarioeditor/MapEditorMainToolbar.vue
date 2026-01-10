@@ -225,6 +225,7 @@ import { computed, ref, onMounted, type Ref, watch } from "vue";
 
 /* Symbology */
 import { SID_INDEX, Sidc } from "@/symbology/sidc";
+import type { Position } from "geojson";
 
 /* ---------- Emits ---------- */
 const emit = defineEmits([
@@ -400,6 +401,15 @@ onStart(() => {
   mainToolbarStore.clearToolbar();
 });
 
+    const DEFAULT_NEW_UNIT_ALT_M = 0; // meters; wire to a setting later if desired
+
+    function withDefaultAlt(location: Position, defaultAltM = DEFAULT_NEW_UNIT_ALT_M): Position {
+        const z = (location as any)[2];
+        if (typeof z === "number" && Number.isFinite(z)) return location; // already 3D
+        return [location[0] as number, location[1] as number, defaultAltM];
+    }
+
+
 onGetLocation((location) => {
   selectStore.hoverEnabled = true;
   groupUpdate(() => {
@@ -414,7 +424,7 @@ onGetLocation((location) => {
       sidc: sidc.toString(),
       name,
     });
-    unitId && addUnitPosition(unitId, location);
+      unitId && addUnitPosition(unitId, withDefaultAlt(location));
   });
   if (addMultiple.value && activeSidc.value) {
     addUnit(activeSidc.value);

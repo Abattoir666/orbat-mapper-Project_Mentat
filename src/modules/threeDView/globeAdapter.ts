@@ -42,6 +42,15 @@ import {
 } from "@/modules/threeDView/graphics/unitparser";
 import { convertToMetric } from "@/utils/convert";
 import { buildSphericalShellPrimitive } from "./geo/sphericalShellPrimitive";
+import { setSurfaceHeightSampler } from "@/geo/surfaceHeightRegistry";
+import { toeMapUnderbarEnabled } from "@/symbology/underbars/toeMapUnderbarToggle";
+import { usePersonnelEditStore } from "@/stores/toeStore";
+import {
+    computeToePctForUnit,
+    makeToeUnderbarSvgDataUrl,
+    TOE_UNDERBAR_HIDE_AT_OR_ABOVE,
+} from "@/symbology/underbars/toeUnderbarBillboard";
+import { effectiveToeUnderbarEnabled } from "@/symbology/underbars/underbarSettings";
 
 
 /** True if the unit should be hidden in 3D based ONLY on side/group visibility.
@@ -103,6 +112,8 @@ function isHidden2D(u: any): boolean {
     }
 }
 
+const pedestalTipCache = new Map<string, Cesium.Cartesian3>();
+
 // Keep the debug export lines as they are:
 try { (window as any).isHidden2D = isHidden2D; } catch {}
 
@@ -119,6 +130,14 @@ function safeCssColor(css?: string, fallback: Color = Color.WHITE): Color {
     } catch {
         return fallback;
     }
+}
+
+function applyIconLift(ent: Cesium.Entity, u: UnitRenderable) {
+    const liftPx = Number((u as any).__iconLiftPx ?? 0) || 0;
+    setUnitIconLiftPx(ent, u, liftPx);
+
+    try { if (ent.billboard) (ent.billboard as any).disableDepthTestDistance = Number.POSITIVE_INFINITY; } catch { }
+    try { if (ent.label) (ent.label as any).disableDepthTestDistance = Number.POSITIVE_INFINITY; } catch { }
 }
 
 const posEquals = (a?: Cesium.Cartesian3, b?: Cesium.Cartesian3) =>
@@ -269,6 +288,349 @@ function tryMilsymbolDataUrlSync(sidc: string, size = 48, fillHex?: string): str
 }
 
 const ICON_PX = 40;
+
+const TOE_UNDERBAR_SUFFIX = "__toeUnderbar";
+const lastToeUnderbarSig = new Map<string, string>();
+
+const PEDESTAL_SUFFIX = "__pedestal";
+const PEDESTAL_LINES_SUFFIX = "__pedestal_lines";
+
+function pedestalLinesIdForUnit(id: string) {
+    return `${id}${PEDESTAL_LINES_SUFFIX}`;
+}
+
+function upsertPedestalLines(
+    viewer: Cesium.Viewer,
+    unitEnt: Cesium.Entity,
+    unitId: string,
+    pedestalWpx: number,
+    pedestalHpx: number,
+) {
+    const id = pedestalLinesIdForUnit(unitId);
+    const ent = viewer.entities.getById(id) ?? viewer.entities.add({ id });
+
+    ent.show = true;
+
+    ent.polyline = new Cesium.PolylineGraphics({
+        positions: new Cesium.CallbackProperty(() => {
+            const t = viewer.clock.currentTime;
+            const pos = unitEnt.position?.getValue(t);
+            if (!pos) return [];
+
+            // Ground point on ellipsoid (terrain sampling can be added later)
+            const carto = Cesium.Cartographic.fromCartesian(pos);
+
+            // Terrain-aware ground height (may be undefined while tiles stream)
+            const terrainH = viewer.scene.globe.getHeight(carto);
+
+            let ground: Cesium.Cartesian3;
+            if (typeof terrainH === "number" && Number.isFinite(terrainH)) {
+                carto.height = terrainH;
+                ground = Cesium.Cartesian3.fromRadians(carto.longitude, carto.latitude, carto.height);
+                pedestalTipCache.set(unitId, ground);
+            } else {
+                // Fall back to last known tip to avoid jitter while terrain loads
+                ground = pedestalTipCache.get(unitId) ?? Cesium.Cartesian3.fromRadians(carto.longitude, carto.latitude, 0);
+            }
+
+            const mPerPx = viewer.camera.getPixelSize(
+                new Cesium.BoundingSphere(ground, 1),
+                viewer.canvas.clientWidth,
+                viewer.canvas.clientHeight,
+            );
+
+            if (!mPerPx || !Number.isFinite(mPerPx)) return [ground];
+
+            const heightM = mPerPx * pedestalHpx;
+            const halfWidthM = mPerPx * (pedestalWpx / 2);
+
+            const enu = Cesium.Transforms.eastNorthUpToFixedFrame(ground);
+
+            const leftTop = Cesium.Matrix4.multiplyByPoint(
+                enu,
+                new Cesium.Cartesian3(-halfWidthM, 0, heightM),
+                new Cesium.Cartesian3(),
+            );
+
+            const rightTop = Cesium.Matrix4.multiplyByPoint(
+                enu,
+                new Cesium.Cartesian3(halfWidthM, 0, heightM),
+                new Cesium.Cartesian3(),
+            );
+
+            return [leftTop, ground, rightTop];
+        }, false),
+        width: 2,
+        arcType: Cesium.ArcType.NONE,
+        material: Cesium.Color.BLACK.withAlpha(0.55),
+        depthFailMaterial: Cesium.Color.BLACK.withAlpha(0.55),
+    });
+
+    // If this entity ever had a billboard, kill it so it can’t fight visuals
+    ent.billboard = undefined as any;
+    return ent;
+}
+
+
+
+function pedestalIdForUnit(id: string) {
+    return `${id}${PEDESTAL_SUFFIX}`;
+}
+function isPedestalId(id: string) {
+    return id.endsWith(PEDESTAL_SUFFIX);
+}
+function baseIdFromPedestalId(id: string) {
+    return id.slice(0, -PEDESTAL_SUFFIX.length);
+}
+
+function makePedestalSvgDataUrl(iconPx: number) {
+    const w = Math.max(12, Math.round(iconPx * 0.42));
+    const h = Math.max(14, Math.round(iconPx * 0.62));
+
+    const svg =
+        `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">` +
+        `<polygon points="0,0 ${w},0 ${w / 2},${h}" fill="rgba(255,255,255,0.22)" stroke="rgba(0,0,0,0.55)" stroke-width="1"/>` +
+        `</svg>`;
+
+    return { url: "data:image/svg+xml;utf8," + encodeURIComponent(svg), w, h };
+}
+
+function toeUnderbarIdForUnit(id: string) {
+    return `${id}${TOE_UNDERBAR_SUFFIX}`;
+}
+function isToeUnderbarId(id: string) {
+    return id.endsWith(TOE_UNDERBAR_SUFFIX);
+}
+function baseIdFromToeUnderbarId(id: string) {
+    return id.slice(0, -TOE_UNDERBAR_SUFFIX.length);
+}
+
+function getScenarioUnitById(id: string): any {
+    try {
+        const sc = (window as any).__scenario;
+        const store = sc?.store ?? sc;
+        const state = (store as any)?.state ?? store;
+        const unitMap = state?.unitMap;
+        return unitMap?.[id];
+    } catch {
+        return undefined;
+    }
+}
+
+function readPersonnelIncludeSubs(): boolean {
+    try {
+        const st: any = usePersonnelEditStore();
+        const v: any = st?.includeSubordinates;
+        return typeof v === "boolean" ? v : !!v?.value;
+    } catch {
+        return true; // default to 2D’s common mode
+    }
+}
+
+function resolvePixelOffsetY(v: any): number {
+    try {
+        if (!v) return 0;
+        if (typeof v.getValue === "function") {
+            const vv = v.getValue(new Cesium.JulianDate());
+            return (vv && typeof vv.y === "number") ? vv.y : 0;
+        }
+        return (typeof v.y === "number") ? v.y : 0;
+    } catch {
+        return 0;
+    }
+}
+
+function resolvePixelOffsetX(v: any): number {
+    try {
+        if (!v) return 0;
+        if (typeof v.getValue === "function") {
+            const vv = v.getValue(new Cesium.JulianDate());
+            return (vv && typeof vv.x === "number") ? vv.x : 0;
+        }
+        return (typeof v.x === "number") ? v.x : 0;
+    } catch {
+        return 0;
+    }
+}
+
+/** Lift the icon + label up in pixel space so the underbar can sit on the ground. */
+function setUnitIconLiftPx(unitEnt: Cesium.Entity, u: UnitRenderable, liftPx: number) {
+    const bb: any = unitEnt?.billboard;
+    if (bb) {
+        const x = resolvePixelOffsetX(bb.pixelOffset);
+        // Cesium screen-space: negative Y moves UP
+        bb.pixelOffset = new Cartesian2(x, -liftPx);
+    }
+
+    const lab: any = unitEnt?.label;
+
+    // If the postRender aligner is installed, it owns label.pixelOffset.
+    const hasAlignTick = !!(unitEnt as any).__labelAlignTick;
+    if (lab && !hasAlignTick) {
+        const x = resolvePixelOffsetX(lab.pixelOffset);
+        const baseY = (u as any)?.labelOffsetPxY ?? -12;
+        lab.pixelOffset = new Cartesian2(x, baseY - liftPx);
+    }
+}
+
+
+function hideToeUnderbar(viewer: Cesium.Viewer, unitId: string) {
+    const ubId = toeUnderbarIdForUnit(unitId);
+    const ub = viewer.entities.getById(ubId);
+    if (ub) ub.show = false;
+
+    const pedId = pedestalIdForUnit(unitId);
+    const pedLines = viewer.entities.getById(pedestalLinesIdForUnit(unitId));
+    if (pedLines) pedLines.show = false;
+
+    pedestalTipCache.delete(unitId);
+    // Reset icon/label lift so we don’t leave the unit “floating”
+    const unitEnt = viewer.entities.getById(unitId);
+    const u = unitMeta.get(unitId);
+    if (unitEnt && u) {
+        (u as any).__iconLiftPx = 0;
+        setUnitIconLiftPx(unitEnt, u, 0);
+    }
+}
+
+function updateToeUnderbarForUnit(
+    viewer: Cesium.Viewer,
+    unitEnt: Cesium.Entity,
+    u: UnitRenderable,
+    tMs: number,
+) {
+    const iconPx = getBillboardBasePx(viewer, unitEnt, ICON_PX);
+    const enabled = Boolean((effectiveToeUnderbarEnabled as any)?.value ?? toeMapUnderbarEnabled.value);
+    const ubId = toeUnderbarIdForUnit(u.id);
+    const pedId = pedestalIdForUnit(u.id);
+
+    // Treat alt==0 as "surface" for now (common in your current pipeline)
+    const surfaceAnchored = (u.clampToGround !== false) && (u.alt == null || u.alt === 0);
+
+    if (!enabled || !unitEnt?.show) {
+        hideToeUnderbar(viewer, u.id); // hides pedestal + underbar + resets lift
+        return;
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // 1) Pedestal FIRST (so it shows even if pct cannot be computed)
+    // ─────────────────────────────────────────────────────────────
+    let pedestalH = 0;
+
+    if (surfaceAnchored) {
+        const { w: pedW, h: pedH } = makePedestalSvgDataUrl(iconPx);
+        pedestalH = pedH;
+        upsertPedestalLines(viewer, unitEnt, u.id, pedW, pedH);
+    } else {
+        const pl = viewer.entities.getById(pedestalLinesIdForUnit(unitId));
+        if (pl) pl.show = false;
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // 2) Compute pct using the scenario unitMap (authoritative)
+    // ─────────────────────────────────────────────────────────────
+    const baseUnit = getScenarioUnitById(u.id) ?? (u as any).__sourceUnit ?? u;
+    const includeSubs = readPersonnelIncludeSubs();
+
+    let pct: number | null = null;
+    try {
+        pct = computeToePctForUnit(baseUnit, tMs, includeSubs, getScenarioUnitById);
+    } catch {
+        pct = null;
+    }
+
+    // If pct not available or full strength, hide ONLY the underbar (keep pedestal).
+    if (pct == null) {
+        const ub = viewer.entities.getById(ubId);
+        if (ub) ub.show = false;
+
+        // Persist lift so later billboard rebuilds don’t drop the icon back onto the ground
+        const liftPx = surfaceAnchored ? (pedestalH + 2) : 0;
+        (u as any).__iconLiftPx = liftPx;
+
+        setUnitIconLiftPx(unitEnt, u, liftPx);
+        return;
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // 3) Underbar render
+    // ─────────────────────────────────────────────────────────────
+    const { url, w, h, gapPx } = makeToeUnderbarSvgDataUrl(pct, iconPx);
+
+    function getBillboardBasePx(viewer: Cesium.Viewer, ent: Cesium.Entity, fallbackPx: number): number {
+        try {
+            const bb: any = ent.billboard;
+            if (!bb) return fallbackPx;
+
+            const t = viewer.clock?.currentTime;
+            const w = (bb.width && typeof bb.width.getValue === "function")
+                ? bb.width.getValue(t)
+                : bb.width;
+
+            return (typeof w === "number" && w > 0) ? w : fallbackPx;
+        } catch {
+            return fallbackPx;
+        }
+    }
+
+    const verticalOrigin = surfaceAnchored ? VerticalOrigin.BOTTOM : VerticalOrigin.TOP;
+    const heightReference = HeightReference.CLAMP_TO_GROUND;
+
+    const BAR_PLATFORM_GAP_PX = 2;   // bar sits this far above the cone top
+    const ICON_BAR_GAP_PX = 6;       // increase this if you want more separation
+
+    const barBaseY = pedestalH + BAR_PLATFORM_GAP_PX;
+
+    // Underbar placement (surface): bar anchored above the cone “platform”
+    const pixelOffset = surfaceAnchored
+        ? new Cartesian2(0, -barBaseY)   // negative moves UP
+        : new Cartesian2(0, -gapPx);
+
+    // Icon lift: cone -> bar -> gap -> icon
+    const liftPx = surfaceAnchored
+        ? (pedestalH + BAR_PLATFORM_GAP_PX + h) // icon bottom touches underbar top
+        : 0;
+
+    (u as any).__iconLiftPx = liftPx;
+    setUnitIconLiftPx(unitEnt, u, liftPx);
+
+
+    const ubEnt = viewer.entities.getById(ubId) ?? viewer.entities.add({ id: ubId });
+    ubEnt.position = unitEnt.position;
+    ubEnt.orientation = undefined as any;
+
+    const sig = `${Math.round(pct * 10) / 10}`;
+    const prev = lastToeUnderbarSig.get(u.id);
+
+    if (prev !== sig || !ubEnt.billboard) {
+        lastToeUnderbarSig.set(u.id, sig);
+        ubEnt.billboard = new Cesium.BillboardGraphics({
+            image: url,
+            width: w,
+            height: h,
+            horizontalOrigin: HorizontalOrigin.CENTER,
+            verticalOrigin,
+            pixelOffset,
+            heightReference,
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+            scaleByDistance: new Cesium.NearFarScalar(800, 1.0, 2_000_000, 0.4),
+            distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0.0, 10_000_000.0),
+        });
+    } else {
+        const bb: any = ubEnt.billboard;
+        bb.verticalOrigin = verticalOrigin;
+        bb.pixelOffset = pixelOffset;
+        bb.heightReference = heightReference;
+        bb.width = w;
+        bb.height = h;
+        bb.disableDepthTestDistance = Number.POSITIVE_INFINITY;
+    }
+    const unitBB: any = unitEnt.billboard;
+    const ubBB: any = ubEnt.billboard;
+    if (unitBB?.scaleByDistance && ubBB) ubBB.scaleByDistance = unitBB.scaleByDistance;
+    ubEnt.show = true;
+}
+
 
 /** Build a URL/dataURL for a unit's icon synchronously (no async, no point fallback). */
 function buildIconUrlSync(u: UnitRenderable, viewer?: Cesium.Viewer): string | undefined {
@@ -562,7 +924,7 @@ function makeSideLabel(
         verticalOrigin: VerticalOrigin.BOTTOM,
         horizontalOrigin: hOrigin,
         pixelOffset: new Cartesian2(offsetX, pixelOffsetY),
-        disableDepthTestDistance: 0,
+        disableDepthTestDistance: Number.POSITIVE_INFINITY,
         distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0.0, 2_000_000.0),
         scaleByDistance: new Cesium.NearFarScalar(800, 1.1, 2_000_000, 0.5),
         translucencyByDistance: new Cesium.NearFarScalar(50_000, 1.0, 1_500_000, 0.4),
@@ -658,6 +1020,33 @@ function applyAvailability(ent: Cesium.Entity, u: UnitRenderable) {
  *  using the icon's *real* pixel width (naturalWidth/width * scale * scaleByDistance).
  *  It tracks image changes and re-evaluates each frame.
  */
+
+function installIconLiftTick(viewer: Cesium.Viewer, ent: Cesium.Entity, u: UnitRenderable) {
+    if ((ent as any).__iconLiftTick) return;
+
+    const tick = () => {
+        const liftPx = Number((u as any).__iconLiftPx ?? 0) || 0;
+        if (!ent.billboard) return;
+
+        // Force as a Cesium Property to avoid any “POJO vs Graphics” weirdness.
+        (ent.billboard as any).pixelOffset =
+            new Cesium.ConstantProperty(new Cesium.Cartesian2(0, -liftPx));
+
+        // Keep terrain-safe behavior stable
+        (ent.billboard as any).disableDepthTestDistance = Number.POSITIVE_INFINITY;
+    };
+
+    (ent as any).__iconLiftTick = tick;
+    viewer.scene.postRender.addEventListener(tick);
+}
+
+function uninstallIconLiftTick(viewer: Cesium.Viewer, ent: Cesium.Entity) {
+    const tick = (ent as any).__iconLiftTick;
+    if (!tick) return;
+    viewer.scene.postRender.removeEventListener(tick);
+    (ent as any).__iconLiftTick = undefined;
+}
+
 function alignLabelToIconLeftEdge(
     viewer: Cesium.Viewer,
     ent: Cesium.Entity,
@@ -670,10 +1059,12 @@ function alignLabelToIconLeftEdge(
 
     // Label’s right edge should sit flush to the icon’s left edge
     label.horizontalOrigin = Cesium.HorizontalOrigin.RIGHT;
-    label.verticalOrigin = Cesium.VerticalOrigin.BOTTOM;
+    label.verticalOrigin = Cesium.VerticalOrigin.CENTER;
 
     // keep your vertical lift behavior
-    const lift = u.labelOffsetPxY ?? -20;
+    const iconLift = Number((u as any).__iconLiftPx ?? 0) || 0;
+    const baseY = (u as any)?.labelOffsetPxY ?? -12;
+    const lift = baseY - iconLift;
 
     // Clean any previous tick
     try {
@@ -683,6 +1074,7 @@ function alignLabelToIconLeftEdge(
 
     // Small cache of intrinsic image width (so URLs without bb.width work)
     let intrinsicW: number | undefined;
+    let intrinsicH: number | undefined;
 
     // Utility: read “property-or-value” at the viewer clock time
     const now = () => viewer.clock.currentTime;
@@ -704,6 +1096,7 @@ function alignLabelToIconLeftEdge(
         // If already an HTMLImageElement (from 2D cache), use its dimensions directly
         if (imgVal && (imgVal.naturalWidth || imgVal.width)) {
             intrinsicW = (imgVal.naturalWidth ?? imgVal.width) as number;
+            intrinsicH = (imgVal.naturalHeight ?? imgVal.height) as number;
             return;
         }
 
@@ -718,6 +1111,7 @@ function alignLabelToIconLeftEdge(
                 const im = new Image();
                 im.onload = () => {
                     intrinsicW = im.naturalWidth || im.width || undefined;
+                    intrinsicH = im.naturalHeight || im.height || undefined;
                     if (intrinsicW) cache.set(key, intrinsicW);
                 };
                 im.onerror = () => { /* ignore; we'll retry next frame */ };
@@ -771,12 +1165,21 @@ function alignLabelToIconLeftEdge(
 
         const bbPx = v<Cesium.Cartesian2 | undefined>(bb.pixelOffset, undefined);
         const bbOffX = bbPx ? bbPx.x : 0;
+        const bbOffY = bbPx ? bbPx.y : 0;
+
+        let baseH = v<number | undefined>(bb.height, undefined);
+        if (!(typeof baseH === "number" && baseH > 0)) baseH = intrinsicH;
+        if (!(typeof baseH === "number" && baseH > 0)) baseH = baseW; // fallback square
+        const effHeightPx = baseH * effScale;
+        const iconCenterY = bbOffY - (effHeightPx / 2);
+
 
         // 5) Put label’s RIGHT edge at the icon’s LEFT edge minus pad
         const rightEdgeX = leftFromOrigin + bbOffX - padPx;
 
         // Apply offsets and keep your lift
-        label.pixelOffset = new Cesium.Cartesian2(rightEdgeX, lift);
+        const extraY = (u.labelOffsetPxY ?? 0); // optional tweak; 0 means truly centered
+        label.pixelOffset = new Cesium.Cartesian2(rightEdgeX, iconCenterY + extraY);
 
         // Make label distance behavior track billboard (optional, but helps match feel)
         const lblNfs = v<Cesium.NearFarScalar | undefined>(label.pixelOffsetScaleByDistance, undefined);
@@ -857,6 +1260,8 @@ function effectiveSidc(u: UnitRenderable, viewer?: Cesium.Viewer): string | unde
     // 2) From computeSnapshot (some pipelines keep current sidc only in events logic)
     try {
         const snap = computeSnapshot(u, tMs);
+        // Default: no lift unless underbar/pedestal logic sets it this tick
+        (u as any).__iconLiftPx = 0;
         if (typeof snap?.sidc === "string" && snap.sidc.trim()) return snap.sidc;
     } catch { /* ignore */ }
 
@@ -903,7 +1308,7 @@ function applyBillboardGraphics(ent: Cesium.Entity, u: UnitRenderable, viewer?: 
             verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
             horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
             heightReference: hRef,
-            disableDepthTestDistance: 0,
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
             scaleByDistance: new Cesium.NearFarScalar(800.0, 1.0, 2_000_000.0, 0.5),
             distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0.0, 10_000_000.0),
         });
@@ -915,10 +1320,11 @@ function applyBillboardGraphics(ent: Cesium.Entity, u: UnitRenderable, viewer?: 
     // Label
     ent.label = u.name ? makeSideLabel(u.name, hRef, "left", u.labelOffsetPxY ?? -12) : undefined;
     if (u.name && ent.label && viewer) {
-        alignLabelToIconLeftEdge(viewer, ent, u, /*padPx=*/ 2);
+        alignLabelToIconLeftEdge(viewer, ent, u, /*padPx=*/ 10);
     }
-
+    installIconLiftTick(viewer, ent, u);
     applyAvailability(ent, u);
+    applyIconLift(ent, u);
 }
 
 
@@ -1125,17 +1531,18 @@ function applySidcChange(
             (ent.billboard as any).image = url;
         } else {
             ent.point = undefined as any;
-            ent.billboard = {
+            ent.billboard = new Cesium.BillboardGraphics({
                 image: url,
                 verticalOrigin: VerticalOrigin.BOTTOM,
                 horizontalOrigin: HorizontalOrigin.CENTER,
                 heightReference:
-                    (u.clampToGround !== false && u.alt == null)
+                    (u.clampToGround !== false && (u.alt == null || u.alt === 0))
                         ? HeightReference.CLAMP_TO_GROUND
                         : HeightReference.RELATIVE_TO_GROUND,
-                disableDepthTestDistance: 0,
+                disableDepthTestDistance: Number.POSITIVE_INFINITY,
                 scaleByDistance: new Cesium.NearFarScalar(800, 1.0, 2_000_000, 0.4),
-            } as any;
+                distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0.0, 10_000_000.0),
+            });
         }
         try { (ent.billboard as any).color = undefined; } catch { /* ignore */ }
     } else {
@@ -1145,7 +1552,8 @@ function applySidcChange(
     if (ent.label && viewer) {
         alignLabelToIconLeftEdge(viewer, ent, u, /*padPx=*/ 2);
     }
-
+    if (viewer) installIconLiftTick(viewer, ent, u);
+    applyIconLift(ent, u);
     viewer?.scene.requestRender();
 }
 
@@ -1201,6 +1609,32 @@ function providerFromTemplate(
 
 export function createGlobeAdapter(): GlobePort {
     let api: GlobeApi | null = null;
+
+    async function sampleSurfaceHeightMeters(lon: number, lat: number): Promise<number | undefined> {
+        if (!api) return undefined;
+
+        const viewer = api.viewer;
+
+        // Fast path: height from currently-loaded globe tiles if available
+        try {
+            const carto = Cartographic.fromDegrees(lon, lat);
+            const h0 = (viewer.scene.globe as any)?.getHeight?.(carto);
+            if (typeof h0 === "number" && Number.isFinite(h0)) return h0;
+        } catch {
+            // ignore
+        }
+
+        // Reliable path: terrain sampling (your file already exports sampleHeight(viewer, lon, lat))
+        try {
+            const h = await sampleHeight(viewer, lon, lat);
+            if (typeof h === "number" && Number.isFinite(h)) return h;
+        } catch {
+            // ignore
+        }
+
+        return undefined;
+    }
+
     let wx: WeatherSkyController | null = null;
     const { getByKey } = makeImageryProviders();
 
@@ -1260,10 +1694,14 @@ export function createGlobeAdapter(): GlobePort {
                     style: "footprint",
                 });
                 applyAvailability(ent, u);
+                const tNow = currentViewerMs(viewer) ?? Date.now();
+                updateToeUnderbarForUnit(viewer, ent as any, u, tNow);
             } else if (u.render === "block") {
                 applyBlockGraphics(ent, u);
             } else {
                 applyBillboardGraphics(ent, u, api.viewer);
+                const tNow = currentViewerMs(viewer) ?? Date.now();
+                updateToeUnderbarForUnit(viewer, ent as any, u, tNow);
             }
 
             // default visible; time updates may hide it
@@ -1274,6 +1712,17 @@ export function createGlobeAdapter(): GlobePort {
         const toRemove: any[] = [];
         (api.viewer.entities.values as any).forEach((e: any) => {
             const id = e.id as string;
+
+            // Keep underbar entities if their base unit is still present
+            if (isToeUnderbarId(id)) {
+                const baseId = baseIdFromToeUnderbarId(id);
+                if (seen.has(baseId)) return;
+            }
+            // Keep pedestal entities if their base unit is still present
+            if (isPedestalId(id)) {
+                const baseId = baseIdFromPedestalId(id);
+                if (seen.has(baseId)) return;
+            }
             if (!seen.has(id)) toRemove.push(id);
         });
         toRemove.forEach((id) => {
@@ -1843,9 +2292,9 @@ function updateAllUnitsAtTime(tMs: number) {
         const passes = (_unitFilter ? _unitFilter(u) : true) && !isHidden2D(u);
         if (!passes) {
             if (ent.show !== false) ent.show = false;
+            hideToeUnderbar(viewer, id);
             continue;
         }
-
         // Decide per events
         const snap = computeSnapshot(u, tMs);
 
@@ -1915,7 +2364,11 @@ function updateAllUnitsAtTime(tMs: number) {
 
             lastFillHex.set(id, curHex);
         }
-
+        if (snap.onMap) {
+            updateToeUnderbarForUnit(viewer, ent as any, u, tMs);
+        } else {
+            hideToeUnderbar(viewer, id);
+        }
         // 🔹 NEW: range rings around this unit
         applyRangeRingsForSnapshot(
             id,
@@ -1955,7 +2408,7 @@ api.viewer.scene.globe.depthTestAgainstTerrain = true;
 
 // publish viewer + maps for the console
 publishDebug(api.viewer);
-
+setSurfaceHeightSampler(sampleSurfaceHeightMeters);
 
             try {
                 (window as any).MentatDebugSIDC = (id?: string) => {
@@ -1996,6 +2449,7 @@ publishDebug(api.viewer);
 
         unmount() {
             if (!api) return;
+            setSurfaceHeightSampler(undefined);
             wx?.dispose();
             wx = null;
             api.destroy();
@@ -2066,6 +2520,8 @@ publishDebug(api.viewer);
 
         removeUnit(id) {
             if (!api) return;
+            const ent = entities.get(id);
+            if (ent) uninstallIconLiftTick(api.viewer, ent);
             api.viewer.entities.removeById(id);
             entities.delete(id);
             unitMeta.delete(id);
@@ -2074,6 +2530,10 @@ publishDebug(api.viewer);
             lastFillHex.delete(id);
             api.viewer.scene.requestRender();
             publishDebug(api.viewer);
+            api.viewer.entities.removeById(toeUnderbarIdForUnit(id));
+            lastToeUnderbarSig.delete(id);
+            api.viewer.entities.removeById(pedestalLinesIdForUnit(id));
+            pedestalTipCache.delete(id);
         },
 
         flyToLatLon(lon, lat, height = 120000) {
@@ -2166,11 +2626,12 @@ publishDebug(api.viewer);
             await api.setElevationEnabled(key === "world");
         },
 
-        updateUnitPosition(id, lon, lat, alt = 0) {
+        updateUnitPosition(id, lon, lat, alt?: number | null) {
             const ent = entities.get(id);
             if (!ent) return;
 
             const u = unitMeta.get(id);
+
             const wouldClamp = u?.clampToGround !== false && u?.alt == null && alt == null;
             if (wouldClamp) {
                 setEntityPosition(ent, lon, lat, 0);

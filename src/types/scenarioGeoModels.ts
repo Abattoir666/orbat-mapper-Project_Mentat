@@ -14,7 +14,9 @@ export interface VisibilityInfo {
 
 export type FeatureId = string | number;
 export type LayerId = string | number;
-export type Position = number[];
+export type Position2D = [number, number];
+export type Position3D = [number, number, number];
+export type Position = Position2D | Position3D;
 export type ScenarioFeatureType =
     | "Point"
     | "LineString"

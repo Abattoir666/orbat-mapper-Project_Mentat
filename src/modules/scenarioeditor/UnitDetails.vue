@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
     import {
         computed,
         defineAsyncComponent,
@@ -61,6 +61,10 @@
     import MilSymbol from "@/components/MilSymbol.vue";
     import UnitDetailsLeaders from "@/modules/scenarioeditor/Leaders/UnitDetailsLeaders.vue";
     import UnitDetailsPersonnel from "@/modules/scenarioeditor/Personnel/UnitDetailsPersonnel.vue";
+    import { useAltitudeIndicator } from "@/composables/useAltitudeIndicator";
+    import type { Position } from "geojson";
+
+    const { format: formatAlt } = useAltitudeIndicator();
 
     const FeatureTransformations = defineAsyncComponent(
         () => import("@/modules/scenarioeditor/FeatureTransformations.vue"),
@@ -136,6 +140,23 @@
     const isLocked = computed(() => isUnitLocked(props.unitId));
 
     const geoStore = useGeoStore();
+
+    function toLonLat2D(pos: Position): [number, number] {
+        return [pos[0] as number, pos[1] as number];
+    }
+
+    /**
+     * "Current position at current scenario time".
+     * - If _state.location is null => explicitly removed from map at this time
+     * - If _state.location is undefined => fallback to initial unit.location
+     */
+    const currentLocation = computed<Position | null | undefined>(() => {
+        const stLoc = (unit.value as any)?._state?.location as Position | null | undefined;
+        if (stLoc === null) return null;
+        if (stLoc !== undefined) return stLoc;
+        return (unit.value as any)?.location as Position | undefined;
+    });
+
     const unitSettings = useUnitSettingsStore();
     const { getModalSidc } = injectStrict(sidcModalKey);
 
@@ -528,13 +549,36 @@
                                class="underline"
                                :href="unit.externalUrl">{{ unit.externalUrl }}</a>
                         </DescriptionItem>
+                        <DescriptionItem label="Current position">
+                            <div class="flex items-center justify-between">
+                                <p v-if="currentLocation">
+                                    {{ formatPosition(currentLocation) }}
+                                    <span class="ml-2 text-xs text-gray-500">{{ formatAlt(currentLocation) }}</span>
+                                </p>
+                                <p v-else-if="currentLocation === null" class="text-sm text-gray-500">
+                                    Removed from map
+                                </p>
+                                <p v-else class="text-sm text-gray-500">
+                                    No location
+                                </p>
+
+                                <IconButton v-if="currentLocation"
+                                            @click="geoStore.panToLocation(toLonLat2D(currentLocation))">
+                                    <IconCrosshairsGps class="h-5 w-5" />
+                                </IconButton>
+                            </div>
+                        </DescriptionItem>
+
                         <DescriptionItem v-if="unit.description" label="Description">
                             <div class="prose prose-sm dark:prose-invert" v-html="hDescription"></div>
                         </DescriptionItem>
 
                         <DescriptionItem v-if="unit.location" label="Initial location">
                             <div class="flex items-center justify-between">
-                                <p>{{ formatPosition(unit.location) }}</p>
+                                <p>
+                                    {{ formatPosition(unit.location) }}
+                                    <span class="ml-2 text-xs text-gray-500">{{ formatAlt(unit.location) }}</span>
+                                </p>
                                 <IconButton @click="geoStore.panToLocation(unit.location)">
                                     <IconCrosshairsGps class="h-5 w-5" />
                                 </IconButton>
