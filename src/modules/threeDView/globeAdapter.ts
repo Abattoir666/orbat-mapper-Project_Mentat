@@ -828,7 +828,7 @@ export type UnitRenderable = {
 export interface GlobePort {
     mount: (el: HTMLDivElement) => Promise<void>;
     unmount: () => void;
-
+    getViewer?: () => Viewer | undefined;
     setUnits: (units: UnitRenderable[]) => void;
     upsertUnit: (u: UnitRenderable) => void;
     removeUnit: (id: string) => void;
@@ -858,7 +858,8 @@ export interface GlobePort {
             subdomains?: string[] | string;
         }
     ) => void;
-    setTerrainKey: (key: "world" | "flat") => Promise<void>;
+    setTerrainKey: (key: "world" | "flat" | "bathymetry") => Promise<void>;
+    setWaterEffectEnabled: (enabled: boolean) => void;
 
     updateUnitPosition?: (id: string, lon: number, lat: number, alt?: number) => void;
 
@@ -2621,9 +2622,32 @@ setSurfaceHeightSampler(sampleSurfaceHeightMeters);
             replaceBaseImageryLayer(api.viewer, provider);
         },
 
-        async setTerrainKey(key: "world" | "flat") {
+        async setTerrainKey(key: "world" | "flat" | "bathymetry") {
             if (!api) return;
-            await api.setElevationEnabled(key === "world");
+            const anyApi: any = api;
+
+            if (typeof anyApi.setTerrainKey === "function") {
+                await anyApi.setTerrainKey(key);
+            } else {
+                // legacy fallback
+                await api.setElevationEnabled(key === "world");
+            }
+        },
+
+        setWaterEffectEnabled(enabled: boolean) {
+            if (!api) return;
+            const anyApi: any = api;
+
+            if (typeof anyApi.setWaterEffectEnabled === "function") {
+                anyApi.setWaterEffectEnabled(!!enabled);
+                return;
+            }
+
+            // last-resort fallback
+            try {
+                (api.viewer.scene.globe as any).showWaterEffect = !!enabled;
+                api.viewer.scene.requestRender();
+            } catch { }
         },
 
         updateUnitPosition(id, lon, lat, alt?: number | null) {
@@ -2752,6 +2776,8 @@ setSurfaceHeightSampler(sampleSurfaceHeightMeters);
             if (show) layer.alpha = Math.max(0.0, layer.alpha ?? 1.0);
             api!.viewer.scene.requestRender();
         },
+
+        getViewer: () => api?.viewer,
 
         setOverlayAlpha(id, alpha) {
             const layer = overlayLayers.get(id);

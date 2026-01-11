@@ -10,6 +10,7 @@ import {
     Cartesian3,
     Cartographic,
     ClockRange,
+    Terrain,
     ImageryProvider,
     OpenStreetMapImageryProvider,
     UrlTemplateImageryProvider,
@@ -25,11 +26,16 @@ import type { Unit } from "@/types/scenarioModels";
 import {
     initCesiumIonFromEnv,
     hasCesiumIonToken,
-    createTerrain,
     syncTerrainProviderReferences,
     setSceneVerticalExaggeration,
     runtimeExagSupported,
 } from "@/geo/cesiumTerrain";
+
+import {
+    type TerrainKey,
+    createTerrainForKey,
+    applyWaterEffectEnabled,
+} from "@/modules/threeDView/hydrography";
 
 // Expose Cesium for console debugging
 (globalThis as any).Cesium = CesiumNS;
@@ -43,6 +49,8 @@ export type GlobeInitOptions = {
     imageryProvider?: ImageryProvider;
     elevationEnabled?: boolean;     // default: true if Ion token is set
     exaggeration?: number;          // default: 1 if elevation, 0 if not
+    terrainKey?: TerrainKey;
+    waterEffectEnabled?: boolean;
 };
 
 export type BaseTemplateOptions = {
@@ -92,9 +100,17 @@ export type GlobeApi = {
     // lifecycle
     rebuild: () => Promise<void>;
     destroy: () => void;
+
+    //water 
+    setTerrainKey: (key: TerrainKey) => Promise<void>;
+    setWaterEffectEnabled: (enabled: boolean) => void;
 };
 
 /* ───────────────────────────── Utilities ───────────────────────────── */
+
+let terrainDetach: (() => void) | null = null;
+let terrainSwitchSeq = 0;
+let detachTerrainListeners: (() => void) | null = null;
 
 const wmProj = new WebMercatorProjection(Ellipsoid.WGS84);
 
@@ -135,28 +151,33 @@ export async function useGlobe(
     opts: GlobeInitOptions = {}
 ): Promise<GlobeApi> {
     // —— State
-    let elevationEnabled =
-        typeof opts.elevationEnabled === "boolean"
-            ? opts.elevationEnabled
-            : hasCesiumIonToken();
+    let terrainKey: TerrainKey =
+        opts.terrainKey ??
+        (typeof opts.elevationEnabled === "boolean"
+            ? (opts.elevationEnabled ? "world" : "flat")
+            : (hasCesiumIonToken() ? "world" : "flat"));
 
-    let exag = Math.max(0, opts.exaggeration ?? (elevationEnabled ? 1 : 0));
+    let elevationEnabled = terrainKey !== "flat";
+    let lastNonFlatTerrainKey: TerrainKey = terrainKey === "flat" ? "world" : terrainKey;
+
+    let waterEffectEnabled =
+        typeof opts.waterEffectEnabled === "boolean" ? opts.waterEffectEnabled : false;
+
+    let exag = Math.max(0, opts.exaggeration ?? (terrainKey === "flat" ? 0 : 1));
 
     // —— Factories
     function makeGlobe(): Globe {
         const g = new Globe(Ellipsoid.WGS84);
         g.baseColor = Color.BLACK;
         g.showGroundAtmosphere = false;
-        (g as any).showWaterEffect = false;
+        (g as any).showWaterEffect = waterEffectEnabled;
         g.enableLighting = false;
         g.depthTestAgainstTerrain = false;
         return g;
     }
 
     function makeTerrainNow() {
-        // only enable terrain when elevation is enabled AND exaggeration is non-zero
-        const enabled = elevationEnabled && exag > 0;
-        return createTerrain(enabled, true);
+        return createTerrainForKey(terrainKey, true);
     }
 
     const defaultOSM = new OpenStreetMapImageryProvider({
@@ -248,6 +269,12 @@ export async function useGlobe(
         setImageryProvider(prov);
     }
 
+    function setWaterEffectEnabled(enabled: boolean): void {
+        waterEffectEnabled = !!enabled;
+        applyWaterEffectEnabled(viewer, waterEffectEnabled);
+        console.log("[useGlobe] Water effect:", waterEffectEnabled);
+    }
+
     function setBaseLayer(key: string) {
         const k = (key || "").toLowerCase();
 
@@ -272,14 +299,7 @@ export async function useGlobe(
 
     // —— Exaggeration / Elevation
     async function setElevationEnabled(enabled: boolean): Promise<void> {
-        elevationEnabled = enabled;
-
-        viewer.terrain = makeTerrainNow();
-        syncTerrainProviderReferences(viewer);
-
-        try { viewer.camera.moveForward(0.001); viewer.camera.moveBackward(0.001); } catch { }
-        viewer.scene.requestRender();
-        console.log("[useGlobe] Elevation:", elevationEnabled, "exag(scene):", scene.verticalExaggeration);
+        await setTerrainKey(enabled ? lastNonFlatTerrainKey : "flat");
     }
 
     async function setExaggeration(factor: number): Promise<void> {
@@ -293,15 +313,70 @@ export async function useGlobe(
 
         setSceneVerticalExaggeration(scene, exag);
 
-        const wantElevation = exag > 0;
-        if (wantElevation !== elevationEnabled) {
-            await setElevationEnabled(wantElevation);
-        }
-
         try { viewer.camera.moveForward(0.001); viewer.camera.moveBackward(0.001); } catch { }
         viewer.scene.requestRender();
         console.log("[useGlobe] Exaggeration set (scene):", exag);
     }
+
+    async function setTerrainKey(key: TerrainKey): Promise<void> {
+        terrainKey = key;
+        elevationEnabled = terrainKey !== "flat";
+        if (terrainKey !== "flat") lastNonFlatTerrainKey = terrainKey;
+
+        // Cancel any previous terrain listeners
+        detachTerrainListeners?.();
+        detachTerrainListeners = null;
+
+        const mySeq = ++terrainSwitchSeq;
+
+        const terrain: Terrain = createTerrainForKey(terrainKey, true);
+
+        // Runtime terrain swap: use scene API
+        viewer.scene.setTerrain(terrain);
+        viewer.scene.requestRender();
+
+        const onTerrainError = (err: any) => {
+            if (mySeq !== terrainSwitchSeq) return;
+            console.warn("[useGlobe] Terrain creation error:", err);
+
+            // Fail-safe: never leave the globe stranded
+            if (terrainKey === "bathymetry") void setTerrainKey("world");
+        };
+
+        const onProviderTileError = (err: any) => {
+            if (mySeq !== terrainSwitchSeq) return;
+            console.warn("[useGlobe] Terrain tile error:", err);
+
+            if (terrainKey === "bathymetry") void setTerrainKey("world");
+        };
+
+        const onTerrainReady = () => {
+            if (mySeq !== terrainSwitchSeq) return;
+
+            // Terrain.provider is only safe after readyEvent :contentReference[oaicite:1]{index=1}
+            try {
+                syncTerrainProviderReferences(viewer, terrain);
+            } catch (e) {
+                console.warn("[useGlobe] syncTerrainProviderReferences failed:", e);
+            }
+
+            try {
+                terrain.provider?.errorEvent?.addEventListener(onProviderTileError);
+            } catch { /* ignore */ }
+
+            viewer.scene.requestRender();
+        };
+
+        terrain.errorEvent.addEventListener(onTerrainError);
+        terrain.readyEvent.addEventListener(onTerrainReady);
+
+        detachTerrainListeners = () => {
+            try { terrain.errorEvent.removeEventListener(onTerrainError); } catch { }
+            try { terrain.readyEvent.removeEventListener(onTerrainReady); } catch { }
+            try { terrain.provider?.errorEvent?.removeEventListener(onProviderTileError); } catch { }
+        };
+    }
+
 
     // —— Camera seed: prefer Scenario 2D map if available
     function readScenario2DCamera():
@@ -732,6 +807,9 @@ export async function useGlobe(
 
         rebuild,
         destroy,
+
+        setTerrainKey,
+        setWaterEffectEnabled,
     };
 
     (window as any).MentatGlobe = api;

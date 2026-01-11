@@ -18,6 +18,8 @@
         setExaggeration?: (v: number) => Promise<void> | void;
         enableDayNight?: (enabled: boolean) => void;
         enableSkybox?: (enabled: boolean) => void;
+        setTerrainKey?: (key: "world" | "flat" | "bathymetry") => Promise<void> | void;
+        setWaterEffectEnabled?: (enabled: boolean) => void;
     };
 
     const props = defineProps<{ globe: GlobeApi | null | undefined }>();
@@ -156,7 +158,11 @@
     const skybox = ref<boolean>(false);
     watch(dayNight, (on) => props.globe?.enableDayNight?.(on));
     watch(skybox, (on) => props.globe?.enableSkybox?.(on));
+    const terrainKey = ref<"world" | "flat" | "bathymetry">("world");
+    watch(terrainKey, (k) => props.globe?.setTerrainKey?.(k));
 
+    const waterEffect = ref<boolean>(false);
+    watch(waterEffect, (on) => props.globe?.setWaterEffectEnabled?.(on));
     /* ───────────────────────── Lifecycle ───────────────────────── */
     onMounted(async () => {
         try {
@@ -186,7 +192,8 @@
         props.globe?.setExaggeration?.(exag.value);
         props.globe?.enableDayNight?.(dayNight.value);
         props.globe?.enableSkybox?.(skybox.value);
-
+        props.globe?.setTerrainKey?.(terrainKey.value);
+        props.globe?.setWaterEffectEnabled?.(waterEffect.value);
         await nextTick();
     });
 </script>
@@ -213,6 +220,23 @@
             <label>
                 Exaggeration: {{ exag.toFixed(2) }}
                 <input type="range" min="0.01" max="5" step="0.01" v-model.number="exag" />
+            </label>
+        </div>
+
+        <!-- Terrain & Water -->
+        <div class="row">
+            <label>
+                Terrain:
+                <select v-model="terrainKey">
+                    <option value="flat">Flat</option>
+                    <option value="world">World</option>
+                    <option value="bathymetry">Bathymetry</option>
+                </select>
+            </label>
+
+            <label class="checkbox" title="Cesium globe water effect (water mask shader), if available">
+                <input type="checkbox" v-model="waterEffect" />
+                🌊 Water effect
             </label>
         </div>
 

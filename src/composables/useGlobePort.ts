@@ -39,6 +39,9 @@ export function useGlobePort() {
         flyToLatLon: (lon: number, lat: number, height?: number) =>
             adapter.value?.flyToLatLon(lon, lat, height),
 
+        setTerrainKey: (k: "world" | "flat" | "bathymetry") => adapter.value?.setTerrainKey(k),
+        setWaterEffectEnabled: (on: boolean) => adapter.value?.setWaterEffectEnabled(on),
+
         // access to the underlying adapter if needed
         get globe() {
             return adapter.value;

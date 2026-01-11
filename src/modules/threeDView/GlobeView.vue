@@ -30,14 +30,131 @@
         import("@/stores/selectedStore").then(m => m.useSelectedItems);
     import type { NScenarioEvent } from "@/types/internalModels";
     import CompassWidget from "./widgets/CompassWidget.vue";
-import MeasureWidget from "./widgets/MeasureWidget.vue";
-import PlaybackMenu from "@/modules/scenarioeditor/PlaybackMenu.vue";
+    import MeasureWidget from "./widgets/MeasureWidget.vue";
+    import PlaybackMenu from "@/modules/scenarioeditor/PlaybackMenu.vue";
+    import { probeHydrographyUpstream } from "@/modules/threeDView/hydrography/healthProbe";
+    import {
+        GEBCO_OVERLAY_ID,
+        GEBCO_TILE_TEMPLATE,
+        GEBCO_TILE_HEALTH_URL,
+        GEBCO_DEFAULT_ALPHA,
+    } from "@/modules/threeDView/hydrography/gebcoOverlay";
+    import { OCEAN_GEOJSON_URL } from "@/modules/threeDView/hydrography/data/oceanUrl";
+    import { WaterSurfaceLayer } from "@/modules/threeDView/hydrography/waterSurface";
+
+    const hydrographyWarning = ref<string | null>(null);
+    const hydrographyWarningDetails = ref<string | null>(null);
+    const hydrographyWarningDismissed = ref<boolean>(false);
+
+    async function checkHydrographyUpstreamOnce() {
+        if (hydrographyWarningDismissed.value) return;
+
+        try {
+            const res = await probeHydrographyUpstream();
+            if (!res.ok) {
+                const url = res.upstream?.url ? `Upstream: ${res.upstream.url}` : "";
+                const hint = res.hint || res.error || "Hydrography upstream check failed.";
+                hydrographyWarning.value = hint;
+                hydrographyWarningDetails.value = url;
+            } else {
+                hydrographyWarning.value = null;
+                hydrographyWarningDetails.value = null;
+            }
+        } catch (e: any) {
+            hydrographyWarning.value = "Hydrography upstream check failed (network error).";
+            hydrographyWarningDetails.value = String(e?.message || e);
+        }
+    }
+
+    onMounted(() => {
+        void checkHydrographyUpstreamOnce();
+    });
 
     // baseLayers.ts
     const BASE_URL =
         (import.meta.env.BASE_URL ?? "/").endsWith("/")
             ? import.meta.env.BASE_URL
             : import.meta.env.BASE_URL + "/";
+
+    //GEBCO helpers 
+    const gebcoEnabled = ref(false);
+    const gebcoAlpha = ref<number>(GEBCO_DEFAULT_ALPHA);
+
+    const gebcoHealth = ref<"unknown" | "ok" | "bad">("unknown");
+    const gebcoHealthMsg = ref<string>("");
+
+    async function probeGebcoTiles(): Promise<void> {
+        gebcoHealth.value = "unknown";
+        gebcoHealthMsg.value = "Checking…";
+
+        // Optional: helps you verify it actually ran
+        console.log("[hydrography] probing:", GEBCO_TILE_HEALTH_URL);
+
+        // Avoid spamming: you can call this on enable + on a “Re-check” button
+        const controller = new AbortController();
+        const t = window.setTimeout(() => controller.abort(), 5000);
+
+        try {
+            // HEAD is ideal; fall back to GET if some proxy rejects HEAD
+            let r = await fetch(GEBCO_TILE_HEALTH_URL, {
+                method: "HEAD",
+                signal: controller.signal,
+                cache: "no-store",
+            });
+
+            if (!r.ok) {
+                r = await fetch(GEBCO_TILE_HEALTH_URL, {
+                    method: "GET",
+                    signal: controller.signal,
+                    cache: "no-store",
+                });
+            }
+
+            if (r.ok) {
+                gebcoHealth.value = "ok";
+                gebcoHealthMsg.value = "";
+            } else {
+                gebcoHealth.value = "bad";
+                gebcoHealthMsg.value = `Tile probe failed (HTTP ${r.status}).`;
+            }
+        } catch (e: any) {
+            gebcoHealth.value = "bad";
+            gebcoHealthMsg.value = `Tile probe failed (${String(e?.message || e)}).`;
+        } finally {
+            window.clearTimeout(t);
+        }
+    }
+
+    watch(gebcoEnabled, async (on) => {
+        if (!g.value) return;
+
+        if (on) {
+            if (terrainKey.value !== "bathymetry") {
+                // Either auto-switch, or show a warning and offer a button.
+                terrainKey.value = "bathymetry";
+            }
+            // Create or re-enable the overlay
+            g.value.addOverlayTemplate?.(GEBCO_OVERLAY_ID, GEBCO_TILE_TEMPLATE, {
+                alpha: gebcoAlpha.value,
+                attribution: "GEBCO",
+                // geographic: false (default; we are using webmercator)
+            });
+
+            g.value.setOverlayVisibility?.(GEBCO_OVERLAY_ID, true);
+            g.value.setOverlayAlpha?.(GEBCO_OVERLAY_ID, gebcoAlpha.value);
+
+            // Health warning (non-blocking)
+            void probeGebcoTiles();
+        } else {
+            // Don’t remove; just hide (keeps state and avoids churn)
+            g.value.setOverlayVisibility?.(GEBCO_OVERLAY_ID, false);
+        }
+    });
+
+    watch(gebcoAlpha, (a) => {
+        if (!g.value) return;
+        g.value.setOverlayAlpha?.(GEBCO_OVERLAY_ID, a);
+    });
 
     /* ───────────────── Globe port + mount target ───────────────── */
 
@@ -52,15 +169,51 @@ import PlaybackMenu from "@/modules/scenarioeditor/PlaybackMenu.vue";
         return isRef(maybe) ? maybe.value : maybe;
     });
 
+    //Water surface
+    const waterSurfaceEnabled = ref(false);
+    const waterSurfaceAlpha = ref<number>(0.45);
+
+    let waterLayer: WaterSurfaceLayer | null = null;
+
+    watch(
+        [waterSurfaceEnabled, () => g.value],
+        async ([on, globe]) => {
+            if (!globe) return;
+
+            if (!waterLayer) {
+                const viewer = globe.getViewer?.();
+                if (!viewer) return; // viewer not ready yet
+
+                if (!waterLayer) {
+                    waterLayer = new WaterSurfaceLayer(viewer, {
+                        url: OCEAN_GEOJSON_URL,
+                        heightMeters: 0.5,
+                    });
+                    waterLayer.setAlpha(waterSurfaceAlpha.value);
+                }
+
+                await waterLayer.setEnabled(on);
+            }
+
+            await waterLayer.setEnabled(on);
+        },
+        { immediate: true }
+    );
+
+    watch(waterSurfaceAlpha, (a) => {
+        waterLayer?.setAlpha(a);
+    });
+
+
     // Compass: open on button; close when clicking the widget itself
     const showCompass = ref(false);
     function openCompass() { showCompass.value = true; }
     function closeCompass() { showCompass.value = false; }
 
     // Measure tool: open/close via button + close icon in widget
-const showMeasure = ref(false);
-function openMeasure() { showMeasure.value = true; }
-function closeMeasure() { showMeasure.value = false; }
+    const showMeasure = ref(false);
+    function openMeasure() { showMeasure.value = true; }
+    function closeMeasure() { showMeasure.value = false; }
 
     const globeApi = g;
     const mount = (port as any).mount as (el: HTMLDivElement) => Promise<void>;
@@ -181,12 +334,12 @@ function closeMeasure() { showMeasure.value = false; }
         g.value.setTime?.(t);
     }
     watch(currentMs, (t) => {
-    if (rafIdSend != null) cancelAnimationFrame(rafIdSend);
-    rafIdSend = requestAnimationFrame(() => {
-        rafIdSend = null;
-        flushClock(t);
-    });
-}, { immediate: true });
+        if (rafIdSend != null) cancelAnimationFrame(rafIdSend);
+        rafIdSend = requestAnimationFrame(() => {
+            rafIdSend = null;
+            flushClock(t);
+        });
+    }, { immediate: true });
 
     const jumpTimeLocal = ref<string>("");
 
@@ -263,6 +416,9 @@ function closeMeasure() { showMeasure.value = false; }
 
     const layers = ref<BaseLayerRec[]>([]);
     const selectedLayer = ref<string>("");
+
+    const terrainKey = ref<"flat" | "world" | "bathymetry">("world");
+    const waterEffect = ref<boolean>(false);
 
     /* Lazy Pinia store instance (typed) */
     type MapSettingsStoreT = ReturnType<import("@/stores/mapSettingsStore").useMapSettingsStore>;
@@ -390,6 +546,25 @@ function closeMeasure() { showMeasure.value = false; }
         } catch (e) {
             console.warn("[GlobeView] useMapSettingsStore() failed:", e);
         }
+
+        const ms: any = mapSettings.value;
+        if (ms) {
+            const k = ms.globeTerrainKey;
+            if (k === "flat" || k === "world" || k === "bathymetry") terrainKey.value = k;
+
+            const w = ms.globeWaterEffectEnabled;
+            if (typeof w === "boolean") waterEffect.value = w;
+        }
+
+        watch(terrainKey, (k) => {
+            const ms: any = mapSettings.value;
+            if (ms) ms.globeTerrainKey = k;
+        });
+
+        watch(waterEffect, (on) => {
+            const ms: any = mapSettings.value;
+            if (ms) ms.globeWaterEffectEnabled = on;
+        });
 
         // Lazy-init timeline-related Pinia stores AFTER mount to avoid getActivePinia() error
         try {
@@ -531,6 +706,27 @@ function closeMeasure() { showMeasure.value = false; }
             }
         }
     }, { immediate: true });
+
+    watch(
+        () => g.value,
+        (globe) => {
+            if (!globe) return;
+            globe.setTerrainKey?.(terrainKey.value);
+            globe.setWaterEffectEnabled?.(waterEffect.value);
+        },
+        { immediate: true }
+    );
+
+    watch(terrainKey, async (k) => {
+        if (!g.value) return;
+        await g.value.setTerrainKey?.(k);
+    }, { immediate: false });
+
+    watch(waterEffect, (on) => {
+        if (!g.value) return;
+        g.value.setWaterEffectEnabled?.(on);
+    }, { immediate: false });
+
 
     watch(() => mapSettings.value?.baseLayerName, (name) => {
         if (!name) return;
@@ -928,6 +1124,25 @@ function closeMeasure() { showMeasure.value = false; }
                         </select>
                     </label>
                 </div>
+                <!-- Hydrography -->
+                <div class="row" style="flex-direction: column; align-items: stretch; gap: 8px;">
+                    <div style="font-weight: 600;">Hydrography</div>
+
+                    <label>
+                        Terrain
+                        <select v-model="terrainKey">
+                            <option value="flat">Flat</option>
+                            <option value="world">World</option>
+                            <option value="bathymetry">Bathymetry</option>
+                        </select>
+                    </label>
+
+                    <label class="checkbox" title="Cesium globe water effect (water-mask shader), when supported">
+                        <input type="checkbox" v-model="waterEffect" />
+                        Water effect
+                    </label>
+                </div>
+
                 <!-- Imported layers (draped imagery) -->
                 <div class="row" style="flex-direction: column; align-items: stretch; gap: 8px;">
                     <div style="font-weight: 600;">Imported layers</div>
@@ -964,6 +1179,48 @@ function closeMeasure() { showMeasure.value = false; }
                         <input v-model.number="exaggeration" type="range" :min="0.01" :max="5" :step="0.01" />
                         <span class="badge">{{ exaggeration.toFixed(2) }}×</span>
                     </label>
+                </div>
+                <!-- GEBCO Bathymetry overlay -->
+                <div class="row" style="flex-direction: column; align-items: stretch; gap: 8px;">
+                    <div style="font-weight: 600;">Hydrography overlays</div>
+
+                    <div style="display:flex; align-items:center; gap:10px;">
+                        <label style="display:flex; align-items:center; gap:6px; flex: 1 1 auto;">
+                            <input type="checkbox" v-model="gebcoEnabled" />
+                            <span>GEBCO bathymetry (imagery)</span>
+                        </label>
+
+                        <span v-if="gebcoHealth === 'ok'" class="badge">OK</span>
+                        <span v-else-if="gebcoHealth === 'bad'" class="badge badgeWarn">Warning</span>
+                        <span v-else class="badge">Unknown</span>
+                    </div>
+
+                    <div v-if="gebcoHealth === 'bad'" class="warnText">
+                        {{ gebcoHealthMsg }}
+                        <button style="margin-left: 8px;" @click="probeGebcoTiles()">Re-check</button>
+                    </div>
+
+                    <div style="display:flex; align-items:center; gap:10px;">
+                        <span style="min-width: 64px; opacity: 0.9;">Alpha</span>
+                        <input type="range" :min="0" :max="1" :step="0.05"
+                               v-model.number="gebcoAlpha"
+                               :disabled="!gebcoEnabled"
+                               style="flex: 1 1 auto;" />
+                        <span style="width: 44px; text-align:right; opacity:0.9;">
+                            {{ Math.round(gebcoAlpha * 100) }}%
+                        </span>
+                    </div>
+                </div>
+                <div v-if="hydrographyWarning && !hydrographyWarningDismissed" class="warningBanner">
+                    <div style="font-weight: 600;">Hydrography warning</div>
+                    <div>{{ hydrographyWarning }}</div>
+                    <div v-if="hydrographyWarningDetails" style="opacity: 0.85; font-size: 0.9em; margin-top: 4px;">
+                        {{ hydrographyWarningDetails }}
+                    </div>
+                    <div style="margin-top: 8px; display: flex; gap: 8px;">
+                        <button @click="checkHydrographyUpstreamOnce()">Re-check</button>
+                        <button @click="hydrographyWarningDismissed = true">Dismiss</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1531,5 +1788,24 @@ function closeMeasure() { showMeasure.value = false; }
     .controls .row button[title="Show compass"] {
         display: block;
         margin: 0 auto;
+    }
+
+    .warningBanner {
+        border: 1px solid rgba(255, 200, 0, 0.6);
+        background: rgba(255, 200, 0, 0.12);
+        padding: 10px;
+        border-radius: 8px;
+        margin-bottom: 10px;
+    }
+
+    .badgeWarn {
+        border: 1px solid rgba(255, 200, 0, 0.65);
+    }
+
+    .warnText {
+        border: 1px solid rgba(255, 200, 0, 0.35);
+        background: rgba(255, 200, 0, 0.10);
+        padding: 8px;
+        border-radius: 8px;
     }
 </style>

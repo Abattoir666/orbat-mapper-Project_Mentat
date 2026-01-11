@@ -34,11 +34,20 @@ export function createTerrain(enabled: boolean, requestVertexNormals = true): Te
 /**
  * Keep Cesium internal references aligned after swapping viewer.terrain.
  */
-export function syncTerrainProviderReferences(viewer: Viewer) {
-  const provider = (viewer.terrain as any)?.provider ?? null;
-  (viewer as any).terrainProvider = provider;
-  (viewer.scene as any).terrainProvider = provider;
-  (viewer.scene.globe as any).terrainProvider = provider;
+export function syncTerrainProviderReferences(viewer: Viewer, terrain?: any) {
+    const t: any = terrain ?? (viewer as any).terrain;
+    const provider = t?.provider;
+
+    // Critical: do NOT overwrite anything with null/undefined
+    // Terrain.provider is not valid until Terrain.readyEvent fires. :contentReference[oaicite:1]{index=1}
+    if (!provider) return;
+
+    // Optional: keep a legacy alias if any code reads viewer.terrainProvider
+    (viewer as any).terrainProvider = provider;
+
+    // Do NOT set these. Cesium manages them internally; forcing null breaks globe rendering.
+    // (viewer.scene as any).terrainProvider = provider;
+    // (viewer.scene.globe as any).terrainProvider = provider;
 }
 
 /**
