@@ -31,6 +31,7 @@
     import type { NScenarioEvent } from "@/types/internalModels";
     import CompassWidget from "./widgets/CompassWidget.vue";
     import MeasureWidget from "./widgets/MeasureWidget.vue";
+    import GlobeControls from "./GlobeControls.vue";
     import PlaybackMenu from "@/modules/scenarioeditor/PlaybackMenu.vue";
     import { probeHydrographyUpstream } from "@/modules/threeDView/hydrography/healthProbe";
     import {
@@ -41,6 +42,16 @@
     } from "@/modules/threeDView/hydrography/gebcoOverlay";
     import { OCEAN_GEOJSON_URL } from "@/modules/threeDView/hydrography/data/oceanUrl";
     import { WaterSurfaceLayer } from "@/modules/threeDView/hydrography/waterSurface";
+    import { createSplitTerrainCompositor } from "@/modules/threeDView/hydrography/experimental/splitTerrain/splitTerrainCompositor";
+    import type { SplitTerrainCompositorHandle } from "@/modules/threeDView/hydrography/experimental/splitTerrain/types";
+    import {
+        createOsmBuildingsLayer,
+        type OsmBuildingsLayerHandle,
+        type OsmBuildingsPerfPresetId,
+        OSM_BUILDINGS_PRESETS,
+    } from "@/modules/threeDView/3dUrban/osmBuildingsLayer";
+
+
 
     const hydrographyWarning = ref<string | null>(null);
     const hydrographyWarningDetails = ref<string | null>(null);
@@ -64,6 +75,12 @@
             hydrographyWarning.value = "Hydrography upstream check failed (network error).";
             hydrographyWarningDetails.value = String(e?.message || e);
         }
+    }
+
+    async function onTerrainChanged() {
+        try {
+            await osmBuildingsHandle?.recomputeDatumCompensationNow();
+        } catch { }
     }
 
     onMounted(() => {
@@ -129,15 +146,14 @@
         if (!g.value) return;
 
         if (on) {
-            if (terrainKey.value !== "bathymetry") {
-                // Either auto-switch, or show a warning and offer a button.
+            // Only auto-switch terrain in seafloor mode (or if user explicitly chose bathymetry)
+            if (hydroMode.value === "seafloor" && terrainKey.value !== "bathymetry") {
                 terrainKey.value = "bathymetry";
             }
-            // Create or re-enable the overlay
+
             g.value.addOverlayTemplate?.(GEBCO_OVERLAY_ID, GEBCO_TILE_TEMPLATE, {
                 alpha: gebcoAlpha.value,
                 attribution: "GEBCO",
-                // geographic: false (default; we are using webmercator)
             });
 
             g.value.setOverlayVisibility?.(GEBCO_OVERLAY_ID, true);
@@ -147,7 +163,7 @@
             void probeGebcoTiles();
         } else {
             // Don’t remove; just hide (keeps state and avoids churn)
-            g.value.setOverlayVisibility?.(GEBCO_OVERLAY_ID, false);
+            g.value.setOverlayVisibility?.(GEBCO_OVERLAY_ID);
         }
     });
 
@@ -173,36 +189,186 @@
     const waterSurfaceEnabled = ref(false);
     const waterSurfaceAlpha = ref<number>(0.45);
 
+    type HydrographyMode = "land" | "seafloor" | "split_experimental";
+    const hydroMode = ref<HydrographyMode>("land");
+
+    let splitHandle: SplitTerrainCompositorHandle | null = null;
+
     let waterLayer: WaterSurfaceLayer | null = null;
 
     watch(
         [waterSurfaceEnabled, () => g.value],
         async ([on, globe]) => {
-            if (!globe) return;
+            const viewer = globe?.getViewer?.();
+            if (!viewer) return;
 
-            if (!waterLayer) {
-                const viewer = globe.getViewer?.();
-                if (!viewer) return; // viewer not ready yet
-
+            if (on) {
                 if (!waterLayer) {
                     waterLayer = new WaterSurfaceLayer(viewer, {
                         url: OCEAN_GEOJSON_URL,
                         heightMeters: 0.5,
                     });
-                    waterLayer.setAlpha(waterSurfaceAlpha.value);
                 }
 
-                await waterLayer.setEnabled(on);
+                // Keep alpha in sync before enabling
+                waterLayer.setAlpha(waterSurfaceAlpha.value);
+
+                try {
+                    await waterLayer.setEnabled(true);
+                } catch (e) {
+                    console.warn("[GlobeView] WaterSurfaceLayer enable failed:", e);
+                }
+                return;
             }
 
-            await waterLayer.setEnabled(on);
+            // OFF: disable and hard-destroy to avoid “stuck black” primitives persisting
+            if (waterLayer) {
+                try {
+                    await waterLayer.setEnabled(false);
+                } catch { /* ignore */ }
+
+                try {
+                    (waterLayer as any).destroy?.();
+                } catch { /* ignore */ }
+
+                waterLayer = null;
+            }
         },
         { immediate: true }
     );
 
     watch(waterSurfaceAlpha, (a) => {
+        try {
+            waterLayer?.setAlpha(a);
+        } catch { /* ignore */ }
+    });
+
+
+    watch(waterSurfaceAlpha, (a) => {
         waterLayer?.setAlpha(a);
     });
+
+    let syncingHydroMode = false;
+
+    watch(
+        hydroMode,
+        async (mode) => {
+            if (syncingHydroMode) return;
+            syncingHydroMode = true;
+            try {
+                if (mode === "land") {
+                    // Production default
+                    waterSurfaceEnabled.value = false;
+                    gebcoEnabled.value = false;
+                    terrainKey.value = "world";
+                } else if (mode === "seafloor") {
+                    terrainKey.value = "bathymetry";
+
+                    // Do NOT auto-enable overlays (they can occlude/black out the globe).
+                    gebcoEnabled.value = false;
+                    waterSurfaceEnabled.value = false;
+
+                    if (waterSurfaceAlpha.value <= 0) waterSurfaceAlpha.value = 0.45;
+                    if (gebcoAlpha.value <= 0) gebcoAlpha.value = GEBCO_DEFAULT_ALPHA;
+                } else {
+                    // split_experimental
+                    // UI stays on Bathymetry so controls remain visible.
+                    // TOP viewer terrain will still be forced to WORLD in the terrainKey watcher (see Patch B).
+                    terrainKey.value = "bathymetry";
+                    gebcoEnabled.value = false;           // avoid tinting land with bathy imagery
+                    waterSurfaceEnabled.value = true;
+                    if (waterSurfaceAlpha.value <= 0) waterSurfaceAlpha.value = 0.45;
+                }
+            } finally {
+                syncingHydroMode = false;
+            }
+        },
+        { immediate: false }
+    );
+
+    // ───────────────── 3D Urban: Cesium OSM Buildings ─────────────────
+    const osmBuildingsEnabled = ref(false);
+    const osmBuildingsOpacity = ref<number>(1.0);
+    const osmBuildingsQuality = ref<number>(16);
+    // Default to the conservative option; you can flip this to "gpu16gb" if desired.
+    const osmBuildingsPreset = ref<OsmBuildingsPerfPresetId>("gpu8gb");
+
+
+    let osmBuildingsHandle: OsmBuildingsLayerHandle | null = null;
+
+
+
+    async function syncOsmBuildings() {
+        const viewer = g.value?.getViewer?.();
+
+        if (!viewer) return;
+
+        if (!osmBuildingsHandle) {
+            osmBuildingsHandle = createOsmBuildingsLayer(viewer, {
+                keepLoaded: true,
+                defaultOpacity: osmBuildingsOpacity.value,
+                maximumScreenSpaceError: osmBuildingsQuality.value,
+            });
+        }
+        osmBuildingsHandle.setPerfPreset(osmBuildingsPreset.value);
+        osmBuildingsHandle.setOpacity(osmBuildingsOpacity.value);
+        osmBuildingsHandle.setMaximumScreenSpaceError(osmBuildingsQuality.value);
+
+        if (osmBuildingsEnabled.value) {
+            try {
+                await osmBuildingsHandle.enable();
+            } catch (e) {
+                // If token is missing/invalid, Cesium will fail fetching from ion.
+                console.error("Failed to enable Cesium OSM Buildings:", e);
+                osmBuildingsEnabled.value = false;
+            }
+        } else {
+            osmBuildingsHandle.disable(false); // hide, keep cached
+        }
+    }
+
+    // Keep in sync as viewer comes/goes and as controls change
+    watch(
+        () => g.value?.getViewer?.(),
+        () => { syncOsmBuildings().catch(() => { }); },
+        { immediate: true }
+    );
+
+    watch([osmBuildingsEnabled, osmBuildingsOpacity, osmBuildingsQuality, osmBuildingsPreset], () => {
+        syncOsmBuildings().catch(() => { });
+    });
+
+
+
+    watch(
+        [hydroMode, () => g.value],
+        async ([mode, globe]) => {
+            if (mode !== "split_experimental") {
+                try { splitHandle?.disable(); } catch { /* ignore */ }
+                return;
+            }
+
+            const viewer = globe.getViewer?.();
+            if (!viewer) return;
+
+            try {
+                if (!splitHandle) {
+                    splitHandle = await createSplitTerrainCompositor({
+                        topViewer: viewer,
+                        oceanGeoJsonUrl: OCEAN_GEOJSON_URL,
+                        maxFps: 30,
+                        debugShowMask: false, // set true temporarily if needed
+                    });
+                }
+
+                await splitHandle.enable();
+            } catch (e) {
+                console.warn("[GlobeView] split compositor enable failed:", e);
+                try { splitHandle?.disable(); } catch { /* ignore */ }
+            }
+        },
+        { immediate: true }
+    );
 
 
     // Compass: open on button; close when clicking the widget itself
@@ -561,6 +727,43 @@
             if (ms) ms.globeTerrainKey = k;
         });
 
+        watch(terrainKey, (k) => {
+            // If we leave bathymetry terrain, force-disable bathy visuals that can occlude the globe.
+            if (k !== "bathymetry") {
+                if (hydroMode.value !== "land") hydroMode.value = "land";
+
+                if (gebcoEnabled.value) gebcoEnabled.value = false;
+                if (waterSurfaceEnabled.value) waterSurfaceEnabled.value = false;
+
+                // If split compositor exists, ensure it is not active
+                try { splitHandle?.disable(); } catch { /* ignore */ }
+            }
+        });
+
+
+        // Remember user preference so we can restore it when leaving bathymetry
+        const waterEffectRestore = ref<boolean | null>(null);
+
+        watch(
+            terrainKey,
+            (k, prev) => {
+                // Entering bathymetry: force waterEffect OFF (terrain likely has no water mask)
+                if (k === "bathymetry") {
+                    if (waterEffectRestore.value === null) waterEffectRestore.value = waterEffect.value;
+                    if (waterEffect.value) waterEffect.value = false;
+                    return;
+                }
+
+                // Leaving bathymetry: restore prior setting (if we captured one)
+                if (prev === "bathymetry" && waterEffectRestore.value !== null) {
+                    waterEffect.value = waterEffectRestore.value;
+                    waterEffectRestore.value = null;
+                }
+            },
+            { immediate: true }
+        );
+
+
         watch(waterEffect, (on) => {
             const ms: any = mapSettings.value;
             if (ms) ms.globeWaterEffectEnabled = on;
@@ -667,6 +870,9 @@
         // Stop imagery overlay sync and clear any managed overlays
         try { overlaySync?.stop(); } catch { }
         overlaySync = null;
+        try { osmBuildingsHandle?.disable(true); } catch { }
+        osmBuildingsHandle = null;
+
     });
 
     /* Controls */
@@ -719,8 +925,15 @@
 
     watch(terrainKey, async (k) => {
         if (!g.value) return;
-        await g.value.setTerrainKey?.(k);
-    }, { immediate: false });
+
+        const effectiveTopTerrain = hydroMode.value === "split_experimental" ? "world" : k;
+        await g.value.setTerrainKey?.(effectiveTopTerrain);
+
+        // Recompute OSM building vertical compensation on terrain swap
+        try { await osmBuildingsHandle?.recomputeDatumCompensationNow(); } catch { }
+        setTimeout(() => { osmBuildingsHandle?.recomputeDatumCompensationNow().catch(() => { }); }, 500);
+    });
+
 
     watch(waterEffect, (on) => {
         if (!g.value) return;
@@ -736,6 +949,17 @@
             setSelectedFromStoreName(name);
         } finally {
             nextTick(() => (syncingFromStore = false));
+        }
+    });
+
+    watch(terrainKey, (k) => {
+        if (k !== "bathymetry") {
+            // Prevent bathy-specific imagery from persisting across terrain modes
+            gebcoEnabled.value = false;
+            g.value?.removeOverlay?.(GEBCO_OVERLAY_ID);
+
+            // Optional: keep surface water OFF outside bathy if you’ve seen it occlude
+            // waterSurfaceEnabled.value = false;
         }
     });
 
@@ -882,34 +1106,6 @@
         return { minDate: new Date(+startShifted - tzMs), maxDate: new Date(+endShifted - tzMs) };       // unshift bounds
     }
 
-    watch([tlWidth, tlMajorWidth, tlScenarioMs, tlMinorStep], () => {
-        const width = tlWidth.value || 800;
-
-        const { minDate, maxDate } = tlUpdateTicks(
-            new Date(tlScenarioMs.value),
-            width,
-            tlMajorWidth.value,
-            tlMinorStep.value
-        );
-
-        const binMs = tlMinorStep.value * TL_MS_PER_HOUR;
-        const rawHist =
-            typeof tlComputeTimeHistogram === "function"
-                ? tlComputeTimeHistogram(+minDate, +maxDate, binMs)
-                : [];
-
-        const arr = tlToArrayHistogram(rawHist);
-        tlHistogram = arr;
-        tlMaxCount = Math.max(1, ...arr.map(h => h.count));
-        (tlCountColor as any).domain([1, tlMaxCount]);
-
-        // keep the *actual* center time
-        tlCenterTimeStamp.value = +new Date(tlScenarioMs.value);
-
-        // place strip so center is at visual center
-        const dayOffset = (tlCenterTimeStamp.value - (+minDate)) / TL_MS_PER_DAY;
-        tlXOffset.value = width / 2 - dayOffset * tlMajorWidth.value;
-    }, { immediate: true });
 
     /* px→date calc */
     function tlCalculatePixelDate(x: number) {
@@ -1055,7 +1251,7 @@
     }, { immediate: true });
 
     // 2) Recompute ticks/offsets on size/zoom/step changes, using current center
-    watch([tlWidth, tlMajorWidth, tlMinorStep], () => {
+    watch([tlWidth, tlMajorWidth, tlMinorStep, () => tlCenterTimeStamp.value], () => {
         const width = tlWidth.value || 800;
         const safeMajor = Math.max(1, tlMajorWidth.value);
 
@@ -1124,24 +1320,111 @@
                         </select>
                     </label>
                 </div>
-                <!-- Hydrography -->
+                <!-- Globe -->
                 <div class="row" style="flex-direction: column; align-items: stretch; gap: 8px;">
-                    <div style="font-weight: 600;">Hydrography</div>
+                    <div style="font-weight: 600;">Globe</div>
 
                     <label>
                         Terrain
-                        <select v-model="terrainKey">
+                        <select v-model="terrainKey"
+                                :disabled="hydroMode === 'split_experimental'"
+                                :title="hydroMode === 'split_experimental'
+            ? 'Split mode pins the TOP viewer terrain to World (land). The seafloor comes from the bottom bathy viewer.'
+            : ''">
                             <option value="flat">Flat</option>
                             <option value="world">World</option>
                             <option value="bathymetry">Bathymetry</option>
                         </select>
                     </label>
 
-                    <label class="checkbox" title="Cesium globe water effect (water-mask shader), when supported">
-                        <input type="checkbox" v-model="waterEffect" />
+                    <label class="checkbox"
+                           title="Cesium globe water effect (requires a water mask). Disabled in bathymetry because many bathy terrains do not provide a water mask.">
+                        <input type="checkbox" v-model="waterEffect" :disabled="terrainKey === 'bathymetry'" />
                         Water effect
                     </label>
+
+                    <!-- Bathymetry/Hydrography controls: visible in Bathymetry OR when Split mode is active -->
+                    <details v-if="terrainKey === 'bathymetry' || hydroMode === 'split_experimental'" open>
+                        <summary style="cursor: pointer; font-weight: 600;">Bathymetry &amp; Hydrography</summary>
+
+                        <!-- Mode -->
+                        <div style="display:flex; align-items:center; gap:10px; margin-top: 8px;">
+                            <span style="min-width: 92px; opacity: 0.9;">Mode</span>
+                            <select v-model="hydroMode" style="flex: 1 1 auto;">
+                                <option value="land">Land</option>
+                                <option value="seafloor">Seafloor</option>
+                                <option value="split_experimental">Split (experimental)</option>
+                            </select>
+                        </div>
+
+                        <!-- Water surface -->
+                        <div style="display:flex; align-items:center; gap:10px; margin-top: 10px;">
+                            <label style="display:flex; align-items:center; gap:6px; flex: 1 1 auto;">
+                                <input type="checkbox" v-model="waterSurfaceEnabled" />
+                                <span>Water surface</span>
+                            </label>
+                        </div>
+
+                        <div style="display:flex; align-items:center; gap:10px; margin-top: 8px;">
+                            <span style="min-width: 64px; opacity: 0.9;">Alpha</span>
+                            <input type="range"
+                                   :min="0" :max="1" :step="0.05"
+                                   v-model.number="waterSurfaceAlpha"
+                                   :disabled="!waterSurfaceEnabled"
+                                   style="flex: 1 1 auto;" />
+                            <span style="width: 44px; text-align:right; opacity:0.9;">
+                                {{ Math.round(waterSurfaceAlpha * 100) }}%
+                            </span>
+                        </div>
+
+                        <!-- GEBCO overlay -->
+                        <div style="display:flex; align-items:center; gap:10px; margin-top: 12px;">
+                            <label style="display:flex; align-items:center; gap:6px; flex: 1 1 auto;">
+                                <input type="checkbox" v-model="gebcoEnabled" />
+                                <span>GEBCO bathymetry (imagery)</span>
+                            </label>
+
+                            <span v-if="gebcoHealth === 'ok'" class="badge">OK</span>
+                            <span v-else-if="gebcoHealth === 'bad'" class="badge badgeWarn">Warning</span>
+                            <span v-else class="badge">Unknown</span>
+                        </div>
+
+                        <div v-if="gebcoHealth === 'bad'" class="warnText" style="margin-top: 6px;">
+                            {{ gebcoHealthMsg }}
+                            <button style="margin-left: 8px;" @click="probeGebcoTiles()">Re-check</button>
+                        </div>
+
+                        <div style="display:flex; align-items:center; gap:10px; margin-top: 8px;">
+                            <span style="min-width: 64px; opacity: 0.9;">Alpha</span>
+                            <input type="range"
+                                   :min="0" :max="1" :step="0.05"
+                                   v-model.number="gebcoAlpha"
+                                   :disabled="!gebcoEnabled"
+                                   style="flex: 1 1 auto;" />
+                            <span style="width: 44px; text-align:right; opacity:0.9;">
+                                {{ Math.round(gebcoAlpha * 100) }}%
+                            </span>
+                        </div>
+
+                        <!-- Upstream warning: only shown in Bathymetry context -->
+                        <div v-if="hydrographyWarning && !hydrographyWarningDismissed"
+                             class="warningBanner"
+                             style="margin-top: 12px;">
+                            <div style="font-weight: 600;">Hydrography warning</div>
+                            <div>{{ hydrographyWarning }}</div>
+                            <div v-if="hydrographyWarningDetails"
+                                 style="opacity: 0.85; font-size: 0.9em; margin-top: 4px;">
+                                {{ hydrographyWarningDetails }}
+                            </div>
+                            <div style="margin-top: 8px; display: flex; gap: 8px;">
+                                <button @click="checkHydrographyUpstreamOnce()">Re-check</button>
+                                <button @click="hydrographyWarningDismissed = true">Dismiss</button>
+                            </div>
+                        </div>
+                    </details>
                 </div>
+
+
 
                 <!-- Imported layers (draped imagery) -->
                 <div class="row" style="flex-direction: column; align-items: stretch; gap: 8px;">
@@ -1180,48 +1463,41 @@
                         <span class="badge">{{ exaggeration.toFixed(2) }}×</span>
                     </label>
                 </div>
-                <!-- GEBCO Bathymetry overlay -->
-                <div class="row" style="flex-direction: column; align-items: stretch; gap: 8px;">
-                    <div style="font-weight: 600;">Hydrography overlays</div>
 
-                    <div style="display:flex; align-items:center; gap:10px;">
-                        <label style="display:flex; align-items:center; gap:6px; flex: 1 1 auto;">
-                            <input type="checkbox" v-model="gebcoEnabled" />
-                            <span>GEBCO bathymetry (imagery)</span>
-                        </label>
+                <details open>
+                    <summary style="cursor: pointer; font-weight: 600;">3D Urban</summary>
 
-                        <span v-if="gebcoHealth === 'ok'" class="badge">OK</span>
-                        <span v-else-if="gebcoHealth === 'bad'" class="badge badgeWarn">Warning</span>
-                        <span v-else class="badge">Unknown</span>
+                    <label class="checkbox" style="margin-top: 8px;">
+                        <input type="checkbox" v-model="osmBuildingsEnabled" />
+                        Enable Cesium OSM Buildings
+                    </label>
+
+                    <div v-if="osmBuildingsEnabled" style="display:flex; align-items:center; gap:10px; margin-top: 8px;">
+                        <span style="min-width: 92px; opacity: 0.9;">Preset</span>
+
+                        <select v-model="osmBuildingsPreset" style="flex: 1 1 auto;">
+                            <option value="gpu8gb">{{ OSM_BUILDINGS_PRESETS.gpu8gb.label }}</option>
+                            <option value="gpu16gb">{{ OSM_BUILDINGS_PRESETS.gpu16gb.label }}</option>
+                            <option value="ultra">{{ OSM_BUILDINGS_PRESETS.ultra.label }}</option>
+                        </select>
                     </div>
 
-                    <div v-if="gebcoHealth === 'bad'" class="warnText">
-                        {{ gebcoHealthMsg }}
-                        <button style="margin-left: 8px;" @click="probeGebcoTiles()">Re-check</button>
+
+                    <div v-if="osmBuildingsEnabled" style="display:flex; align-items:center; gap:10px; margin-top: 8px;">
+                        <span style="min-width: 92px; opacity: 0.9;">Quality</span>
+                        <!-- maximumScreenSpaceError: 1 (best) ... 64 (fastest) -->
+                        <input type="range" min="1" max="64" step="1" v-model.number="osmBuildingsQuality" style="flex: 1 1 auto;" />
+                        <span style="width: 54px; text-align: right;">{{ osmBuildingsQuality }}</span>
                     </div>
 
-                    <div style="display:flex; align-items:center; gap:10px;">
-                        <span style="min-width: 64px; opacity: 0.9;">Alpha</span>
-                        <input type="range" :min="0" :max="1" :step="0.05"
-                               v-model.number="gebcoAlpha"
-                               :disabled="!gebcoEnabled"
-                               style="flex: 1 1 auto;" />
-                        <span style="width: 44px; text-align:right; opacity:0.9;">
-                            {{ Math.round(gebcoAlpha * 100) }}%
-                        </span>
+                    <GlobeControls :globe="g"
+                                   @terrainChanged="onTerrainChanged" :passive="true" />
+
+                    <div style="margin-top: 8px; font-size: 12px; opacity: 0.85; line-height: 1.25;">
+                        Cesium OSM Buildings streams from Cesium ion and requires a valid ion access token in the app environment.
                     </div>
-                </div>
-                <div v-if="hydrographyWarning && !hydrographyWarningDismissed" class="warningBanner">
-                    <div style="font-weight: 600;">Hydrography warning</div>
-                    <div>{{ hydrographyWarning }}</div>
-                    <div v-if="hydrographyWarningDetails" style="opacity: 0.85; font-size: 0.9em; margin-top: 4px;">
-                        {{ hydrographyWarningDetails }}
-                    </div>
-                    <div style="margin-top: 8px; display: flex; gap: 8px;">
-                        <button @click="checkHydrographyUpstreamOnce()">Re-check</button>
-                        <button @click="hydrographyWarningDismissed = true">Dismiss</button>
-                    </div>
-                </div>
+                </details>
+
             </div>
         </div>
 

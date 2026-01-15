@@ -858,7 +858,7 @@ export interface GlobePort {
             subdomains?: string[] | string;
         }
     ) => void;
-    setTerrainKey: (key: "world" | "flat" | "bathymetry") => Promise<void>;
+    setTerrainKey: (key: "world" | "flat" | "bathymetry" | "bathy" ) => Promise<void>;
     setWaterEffectEnabled: (enabled: boolean) => void;
 
     updateUnitPosition?: (id: string, lon: number, lat: number, alt?: number) => void;
@@ -2622,7 +2622,7 @@ setSurfaceHeightSampler(sampleSurfaceHeightMeters);
             replaceBaseImageryLayer(api.viewer, provider);
         },
 
-        async setTerrainKey(key: "world" | "flat" | "bathymetry") {
+        async setTerrainKey(key: "world" | "flat" | "bathymetry" | "bathy") {
             if (!api) return;
             const anyApi: any = api;
 

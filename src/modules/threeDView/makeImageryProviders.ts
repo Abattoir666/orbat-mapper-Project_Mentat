@@ -98,7 +98,7 @@ async function loadMapConfigTemplateProviders(): Promise<ImageryEntry[]> {
     if (cachedTemplateProviders) return cachedTemplateProviders;
 
     try {
-        const res = await fetch("/config/mapConfig.json");
+        const res = await fetch("public//config/mapConfig.json");
         const layers = (await res.json()) as MapConfigLayer[] | { layers?: MapConfigLayer[] };
 
         const arr: MapConfigLayer[] = Array.isArray(layers)

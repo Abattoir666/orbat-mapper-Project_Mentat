@@ -1,17 +1,16 @@
 {
   "ExpandedNodes": [
     "",
-    "\\public",
-    "\\public\\scenarios",
     "\\src",
-    "\\src\\composables",
     "\\src\\geo",
     "\\src\\modules",
     "\\src\\modules\\scenarioeditor",
     "\\src\\modules\\scenarioeditor\\Personnel",
+    "\\src\\modules\\threeDView",
+    "\\src\\modules\\threeDView\\hydrography",
     "\\src\\scenariostore",
     "\\src\\stores"
   ],
-  "SelectedNode": "\\src\\modules\\scenarioeditor\\Personnel\\UnitDetailsPersonnel.vue",
+  "SelectedNode": "\\src\\modules\\threeDView\\hydrography\\gebcoOverlay.ts",
   "PreviewInSolutionExplorer": false
 }

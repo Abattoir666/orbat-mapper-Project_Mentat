@@ -2,6 +2,11 @@
 <script setup lang="ts">
     import { ref, shallowRef, computed, watch, onMounted, nextTick } from "vue";
 
+    const emit = defineEmits<{
+        (e: "terrainChanged", key: "world" | "flat" | "bathymetry"): void;
+    }>();
+
+
     /* ───────────────────────── Globe API contract ───────────────────────── */
     type GlobeApi = {
         setBaseLayer?: (key: string) => void;
@@ -22,7 +27,7 @@
         setWaterEffectEnabled?: (enabled: boolean) => void;
     };
 
-    const props = defineProps<{ globe: GlobeApi | null | undefined }>();
+    const props = defineProps<{ globe: GlobeApi | null | undefined; passive?: boolean; }>();
 
     /* ───────────────────────── Base layers from 2D config ───────────────────────── */
     type BaseLayerRec = {
@@ -39,7 +44,7 @@
     const layerOptions = ref<BaseLayerRec[]>([]);
     const layersReady = ref(false);
     const selectedName = ref<string>("");
-
+    const terrainKey = ref<"world" | "flat" | "bathymetry">("world");
     const lazyUseMapSettingsStore = () =>
         import("@/stores/mapSettingsStore").then(m => m.useMapSettingsStore);
     type MapSettingsStoreT = ReturnType<import("@/stores/mapSettingsStore").useMapSettingsStore>;
@@ -66,6 +71,11 @@
         });
     }
 
+    watch(terrainKey, async (k) => {
+        await props.globe?.setTerrainKey?.(k);
+        emit("terrainChanged", k);
+    });
+
     /* Legacy fallbacks if 2D config isn't available */
     import {
         listImageryOptions,
@@ -76,7 +86,7 @@
     async function loadBaseLayersFrom2D() {
         layersReady.value = false;
         try {
-            const res = await fetch("/config/mapConfig.json");
+            const res = await fetch("public/config/mapConfig.json");
             const data = await res.json();
             const cfg = normalize2DConfig(data);
             if (cfg.length) {
@@ -156,13 +166,31 @@
 
     const dayNight = ref<boolean>(false);
     const skybox = ref<boolean>(false);
-    watch(dayNight, (on) => props.globe?.enableDayNight?.(on));
-    watch(skybox, (on) => props.globe?.enableSkybox?.(on));
-    const terrainKey = ref<"world" | "flat" | "bathymetry">("world");
-    watch(terrainKey, (k) => props.globe?.setTerrainKey?.(k));
+    watch(dayNight, (on) => {
+        if (props.passive) return;
+        props.globe?.enableDayNight?.(on);
+    });
+
+    watch(skybox, (on) => {
+        if (props.passive) return;
+        props.globe?.enableSkybox?.(on);
+    });
+
+    watch(terrainKey, async (k) => {
+        await props.globe?.setTerrainKey?.(k);
+        emit("terrainChanged", k);
+    });
 
     const waterEffect = ref<boolean>(false);
-    watch(waterEffect, (on) => props.globe?.setWaterEffectEnabled?.(on));
+    watch(waterEffect, (on) => {
+        if (props.passive) return;
+        props.globe?.setWaterEffectEnabled?.(on);
+    });
+
+
+
+
+
     /* ───────────────────────── Lifecycle ───────────────────────── */
     onMounted(async () => {
         try {
@@ -196,63 +224,67 @@
         props.globe?.setWaterEffectEnabled?.(waterEffect.value);
         await nextTick();
     });
+
+    const passive = computed(() => !!props.passive);
 </script>
 
 <template>
-    <div class="controls">
-        <!-- Base layer (mirrors 2D mapConfig + store) -->
-        <div class="row">
-            <label>
-                Base layer:
-                <select :disabled="!layersReady || layerOptions.length === 0"
-                        :value="selectedName"
-                        @change="onLayerChange">
-                    <option v-for="o in layerOptions" :key="o.name" :value="o.name">
-                        {{ o.name }}
-                    </option>
-                </select>
-            </label>
-            <span class="debug">{{ layersReady ? layerOptions.length : 0 }} layers</span>
+    <div v-if="!passive" class="controls">
+        <div class="controls">
+            <!-- Base layer (mirrors 2D mapConfig + store) -->
+            <div class="row">
+                <label>
+                    Base layer:
+                    <select :disabled="!layersReady || layerOptions.length === 0"
+                            :value="selectedName"
+                            @change="onLayerChange">
+                        <option v-for="o in layerOptions" :key="o.name" :value="o.name">
+                            {{ o.name }}
+                        </option>
+                    </select>
+                </label>
+                <span class="debug">{{ layersReady ? layerOptions.length : 0 }} layers</span>
+            </div>
+
+            <!-- Exaggeration -->
+            <div class="row">
+                <label>
+                    Exaggeration: {{ exag.toFixed(2) }}
+                    <input type="range" min="0.01" max="5" step="0.01" v-model.number="exag" />
+                </label>
+            </div>
+
+            <!-- Terrain & Water -->
+            <div class="row">
+                <label>
+                    Terrain:
+                    <select v-model="terrainKey">
+                        <option value="flat">Flat</option>
+                        <option value="world">World</option>
+                        <option value="bathymetry">Bathymetry</option>
+                    </select>
+                </label>
+
+                <label class="checkbox" title="Cesium globe water effect (water mask shader), if available">
+                    <input type="checkbox" v-model="waterEffect" />
+                    🌊 Water effect
+                </label>
+            </div>
+
+            <!-- Lighting / Atmosphere -->
+            <div class="row">
+                <label class="checkbox" title="Realistic sun lighting & terminator">
+                    <input type="checkbox" v-model="dayNight" />
+                    🌞 Day/Night
+                </label>
+
+                <label class="checkbox" title="Skybox + Sun/Moon glyphs">
+                    <input type="checkbox" v-model="skybox" />
+                    🌌 Skybox
+                </label>
+            </div>
         </div>
-
-        <!-- Exaggeration -->
-        <div class="row">
-            <label>
-                Exaggeration: {{ exag.toFixed(2) }}
-                <input type="range" min="0.01" max="5" step="0.01" v-model.number="exag" />
-            </label>
         </div>
-
-        <!-- Terrain & Water -->
-        <div class="row">
-            <label>
-                Terrain:
-                <select v-model="terrainKey">
-                    <option value="flat">Flat</option>
-                    <option value="world">World</option>
-                    <option value="bathymetry">Bathymetry</option>
-                </select>
-            </label>
-
-            <label class="checkbox" title="Cesium globe water effect (water mask shader), if available">
-                <input type="checkbox" v-model="waterEffect" />
-                🌊 Water effect
-            </label>
-        </div>
-
-        <!-- Lighting / Atmosphere -->
-        <div class="row">
-            <label class="checkbox" title="Realistic sun lighting & terminator">
-                <input type="checkbox" v-model="dayNight" />
-                🌞 Day/Night
-            </label>
-
-            <label class="checkbox" title="Skybox + Sun/Moon glyphs">
-                <input type="checkbox" v-model="skybox" />
-                🌌 Skybox
-            </label>
-        </div>
-    </div>
 </template>
 
 <style scoped>
