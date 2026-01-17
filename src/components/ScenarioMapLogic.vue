@@ -38,6 +38,8 @@
     import { useScenarioFeatureLayers } from "@/modules/scenarioeditor/scenarioFeatureLayers";
     import { useSelectedItems } from "@/stores/selectedStore";
     import { useThrottleFn } from "@vueuse/core";
+    import { ScenarioCollab } from "@/net/scenarioCollab";
+    import { useCollabPresenceStore } from "@/stores/collabPresenceStore";
 
     const props = defineProps<{ olMap: OLMap }>();
     const emit = defineEmits<{
@@ -219,6 +221,80 @@
         drawRangeRings();
     }, 50);
 
+    // --- Multiplayer (SignalR) wiring ---
+    // Enable by setting VITE_COLLAB_SERVER_URL, e.g. http://192.168.1.164:7077
+    const collabServerUrl = (import.meta.env.VITE_COLLAB_SERVER_URL || "").trim();
+    let collab: ScenarioCollab | null = null;
+    let stopUnitPosHook: null | (() => void) = null;
+
+    async function initCollab() {
+        if (!collabServerUrl) return;
+
+        // state.id is your stable scenario room id
+        collab = new ScenarioCollab({
+            serverBaseUrl: collabServerUrl,
+            scenarioId: state.id,
+            forceWebSockets: true,
+        });
+
+        collab.onMoveUnitApplied((m) => {
+            // Ignore our own echo
+            if (!collab) return;
+            if (m.clientId === collab.clientId) return;
+            if (collab.isRecentLocalOp(m.opId)) return;
+
+            geo.applyRemoteUnitPosition(m.unitId, m.location, m.t);
+
+            // If the move is in the currently viewed time-slice, update unit geometry immediately
+            if (m.t === state.currentTime) {
+                if (typeof updateUnitPositions === "function") updateUnitPositions();
+                else drawUnits();
+            }
+
+            updateTimeDependentOverlays();
+        });
+
+        try {
+            await collab.startAndJoin();
+        } catch (err) {
+            console.error("[collab] failed to connect", err);
+            collab = null;
+            return;
+        }
+
+        collab.onPresenceSnapshot((snap) => presenceStore.applySnapshot(snap));
+        collab.onPresenceChanged((chg) => presenceStore.applyChanged(chg));
+
+        // announce ourselves
+        await collab.setPresence(getDisplayName(), getColor(), navigator.userAgent);
+
+
+        // Any local position change that flows through geo.addUnitPosition will be broadcast.
+        stopUnitPosHook = geo.onUnitPositionEvent(({ unitId, t, location }) => {
+            collab?.sendMoveUnit(unitId, t, location).catch((e) =>
+                console.error("[collab] sendMoveUnit failed", e),
+            );
+        });
+    }
+
+    const presenceStore = useCollabPresenceStore();
+
+    function getDisplayName(): string {
+        const key = "mentat_display_name";
+        const existing = window.localStorage.getItem(key);
+        if (existing) return existing;
+        const fallback = `Operator ${collab?.clientId.slice(-4) ?? ""}`;
+        window.localStorage.setItem(key, fallback);
+        return fallback;
+    }
+
+    function getColor(): string | null {
+        return window.localStorage.getItem("mentat_display_color");
+    }
+
+
+    initCollab();
+
     watch(
         () => state.currentTime,
         () => {
@@ -264,6 +340,12 @@
     );
 
     onUnmounted(() => {
+        stopUnitPosHook?.();
+        stopUnitPosHook = null;
+        collab?.stop().catch(() => undefined);
+        collab = null;
+        presenceStore.clear();
+
         geoStore.olMap = undefined;
         clearUnitStyleCache();
     });

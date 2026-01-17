@@ -1,15 +1,15 @@
 ﻿﻿<!-- src/modules/threeDView/GlobeView.vue -->
 <script setup lang="ts">
     /* ───────────────── existing imports ───────────────── */
-    import { ref, shallowRef, computed, onMounted, onBeforeUnmount, watch, defineAsyncComponent, nextTick, isRef, onActivated, unref } from "vue";
+    import { ref, shallowRef, computed, onMounted, onBeforeUnmount, watch, defineAsyncComponent, nextTick, isRef, onActivated, unref, provide } from "vue";
     import type { Ref } from "vue";
     import { useGlobePort } from "@/composables/useGlobePort";
     import { bindUnitsToView } from "@/composables/bindUnitsToView";
     import { useActiveScenario } from "@/composables/scenarioUtils";
+    import { useSelectedItems } from "@/stores/selectedStore";
     /* Lazy import Pinia store AFTER mount */
     const lazyUseMapSettingsStore = () =>
         import("@/stores/mapSettingsStore").then(m => m.useMapSettingsStore);
-
     /* 2D→3D layer conversion */
     import { convertScenarioImportedLayers, type Imported2DLayerUI } from "@/modules/threeDView/importedLayers/conversion";
     // Debug hook so you can call it from DevTools
@@ -32,6 +32,12 @@
     import CompassWidget from "./widgets/CompassWidget.vue";
     import MeasureWidget from "./widgets/MeasureWidget.vue";
     import GlobeControls from "./GlobeControls.vue";
+    import BottomToolbars from "./toolbar2d/BottomToolbars.vue";
+    import OrbatPanel from "@/modules/scenarioeditor/OrbatPanel.vue";
+    import UnitDetails from "@/modules/scenarioeditor/UnitDetails.vue";
+    import ScenarioFiltersTabPanel from "@/modules/scenarioeditor/ScenarioFiltersTabPanel.vue";
+    import ScenarioSettingsPanel from "@/modules/scenarioeditor/ScenarioSettingsPanel.vue";
+
     import PlaybackMenu from "@/modules/scenarioeditor/PlaybackMenu.vue";
     import { probeHydrographyUpstream } from "@/modules/threeDView/hydrography/healthProbe";
     import {
@@ -39,6 +45,8 @@
         GEBCO_TILE_TEMPLATE,
         GEBCO_TILE_HEALTH_URL,
         GEBCO_DEFAULT_ALPHA,
+        GEBCO_TILE_MIN_LEVEL,
+        GEBCO_TILE_MAX_LEVEL,
     } from "@/modules/threeDView/hydrography/gebcoOverlay";
     import { OCEAN_GEOJSON_URL } from "@/modules/threeDView/hydrography/data/oceanUrl";
     import { WaterSurfaceLayer } from "@/modules/threeDView/hydrography/waterSurface";
@@ -50,8 +58,13 @@
         type OsmBuildingsPerfPresetId,
         OSM_BUILDINGS_PRESETS,
     } from "@/modules/threeDView/3dUrban/osmBuildingsLayer";
-
-
+    import { createCesiumInteractionAdapter, provideInteractionAdapter } from "./handling/interactionAdapter";
+    import { createCesiumSelectionBridge } from "./handling/selectionBridge";
+    import { storeToRefs } from "pinia";
+    import { useUnitSettingsStore } from "@/stores/geoStore";
+    import { injectStrict } from "@/utils";
+    import { activeScenarioKey } from "@/components/injects";
+    import type { Position } from "geojson";
 
     const hydrographyWarning = ref<string | null>(null);
     const hydrographyWarningDetails = ref<string | null>(null);
@@ -83,8 +96,18 @@
         } catch { }
     }
 
+
     onMounted(() => {
         void checkHydrographyUpstreamOnce();
+    });
+
+    onMounted(async () => {
+        try {
+            const useSel = await lazyUseSelectedItems();
+            selectedItemsStoreRef.value = useSel();
+        } catch (e) {
+            console.warn("[GlobeView] selectedStore unavailable", e);
+        }
     });
 
     // baseLayers.ts
@@ -93,7 +116,7 @@
             ? import.meta.env.BASE_URL
             : import.meta.env.BASE_URL + "/";
 
-    //GEBCO helpers 
+    //GEBCO helpers
     const gebcoEnabled = ref(false);
     const gebcoAlpha = ref<number>(GEBCO_DEFAULT_ALPHA);
 
@@ -151,9 +174,14 @@
                 terrainKey.value = "bathymetry";
             }
 
+            // IMPORTANT: force recreate so we don't keep an old provider that was created with maxLevel=19
+            g.value.removeOverlay?.(GEBCO_OVERLAY_ID);
+
             g.value.addOverlayTemplate?.(GEBCO_OVERLAY_ID, GEBCO_TILE_TEMPLATE, {
                 alpha: gebcoAlpha.value,
                 attribution: "GEBCO",
+                minLevel: GEBCO_TILE_MIN_LEVEL,
+                maxLevel: GEBCO_TILE_MAX_LEVEL,
             });
 
             g.value.setOverlayVisibility?.(GEBCO_OVERLAY_ID, true);
@@ -163,7 +191,7 @@
             void probeGebcoTiles();
         } else {
             // Don’t remove; just hide (keeps state and avoids churn)
-            g.value.setOverlayVisibility?.(GEBCO_OVERLAY_ID);
+            g.value.setOverlayVisibility?.(GEBCO_OVERLAY_ID, false);
         }
     });
 
@@ -177,6 +205,9 @@
     const mountRef = ref<HTMLDivElement | null>(null);
     const port = useGlobePort();
     const rightOpen = ref(true);
+
+    type RightPanelTab = "environment" | "layers";
+    const rightPanelTab = ref<RightPanelTab>("environment");
     function toggleRight() { rightOpen.value = !rightOpen.value; }
 
     /** Normalize globe whether it's a Ref or a plain object */
@@ -184,6 +215,17 @@
         const maybe = (port as any).globe;
         return isRef(maybe) ? maybe.value : maybe;
     });
+
+
+    function getViewerCanvasSafe(): any | undefined {
+        try {
+            const v = getViewerSafe();
+            return v ? (v as any).scene?.canvas : undefined;
+        } catch {
+            return undefined;
+        }
+    }
+
 
     //Water surface
     const waterSurfaceEnabled = ref(false);
@@ -299,7 +341,7 @@
 
 
     async function syncOsmBuildings() {
-        const viewer = g.value?.getViewer?.();
+        const viewer = getViewerSafe();
 
         if (!viewer) return;
 
@@ -405,6 +447,75 @@
     const exaggeration = ref(1.0);
 
     const controlsOpen = ref(true);
+
+    // Left drawer now hosts the 2D ORBAT window (ported into 3D)
+    type OrbatTab = "orbat" | "unit" | "events" | "filters" | "settings";
+    const orbatTab = ref<OrbatTab>("orbat");
+
+    const selectedItems = useSelectedItems();
+    const activeUnitId = computed(() => {
+        const v = (selectedItems as any).activeUnitId;
+        return v && typeof v === "object" && "value" in v ? v.value : v ?? null;
+    });
+
+    const selectedUnitIds = computed<Set<string>>(() => {
+        const v = (selectedItems as any).selectedUnitIds;
+        if (v && typeof v === "object" && "value" in v) return v.value as Set<string>;
+        return (v as Set<string>) ?? new Set<string>();
+    });
+
+    const primarySelectedUnitId = computed<string | null>(() => {
+        if (activeUnitId.value) return activeUnitId.value;
+        const set = selectedUnitIds.value;
+        return set && set.size ? Array.from(set)[0] : null;
+    });
+
+
+    const unitDockOpen = ref(true);
+
+    // UX: a plain click in OrbatPanel sets activeUnitId; shift/ctrl clicks do not.
+    // Auto-switch to the Unit tab on selection so the user doesn't need an extra click.
+
+    // Minimal Events tab data source (from the same store used by ScenarioTimeline)
+    const orbatEvents = computed<any[]>(() => {
+        const st: any = (tlStore as any)?.state;
+        const ids: any[] = Array.isArray(st?.events) ? st.events : [];
+        const map: Record<string, any> = st?.eventMap ?? {};
+        const arr = ids.map((id: any) => map[id]).filter(Boolean);
+        // Common fields: startTime, time, timestamp
+        arr.sort((a, b) => (Number(a?.startTime ?? a?.time ?? a?.timestamp ?? 0) - Number(b?.startTime ?? b?.time ?? b?.timestamp ?? 0)));
+        return arr;
+    });
+
+    function orbatGoToEvent(ev: any) {
+        if (!ev) return;
+
+        // Keep selection in sync (if the selectedStore exposes the ref)
+        const sel = selectedItemsStoreRef.value as any;
+        if (sel?.activeScenarioEventId?.value !== undefined && ev.id) {
+            try { sel.activeScenarioEventId.value = ev.id; } catch { }
+        }
+
+        // Best-effort: call the scenario time helper if present; otherwise just set time.
+        try {
+            (tlGoToScenarioEvent as any)({ event: ev });
+            return;
+        } catch { /* fall through */ }
+        try {
+            (tlGoToScenarioEvent as any)(ev);
+            return;
+        } catch { /* fall through */ }
+
+        const t = Number(ev.startTime ?? ev.time ?? ev.timestamp);
+        if (Number.isFinite(t)) tlSetCurrentTime(t);
+    }
+
+    function orbatFormatEventTime(ev: any): string {
+        const ts = Number(ev?.startTime ?? ev?.time ?? ev?.timestamp);
+        if (!Number.isFinite(ts)) return "";
+        const fmt = tlFmtStore.value?.scenarioFormatter ?? tlFallbackFormatter;
+        return fmt.format(ts);
+    }
     function toggleControls() {
         controlsOpen.value = !controlsOpen.value;
     }
@@ -414,6 +525,7 @@
 
     /* ─────────── Timeline state (store-backed with local fallback) ─────────── */
     const timelineReady = ref(true);
+    const timelineVisible = ref(true);
 
     /** Local fallback window if store not ready */
     const nowMsBoot = Date.now();
@@ -573,7 +685,7 @@
         name: string;
         key?: string;
         url?: string;
-        minLevel?: number;
+        minLevel: number;
         maxLevel?: number;
         attribution?: string;
         scheme?: "webMercator" | "geographic";
@@ -680,6 +792,43 @@
         try {
             if (mountRef.value) {
                 console.log("[GlobeView] Mounting globe…");
+                console.log("[GlobeView] Globe mounted.", g.value);
+
+                // STEP 1: immediate snapshot
+                console.log("[3DSEL] g assigned", {
+                    hasG: !!g.value,
+                    hasGetViewer: !!g.value?.getViewer,
+                    hasViewer_getViewer: !!g.value?.getViewer?.(),
+                    hasViewer_field: !!(g.value as any)?.viewer,
+                    keys: g.value ? Object.keys(g.value as any) : null,
+                });
+
+                // STEP 2: delayed viewer checks
+                setTimeout(() => {
+                    console.log("[3DSEL] viewer after 0ms", {
+                        getViewer: !!g.value?.getViewer?.(),
+                        viewerField: !!(g.value as any)?.viewer,
+                    });
+                    ensureSelectionBridgeInstalled();
+                }, 0);
+
+                setTimeout(() => {
+                    console.log("[3DSEL] viewer after 250ms", {
+                        getViewer: !!g.value?.getViewer?.(),
+                        viewerField: !!(g.value as any)?.viewer,
+                    });
+                }, 250);
+
+                setTimeout(() => {
+                    console.log("[3DSEL] viewer after 2000ms", {
+                        getViewer: !!g.value?.getViewer?.(),
+                        viewerField: !!(g.value as any)?.viewer,
+                    });
+                }, 2000);
+
+                // existing code continues...
+                (window as any).MentatGlobe = g.value;
+
                 await mount(mountRef.value);
                 await nextTick();
                 console.log("[GlobeView] Globe mounted.", g.value);
@@ -990,7 +1139,7 @@
 
     // Safe holders that we’ll populate after mount
     const tlFmtStore = shallowRef<null | { scenarioFormatter: Intl.DateTimeFormat }>(null);
-    const selectedItemsStoreRef = shallowRef<null | { activeScenarioEventId: Ref<string | null | undefined> }>(null);
+    const selectedItemsStoreRef = shallowRef<any>(null);
 
     // Fallback formatter so ticks/hover text work before the store is ready
     const tlFallbackFormatter = new Intl.DateTimeFormat("en-GB", {
@@ -1021,9 +1170,11 @@
     const tlIsPointerInteraction = ref(false);
     const tlIsDragging = ref(false);
     const tlRedrawCounter = ref(0);
-    const { width: tlWidth } = useElementSize(tlEl);
+    const { width: tlWidth, height: tlHeight } = useElementSize(tlEl);
     const tlTzOffset = tlScenarioTime.value.utcOffset();
-
+    const timelineHeightCss = computed(() => {
+        return timelineReady.value ? `${Math.max(0, tlHeight.value || 0)}px` : "0px";
+    });
 
     /* formatters */
     const tlHourFormatter = utcFormat("%H");
@@ -1277,6 +1428,352 @@
         tlXOffset.value = width / 2 - dayOffset * safeMajor;
     }, { immediate: true });
 
+
+
+    /* ─────────── Globe click-to-locate bridge (used by bottom toolbar) ─────────── */
+    type GlobePickPosition = [number, number, number?];
+    const globePickActive = ref(false);
+    let globePickHandler: any = null;
+
+    function getCesiumNS(): any {
+        return (
+            (window as any).MentatGlobeAdapterDebug?.Cesium ??
+            (window as any).Cesium ??
+            (window as any).MentatGlobe?.Cesium
+        );
+    }
+
+    function cancelGlobeLocation() {
+        globePickActive.value = false;
+        try { globePickHandler?.destroy?.(); } catch { /* ignore */ }
+        globePickHandler = null;
+    }
+
+    function requestGlobeLocation(cb: (pos: GlobePickPosition) => void) {
+        const viewer = getViewerSafe();
+        const Cesium = getCesiumNS();
+        if (!viewer || !Cesium?.ScreenSpaceEventHandler) {
+            console.warn("[GlobeView] requestGlobeLocation: viewer/Cesium not ready");
+            return;
+        }
+        // One-shot pick: cancel any previous handler
+        cancelGlobeLocation();
+        globePickActive.value = true;
+
+        globePickHandler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
+
+        globePickHandler.setInputAction((movement: any) => {
+            try {
+                const screen = movement?.position ?? movement?.endPosition;
+                if (!screen) return;
+
+                const cart =
+                    viewer.scene.pickPosition?.(screen) ??
+                    viewer.camera.pickEllipsoid(screen, viewer.scene.globe.ellipsoid);
+
+                if (!cart) return;
+
+                const carto = Cesium.Cartographic.fromCartesian(cart);
+                const lon = Cesium.Math.toDegrees(carto.longitude);
+                const lat = Cesium.Math.toDegrees(carto.latitude);
+                const alt = Number.isFinite(carto.height) ? carto.height : 0;
+
+                cb([lon, lat, alt]);
+            } catch (e) {
+                console.warn("[GlobeView] requestGlobeLocation click handler failed:", e);
+            } finally {
+                cancelGlobeLocation();
+            }
+        }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+
+        globePickHandler.setInputAction(() => {
+            cancelGlobeLocation();
+        }, Cesium.ScreenSpaceEventType.RIGHT_CLICK);
+    }
+
+    const interaction = createCesiumInteractionAdapter(() => getViewerSafe());
+    provideInteractionAdapter(interaction);
+
+    const { moveUnitEnabled } = storeToRefs(useUnitSettingsStore());
+    const { geo } = injectStrict(activeScenarioKey);
+    const { addUnitPosition } = geo;
+
+    function withDefaultAlt(location: Position, defaultAltM = 0): Position {
+        const z = (location as any)[2];
+        if (typeof z === "number" && Number.isFinite(z)) return location;
+        return [location[0] as number, location[1] as number, defaultAltM];
+    }
+
+
+    function getSelStore() {
+        // IMPORTANT: selectedItems exists immediately; selectedItemsStoreRef is async-loaded.
+        return selectedItemsStoreRef.value ?? selectedItems;
+    }
+
+    function dumpSel(tag: string) {
+        const sel = getSelStore();
+        try {
+            console.log(`[3DSEL] ${tag}`, {
+                activeUnitId: sel?.activeUnitId?.value ?? null,
+                selectedUnitIds: sel?.selectedUnitIds?.value ? Array.from(sel.selectedUnitIds.value) : [],
+                moveUnitEnabled: !!moveUnitEnabled.value,
+                isPickingLocation: !!interaction?.isPickingLocation?.value,
+                globePickActive: !!globePickActive.value,
+            });
+        } catch (e) {
+            console.log(`[3DSEL] ${tag} (dump failed)`, e);
+        }
+    }
+
+    function setActiveUnitId(unitId: string | null, addToMulti = false) {
+        const sel = selectedItemsStoreRef.value;
+        if (!sel) return;
+
+        const set: Set<string> | undefined = sel.selectedUnitIds?.value;
+
+        if (!unitId) {
+            try { sel.clear?.(); } catch { }
+            try { sel.activeUnitId.value = null; } catch { }
+            return;
+        }
+
+        // Non-multi click = replace selection
+        if (!addToMulti) {
+            try { sel.clear?.(); } catch { }
+            try { set?.add?.(unitId); } catch { }
+            try { sel.activeUnitId.value = unitId; } catch { }
+            return;
+        }
+
+        // Multi (shift/ctrl/meta) = toggle membership
+        try {
+            if (set?.has?.(unitId)) set.delete(unitId);
+            else set?.add?.(unitId);
+        } catch { }
+
+        // Active follows only if exactly one remains
+        try {
+            sel.activeUnitId.value = (set && set.size === 1) ? Array.from(set)[0] : null;
+        } catch { }
+    }
+
+    function applySelection(unitIds: string[], addToMulti = false) {
+        const sel = selectedItemsStoreRef.value;
+        if (!sel) return;
+
+        const set: Set<string> | undefined = sel.selectedUnitIds?.value;
+        if (!set) return;
+
+        if (!addToMulti) {
+            try { sel.clear?.(); } catch { }
+        }
+
+        if (!unitIds?.length) {
+            // if it was a replacement selection, ensure active clears too
+            try { sel.activeUnitId.value = null; } catch { }
+            return;
+        }
+
+        for (const id of unitIds) {
+            try { set.add(id); } catch { }
+        }
+
+        // Important: only set activeUnitId when exactly one unit is selected
+        try {
+            sel.activeUnitId.value = (set.size === 1) ? Array.from(set)[0] : null;
+        } catch { }
+    }
+
+    function moveActiveUnitTo(pos: Position) {
+        const sel = getSelStore();
+        const unitId: string | null =
+            sel?.activeUnitId?.value ??
+            (sel?.selectedUnitIds?.value ? Array.from(sel.selectedUnitIds.value)[0] : null);
+
+        console.log("[3DSEL] moveActiveUnitTo", { unitId, pos });
+
+        if (!unitId) return;
+
+        try {
+            addUnitPosition(unitId, pos);
+        } catch (e) {
+            console.warn("[GlobeView] addUnitPosition failed; cannot move unit.", e);
+        }
+    }
+
+    function isAnyToolPickingLocation(): boolean {
+        // Debug: show when suppression is blocking clicks
+        const v = !!(interaction?.isPickingLocation?.value || globePickActive.value);
+        if (v) console.log("[3DSEL] suppressed by picking mode", {
+            isPickingLocation: !!interaction?.isPickingLocation?.value,
+            globePickActive: !!globePickActive.value,
+            moveUnitEnabled: !!moveUnitEnabled.value,
+        });
+        return v;
+    }
+
+    let selectionBridge: ReturnType<typeof createCesiumSelectionBridge> | null = null;
+
+    function ensureSelectionBridgeInstalled() {
+        const viewer = getViewerSafe();
+        if (!viewer) {
+            console.log("[3DSEL] no viewer yet; bridge not installed");
+            return;
+        }
+
+        if (!selectionBridge) {
+            console.log("[3DSEL] creating selection bridge");
+            selectionBridge = createCesiumSelectionBridge({
+                getViewer: () => g.value?.getViewer?.(),
+                isSuppressed: () => isAnyToolPickingLocation(),
+                isMoveMode: () => !!moveUnitEnabled.value,
+
+                onUnitClick: (unitId, addToMulti) => {
+                    setActiveUnitId(unitId, addToMulti);
+                },
+
+                onEmptyClick: () => {
+                    if (moveUnitEnabled.value) return;
+                    setActiveUnitId(null);
+                },
+
+                onBoxSelect: (ids, addToMulti) => {
+                    applySelection(ids, addToMulti);
+                },
+
+                onDeselect: () => {
+                    setActiveUnitId(null);
+                },
+
+                onMoveTarget: (llh) => {
+                    if (!moveUnitEnabled.value) return;
+                    moveActiveUnitTo(llh as Position);
+                },
+            });
+        }
+
+        selectionBridge.install();
+        console.log("[3DSEL] selection bridge installed");
+    }
+
+    watch([() => getViewerSafe(), () => getViewerCanvasSafe()], () => {
+        ensureSelectionBridgeInstalled();
+    }, { immediate: true });
+
+    onBeforeUnmount(() => {
+        try { selectionBridge?.uninstall(); } catch { }
+    });
+
+
+
+    provide("mentatRequestGlobeLocation", requestGlobeLocation);
+    provide("mentatCancelGlobeLocation", cancelGlobeLocation);
+
+
+    onBeforeUnmount(() => cancelGlobeLocation());
+
+    /* ─────────── Bottom-toolbar time helpers ─────────── */
+    function onOpenTimeModal() {
+        timelineVisible.value = !timelineVisible.value;
+    }
+
+    function onIncDay() {
+        tlSetCurrentTime(+tlScenarioTime.value + TL_MS_PER_DAY);
+    }
+
+    function onDecDay() {
+        tlSetCurrentTime(+tlScenarioTime.value - TL_MS_PER_DAY);
+    }
+
+    function tlEventTime(e: any): number {
+        const t = e?.startTime ?? e?.t ?? e?.time;
+        const n = typeof t === "string" ? Number(t) : t;
+        return typeof n === "number" && Number.isFinite(n) ? n : 0;
+    }
+
+    function onNextEvent() {
+        const st: any = (tlStore as any)?.state;
+        const ids: string[] = st?.events ?? [];
+        const map: Record<string, any> = st?.eventMap ?? {};
+        const events = ids.map((id) => map[id]).filter(Boolean);
+        events.sort((a, b) => tlEventTime(a) - tlEventTime(b));
+
+        const now = +tlScenarioTime.value;
+        const next = events.find((e) => tlEventTime(e) > now + 1);
+        if (!next) return;
+
+        const ts = tlEventTime(next);
+        if (!ts) return;
+
+        tlSetCurrentTime(ts);
+
+        const sel = selectedItemsStoreRef.value;
+        try {
+            if (sel?.activeScenarioEventId) sel.activeScenarioEventId.value = next.id;
+        } catch { /* ignore */ }
+    }
+
+    function onPrevEvent() {
+        const st: any = (tlStore as any)?.state;
+        const ids: string[] = st?.events ?? [];
+        const map: Record<string, any> = st?.eventMap ?? {};
+        const events = ids.map((id) => map[id]).filter(Boolean);
+        events.sort((a, b) => tlEventTime(a) - tlEventTime(b));
+
+        const now = +tlScenarioTime.value;
+        const prev = [...events].reverse().find((e) => tlEventTime(e) < now - 1);
+        if (!prev) return;
+
+        const ts = tlEventTime(prev);
+        if (!ts) return;
+
+        tlSetCurrentTime(ts);
+
+        const sel = selectedItemsStoreRef.value;
+        try {
+            if (sel?.activeScenarioEventId) sel.activeScenarioEventId.value = prev.id;
+        } catch { /* ignore */ }
+    }
+
+    function onShowSettings() {
+        rightOpen.value = true;
+        rightPanelTab.value = "environment";
+    }
+
+    // Right panel sizing -> used to push UnitDetails down when controls expand.
+    const RIGHT_PANEL_TOP_PX = 12;
+    const RIGHT_PANEL_GAP_PX = 30;
+
+    const rightControlsEl = ref<HTMLElement | null>(null);
+    const { height: rightControlsH } = useElementSize(rightControlsEl);
+
+    const unitDockTopPx = computed(() => {
+        const h = rightOpen.value ? (rightControlsH.value || 0) : 0;
+        return RIGHT_PANEL_TOP_PX + h + (rightOpen.value ? RIGHT_PANEL_GAP_PX : 0);
+    });
+
+    // Optional: keep the dock from running under the timeline
+    const unitDockMaxHeight = computed(() => {
+        // uses your existing timeline var if you have it; otherwise it just behaves like 0px
+        return `calc(100vh - ${unitDockTopPx.value}px - var(--timeline-height, 0px) - 12px)`;
+    });
+
+    function getViewerSafe(): any | undefined {
+        return g.value?.getViewer?.() ?? (g.value as any)?.viewer;
+        try {
+            const v = g.value?.getViewer?.();
+            if (!v) return undefined;
+
+            // Touch scene inside try to ensure it's actually available (Cesium uses getters that can throw)
+            const _scene = (v as any).scene;
+            if (!_scene) return undefined;
+
+            return v;
+        } catch {
+            return undefined;
+        }
+    }
+
     /* context menu actions */
     function tlOnContextMenuAction(action: string, options?: Record<string, any>) {
         if (action === "zoomIn") {
@@ -1299,210 +1796,68 @@
 </script>
 
 <template>
-    <div class="globe-wrap">
+    <div class="globe-wrap" :style="{ '--timeline-height': timelineHeightCss }">
 
         <!-- Globe canvas -->
         <div ref="mountRef" class="globe-host"></div>
 
-        <!-- Left controls -->
+        <!-- Bottom toolbars (ported from 2D; functionality incrementally wired in 3D) -->
+        <BottomToolbars :requestGlobeLocation="requestGlobeLocation"
+                        :cancelGlobeLocation="cancelGlobeLocation"
+                        @open-time-modal="onOpenTimeModal"
+                        @inc-day="onIncDay"
+                        @dec-day="onDecDay"
+                        @next-event="onNextEvent"
+                        @prev-event="onPrevEvent"
+                        @show-settings="onShowSettings" />
+
+        <!-- Left drawer: ORBAT (ported from 2D) -->
         <div class="controls-drawer controls-drawer--left" :class="{ closed: !controlsOpen }">
             <button class="drawer-toggle" @click="toggleControls" :aria-expanded="controlsOpen">
                 <span v-if="controlsOpen">«</span>
                 <span v-else>»</span>
             </button>
 
-            <div class="controls">
-                <div class="row">
-                    <label>
-                        Base layer
-                        <select v-model="selectedLayer">
-                            <option v-for="l in layers" :key="l.name" :value="l.name">{{ l.name }}</option>
-                        </select>
-                    </label>
-                </div>
-                <!-- Globe -->
-                <div class="row" style="flex-direction: column; align-items: stretch; gap: 8px;">
-                    <div style="font-weight: 600;">Globe</div>
-
-                    <label>
-                        Terrain
-                        <select v-model="terrainKey"
-                                :disabled="hydroMode === 'split_experimental'"
-                                :title="hydroMode === 'split_experimental'
-            ? 'Split mode pins the TOP viewer terrain to World (land). The seafloor comes from the bottom bathy viewer.'
-            : ''">
-                            <option value="flat">Flat</option>
-                            <option value="world">World</option>
-                            <option value="bathymetry">Bathymetry</option>
-                        </select>
-                    </label>
-
-                    <label class="checkbox"
-                           title="Cesium globe water effect (requires a water mask). Disabled in bathymetry because many bathy terrains do not provide a water mask.">
-                        <input type="checkbox" v-model="waterEffect" :disabled="terrainKey === 'bathymetry'" />
-                        Water effect
-                    </label>
-
-                    <!-- Bathymetry/Hydrography controls: visible in Bathymetry OR when Split mode is active -->
-                    <details v-if="terrainKey === 'bathymetry' || hydroMode === 'split_experimental'" open>
-                        <summary style="cursor: pointer; font-weight: 600;">Bathymetry &amp; Hydrography</summary>
-
-                        <!-- Mode -->
-                        <div style="display:flex; align-items:center; gap:10px; margin-top: 8px;">
-                            <span style="min-width: 92px; opacity: 0.9;">Mode</span>
-                            <select v-model="hydroMode" style="flex: 1 1 auto;">
-                                <option value="land">Land</option>
-                                <option value="seafloor">Seafloor</option>
-                                <option value="split_experimental">Split (experimental)</option>
-                            </select>
-                        </div>
-
-                        <!-- Water surface -->
-                        <div style="display:flex; align-items:center; gap:10px; margin-top: 10px;">
-                            <label style="display:flex; align-items:center; gap:6px; flex: 1 1 auto;">
-                                <input type="checkbox" v-model="waterSurfaceEnabled" />
-                                <span>Water surface</span>
-                            </label>
-                        </div>
-
-                        <div style="display:flex; align-items:center; gap:10px; margin-top: 8px;">
-                            <span style="min-width: 64px; opacity: 0.9;">Alpha</span>
-                            <input type="range"
-                                   :min="0" :max="1" :step="0.05"
-                                   v-model.number="waterSurfaceAlpha"
-                                   :disabled="!waterSurfaceEnabled"
-                                   style="flex: 1 1 auto;" />
-                            <span style="width: 44px; text-align:right; opacity:0.9;">
-                                {{ Math.round(waterSurfaceAlpha * 100) }}%
-                            </span>
-                        </div>
-
-                        <!-- GEBCO overlay -->
-                        <div style="display:flex; align-items:center; gap:10px; margin-top: 12px;">
-                            <label style="display:flex; align-items:center; gap:6px; flex: 1 1 auto;">
-                                <input type="checkbox" v-model="gebcoEnabled" />
-                                <span>GEBCO bathymetry (imagery)</span>
-                            </label>
-
-                            <span v-if="gebcoHealth === 'ok'" class="badge">OK</span>
-                            <span v-else-if="gebcoHealth === 'bad'" class="badge badgeWarn">Warning</span>
-                            <span v-else class="badge">Unknown</span>
-                        </div>
-
-                        <div v-if="gebcoHealth === 'bad'" class="warnText" style="margin-top: 6px;">
-                            {{ gebcoHealthMsg }}
-                            <button style="margin-left: 8px;" @click="probeGebcoTiles()">Re-check</button>
-                        </div>
-
-                        <div style="display:flex; align-items:center; gap:10px; margin-top: 8px;">
-                            <span style="min-width: 64px; opacity: 0.9;">Alpha</span>
-                            <input type="range"
-                                   :min="0" :max="1" :step="0.05"
-                                   v-model.number="gebcoAlpha"
-                                   :disabled="!gebcoEnabled"
-                                   style="flex: 1 1 auto;" />
-                            <span style="width: 44px; text-align:right; opacity:0.9;">
-                                {{ Math.round(gebcoAlpha * 100) }}%
-                            </span>
-                        </div>
-
-                        <!-- Upstream warning: only shown in Bathymetry context -->
-                        <div v-if="hydrographyWarning && !hydrographyWarningDismissed"
-                             class="warningBanner"
-                             style="margin-top: 12px;">
-                            <div style="font-weight: 600;">Hydrography warning</div>
-                            <div>{{ hydrographyWarning }}</div>
-                            <div v-if="hydrographyWarningDetails"
-                                 style="opacity: 0.85; font-size: 0.9em; margin-top: 4px;">
-                                {{ hydrographyWarningDetails }}
-                            </div>
-                            <div style="margin-top: 8px; display: flex; gap: 8px;">
-                                <button @click="checkHydrographyUpstreamOnce()">Re-check</button>
-                                <button @click="hydrographyWarningDismissed = true">Dismiss</button>
-                            </div>
-                        </div>
-                    </details>
+            <div class="controls scrollable">
+                <div class="drawer-tabs">
+                    <button class="tab" :class="{ active: orbatTab === 'orbat' }" @click="orbatTab = 'orbat'">ORBAT</button>
+                    <button class="tab" :class="{ active: orbatTab === 'events' }" @click="orbatTab = 'events'">Events</button>
+                    <button class="tab" :class="{ active: orbatTab === 'filters' }" @click="orbatTab = 'filters'">Filters</button>
+                    <button class="tab" :class="{ active: orbatTab === 'settings' }" @click="orbatTab = 'settings'">Settings</button>
                 </div>
 
-
-
-                <!-- Imported layers (draped imagery) -->
-                <div class="row" style="flex-direction: column; align-items: stretch; gap: 8px;">
-                    <div style="font-weight: 600;">Imported layers</div>
-
-                    <div v-if="!importedLayers.length" class="badge">No imported layers detected</div>
-
-                    <div v-for="row in importedLayers" :key="row.id"
-                         style="display:flex; align-items:center; gap:10px;">
-                        <label style="display:flex; align-items:center; gap:6px; flex: 1 1 auto;">
-                            <input type="checkbox" v-model="row.on" @change="onToggleImported(row.id)" />
-                            <span>{{ row.title || row.id }}</span>
-                        </label>
-
-                        <input type="range"
-                               :min="0" :max="1" :step="0.05"
-                               v-model.number="row.alpha"
-                               @input="onAlphaImported(row.id)"
-                               title="Opacity" style="width:140px;" />
-                        <span class="badge" style="min-width:44px; text-align:right;">
-                            {{ (row.alpha ?? 1).toFixed(2) }}
-                        </span>
-                    </div>
-                </div>
-                <div class="row">
-                    <label>Lat <input v-model.number="lat" type="number" step="0.0001" /></label>
-                    <label>Lon <input v-model.number="lon" type="number" step="0.0001" /></label>
-                    <label>Hgt (m) <input v-model.number="height" type="number" step="100" /></label>
-                    <button @click="fly">Fly</button>
-                </div>
-
-                <div class="row">
-                    <label>
-                        Exaggeration
-                        <input v-model.number="exaggeration" type="range" :min="0.01" :max="5" :step="0.01" />
-                        <span class="badge">{{ exaggeration.toFixed(2) }}×</span>
-                    </label>
-                </div>
-
-                <details open>
-                    <summary style="cursor: pointer; font-weight: 600;">3D Urban</summary>
-
-                    <label class="checkbox" style="margin-top: 8px;">
-                        <input type="checkbox" v-model="osmBuildingsEnabled" />
-                        Enable Cesium OSM Buildings
-                    </label>
-
-                    <div v-if="osmBuildingsEnabled" style="display:flex; align-items:center; gap:10px; margin-top: 8px;">
-                        <span style="min-width: 92px; opacity: 0.9;">Preset</span>
-
-                        <select v-model="osmBuildingsPreset" style="flex: 1 1 auto;">
-                            <option value="gpu8gb">{{ OSM_BUILDINGS_PRESETS.gpu8gb.label }}</option>
-                            <option value="gpu16gb">{{ OSM_BUILDINGS_PRESETS.gpu16gb.label }}</option>
-                            <option value="ultra">{{ OSM_BUILDINGS_PRESETS.ultra.label }}</option>
-                        </select>
+                <div class="drawer-body">
+                    <div v-show="orbatTab === 'orbat'" class="tab-pane">
+                        <OrbatPanel />
                     </div>
 
-
-                    <div v-if="osmBuildingsEnabled" style="display:flex; align-items:center; gap:10px; margin-top: 8px;">
-                        <span style="min-width: 92px; opacity: 0.9;">Quality</span>
-                        <!-- maximumScreenSpaceError: 1 (best) ... 64 (fastest) -->
-                        <input type="range" min="1" max="64" step="1" v-model.number="osmBuildingsQuality" style="flex: 1 1 auto;" />
-                        <span style="width: 54px; text-align: right;">{{ osmBuildingsQuality }}</span>
+                    <div v-show="orbatTab === 'events'" class="tab-pane">
+                        <div v-if="!orbatEvents.length" class="badge">No scenario events</div>
+                        <div v-else class="events-list">
+                            <button v-for="ev in orbatEvents"
+                                    :key="ev.id ?? `${ev.title ?? 'event'}-${ev.startTime ?? ev.time ?? ev.timestamp}`"
+                                    class="event-row"
+                                    @click="orbatGoToEvent(ev)"
+                                    :title="ev.title ?? 'Event'">
+                                <span class="event-time">{{ orbatFormatEventTime(ev) }}</span>
+                                <span class="event-title">{{ ev.title ?? 'Event' }}</span>
+                            </button>
+                        </div>
                     </div>
 
-                    <GlobeControls :globe="g"
-                                   @terrainChanged="onTerrainChanged" :passive="true" />
-
-                    <div style="margin-top: 8px; font-size: 12px; opacity: 0.85; line-height: 1.25;">
-                        Cesium OSM Buildings streams from Cesium ion and requires a valid ion access token in the app environment.
+                    <div v-show="orbatTab === 'filters'" class="tab-pane">
+                        <ScenarioFiltersTabPanel />
                     </div>
-                </details>
 
+                    <div v-show="orbatTab === 'settings'" class="tab-pane">
+                        <ScenarioSettingsPanel />
+                    </div>
+                </div>
             </div>
         </div>
 
         <!-- Timeline (bottom) — inlined ScenarioTimeline template -->
-        <div class="timeline-overlay" v-if="timelineReady">
+        <div class="timeline-overlay" v-if="timelineReady && timelineVisible">
             <TimelineContextMenu @action="tlOnContextMenuAction"
                                  v-slot="{ onContextMenu }"
                                  :formattedHoveredDate="tlFormattedHoveredDate">
@@ -1567,91 +1922,291 @@
         <!-- Right drawer: fully hideable -->
         <div class="controls-drawer controls-drawer--right" :class="{ closed: !rightOpen }">
             <!-- Panel -->
-            <div class="controls" style="min-width: 260px; gap: 12px;">
-                <!-- Box 1: Environment -->
-                <div class="row" style="flex-direction: column; align-items: stretch; gap: 8px;">
-                    <div style="font-weight: 600;">Environment</div>
-                    <div style="display:flex; gap:8px; flex-wrap: wrap;">
-                        <button @click="toggleDayNight" :class="{ active: isDayNight }">🌞 Day/Night</button>
-                        <button @click="toggleSkybox" :class="{ active: isSkybox }">🌌 Skybox</button>
-                        <button @click="toggleRangeRings3D" :class="{ active: showRangeRings3D }">🎯 3D Range-rings</button>
-                    </div>
+            <div ref="rightControlsEl"
+                 class="controls scrollable"
+                 :style="{ width: rightPanelTab === 'layers' ? '340px' : '280px' }">
+                <div class="drawer-tabs drawer-tabs--right">
+                    <button class="tab" :class="{ active: rightPanelTab === 'environment' }" @click="rightPanelTab = 'environment'">Environment</button>
+                    <button class="tab" :class="{ active: rightPanelTab === 'layers' }" @click="rightPanelTab = 'layers'">Layers &amp; Globe</button>
                 </div>
 
-                <!-- Clock (scenario time) -->
-                <div class="row clock-row" style="align-items:center; justify-content:space-between;">
-                    <div class="clock-face" style="display:flex; align-items:center; gap:8px;">
-                        <span aria-hidden="true">🕒</span>
-                        <span>{{ scenarioClock }}</span>
-                        <span class="tz" style="opacity:0.85; font-size:12px;">{{ scenarioTzLabel }}</span>
-                    </div>
-                </div>
-
-                <!-- Jump to time (local) -->
-                <div class="row jump-row">
-                    <div class="jump-label">Jump-to-Time</div>
-
-                    <div class="jump-controls">
-                        <input id="jumpTimeLocal"
-                               class="jump-input"
-                               type="datetime-local"
-                               v-model="jumpTimeLocal"
-                               @keydown.enter.prevent="jumpToTime" />
-                        <button class="jump-go" @click="jumpToTime" title="Set scenario time">Go</button>
-                    </div>
-                </div>
-
-
-
-                <!-- Box 2: Playback / Compass -->
-                <div class="row" style="flex-direction: column; align-items: stretch; gap: 8px;">
-                    <div style="font-weight: 600;">Playback</div>
-
-                    <!-- ▶▶▶ Speed chevrons (reverse / normal / forward) -->
-                    <div class="ff-row" style="display:flex; gap:6px; flex-wrap: wrap;">
-                        <button @click="setSpeedAndPlay(-60)" :class="{ active: isPlaying && speed === -60 }" title="Reverse by Minute">«</button>
-                        <button @click="setSpeedAndPlay(-3600)" :class="{ active: isPlaying && speed === -3600 }" title="Reverse by Hour">««</button>
-                        <button @click="setSpeedAndPlay(-86400)" :class="{ active: isPlaying && speed === -86400 }" title="Reverse by Day">«««</button>
-                        <button @click="togglePlayPause" :class="{ active: isPlaying && Math.abs(speed) === 1 }" title="Play/Pause">
-                            {{ isPlaying ? '⏸' : '▶' }}
-                        </button>
-                        <button @click="setSpeedAndPlay(86400)" :class="{ active: isPlaying && speed === 86400 }" title="Forward by Day">»»»</button>
-                        <button @click="setSpeedAndPlay(3600)" :class="{ active: isPlaying && speed === 3600 }" title="Forward by Hour">»»</button>
-                        <button @click="setSpeedAndPlay(60)" :class="{ active: isPlaying && speed === 60 }" title="Forward by Minute">»</button>
-                    </div>
-
-                    <!-- Compass -->
-                    <div style="display:flex; align-items:center; gap:8px; flex-wrap: wrap;">
-                        <!-- Button only visible when compass is hidden -->
-                        <button v-if="!showCompass"
-                                @click="openCompass"
-                                class="compass-trigger"
-                                title="Show compass">
-                            🧭 Compass
-                        </button>
-
-                        <!-- Expanded compass replaces the button -->
-                        <div v-else
-                             class="compass-pop"
-                             @click="closeCompass"
-                             title="Click to hide compass">
-                            <CompassWidget :globe="g" />
-                        </div>
-                        <!-- Measure tool -->
-                        <div style="display:flex; align-items:center; gap:8px; flex-wrap: wrap;">
-                            <button v-if="!showMeasure"
-                                    @click="openMeasure"
-                                    class="measure-trigger"
-                                    title="Measure distances">
-                                📏 Measure
-                            </button>
-
-                            <div v-else
-                                 class="measure-pop"
-                                 @click.stop>
-                                <MeasureWidget :globe="g" @close="closeMeasure" />
+                <div class="drawer-body">
+                    <div v-show="rightPanelTab === 'environment'" class="tab-pane">
+                        <!-- Box 1: Environment -->
+                        <div class="row" style="flex-direction: column; align-items: stretch; gap: 8px;">
+                            <div style="font-weight: 600;">Environment</div>
+                            <div style="display:flex; gap:8px; flex-wrap: wrap;">
+                                <button @click="toggleDayNight" :class="{ active: isDayNight }">🌞 Day/Night</button>
+                                <button @click="toggleSkybox" :class="{ active: isSkybox }">🌌 Skybox</button>
+                                <button @click="toggleRangeRings3D" :class="{ active: showRangeRings3D }">🎯 3D Range-rings</button>
                             </div>
                         </div>
+
+                        <!-- Clock (scenario time) -->
+                        <div class="row clock-row" style="align-items:center; justify-content:space-between;">
+                            <div class="clock-face" style="display:flex; align-items:center; gap:8px;">
+                                <span aria-hidden="true">🕒</span>
+                                <span>{{ scenarioClock }}</span>
+                                <span class="tz" style="opacity:0.85; font-size:12px;">{{ scenarioTzLabel }}</span>
+                            </div>
+                        </div>
+
+                        <!-- Jump to time (local) -->
+                        <div class="row jump-row">
+                            <div class="jump-label">Jump-to-Time</div>
+
+                            <div class="jump-controls">
+                                <input id="jumpTimeLocal"
+                                       class="jump-input"
+                                       type="datetime-local"
+                                       v-model="jumpTimeLocal"
+                                       @keydown.enter.prevent="jumpToTime" />
+                                <button class="jump-go" @click="jumpToTime" title="Set scenario time">Go</button>
+                            </div>
+                        </div>
+
+
+
+                        <!-- Box 2: Playback / Compass -->
+                        <div class="row" style="flex-direction: column; align-items: stretch; gap: 8px;">
+                            <div style="font-weight: 600;">Playback</div>
+
+                            <!-- ▶▶▶ Speed chevrons (reverse / normal / forward) -->
+                            <div class="ff-row" style="display:flex; gap:6px; flex-wrap: wrap;">
+                                <button @click="setSpeedAndPlay(-60)" :class="{ active: isPlaying && speed === -60 }" title="Reverse by Minute">«</button>
+                                <button @click="setSpeedAndPlay(-3600)" :class="{ active: isPlaying && speed === -3600 }" title="Reverse by Hour">««</button>
+                                <button @click="setSpeedAndPlay(-86400)" :class="{ active: isPlaying && speed === -86400 }" title="Reverse by Day">«««</button>
+                                <button @click="togglePlayPause" :class="{ active: isPlaying && Math.abs(speed) === 1 }" title="Play/Pause">
+                                    {{ isPlaying ? '⏸' : '▶' }}
+                                </button>
+                                <button @click="setSpeedAndPlay(86400)" :class="{ active: isPlaying && speed === 86400 }" title="Forward by Day">»»»</button>
+                                <button @click="setSpeedAndPlay(3600)" :class="{ active: isPlaying && speed === 3600 }" title="Forward by Hour">»»</button>
+                                <button @click="setSpeedAndPlay(60)" :class="{ active: isPlaying && speed === 60 }" title="Forward by Minute">»</button>
+                            </div>
+
+                            <!-- Compass -->
+                            <div style="display:flex; align-items:center; gap:8px; flex-wrap: wrap;">
+                                <!-- Button only visible when compass is hidden -->
+                                <button v-if="!showCompass"
+                                        @click="openCompass"
+                                        class="compass-trigger"
+                                        title="Show compass">
+                                    🧭 Compass
+                                </button>
+
+                                <!-- Expanded compass replaces the button -->
+                                <div v-else
+                                     class="compass-pop"
+                                     @click="closeCompass"
+                                     title="Click to hide compass">
+                                    <CompassWidget :globe="g" />
+                                </div>
+                                <!-- Measure tool -->
+                                <div style="display:flex; align-items:center; gap:8px; flex-wrap: wrap;">
+                                    <button v-if="!showMeasure"
+                                            @click="openMeasure"
+                                            class="measure-trigger"
+                                            title="Measure distances">
+                                        📏 Measure
+                                    </button>
+
+                                    <div v-else
+                                         class="measure-pop"
+                                         @click.stop>
+                                        <MeasureWidget :globe="g" @close="closeMeasure" />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div v-show="rightPanelTab === 'layers'" class="tab-pane">
+                        <div class="row">
+                            <label>
+                                Base layer
+                                <select v-model="selectedLayer">
+                                    <option v-for="l in layers" :key="l.name" :value="l.name">{{ l.name }}</option>
+                                </select>
+                            </label>
+                        </div>
+                        <!-- Globe -->
+                        <div class="row" style="flex-direction: column; align-items: stretch; gap: 8px;">
+                            <div style="font-weight: 600;">Globe</div>
+
+                            <label>
+                                Terrain
+                                <select v-model="terrainKey"
+                                        :disabled="hydroMode === 'split_experimental'"
+                                        :title="hydroMode === 'split_experimental'
+            ? 'Split mode pins the TOP viewer terrain to World (land). The seafloor comes from the bottom bathy viewer.'
+            : ''">
+                                    <option value="flat">Flat</option>
+                                    <option value="world">World</option>
+                                    <option value="bathymetry">Bathymetry</option>
+                                </select>
+                            </label>
+
+                            <label class="checkbox"
+                                   title="Cesium globe water effect (requires a water mask). Disabled in bathymetry because many bathy terrains do not provide a water mask.">
+                                <input type="checkbox" v-model="waterEffect" :disabled="terrainKey === 'bathymetry'" />
+                                Water effect
+                            </label>
+
+                            <!-- Bathymetry/Hydrography controls: visible in Bathymetry OR when Split mode is active -->
+                            <details v-if="terrainKey === 'bathymetry' || hydroMode === 'split_experimental'" open>
+                                <summary style="cursor: pointer; font-weight: 600;">Bathymetry &amp; Hydrography</summary>
+
+                                <!-- Mode -->
+                                <div style="display:flex; align-items:center; gap:10px; margin-top: 8px;">
+                                    <span style="min-width: 92px; opacity: 0.9;">Mode</span>
+                                    <select v-model="hydroMode" style="flex: 1 1 auto;">
+                                        <option value="land">Land</option>
+                                        <option value="seafloor">Seafloor</option>
+                                        <option value="split_experimental">Split (experimental)</option>
+                                    </select>
+                                </div>
+
+                                <!-- Water surface -->
+                                <div style="display:flex; align-items:center; gap:10px; margin-top: 10px;">
+                                    <label style="display:flex; align-items:center; gap:6px; flex: 1 1 auto;">
+                                        <input type="checkbox" v-model="waterSurfaceEnabled" />
+                                        <span>Water surface</span>
+                                    </label>
+                                </div>
+
+                                <div style="display:flex; align-items:center; gap:10px; margin-top: 8px;">
+                                    <span style="min-width: 64px; opacity: 0.9;">Alpha</span>
+                                    <input type="range"
+                                           :min="0" :max="1" :step="0.05"
+                                           v-model.number="waterSurfaceAlpha"
+                                           :disabled="!waterSurfaceEnabled"
+                                           style="flex: 1 1 auto;" />
+                                    <span style="width: 44px; text-align:right; opacity:0.9;">
+                                        {{ Math.round(waterSurfaceAlpha * 100) }}%
+                                    </span>
+                                </div>
+
+                                <!-- GEBCO overlay -->
+                                <div style="display:flex; align-items:center; gap:10px; margin-top: 12px;">
+                                    <label style="display:flex; align-items:center; gap:6px; flex: 1 1 auto;">
+                                        <input type="checkbox" v-model="gebcoEnabled" />
+                                        <span>GEBCO bathymetry (imagery)</span>
+                                    </label>
+
+                                    <span v-if="gebcoHealth === 'ok'" class="badge">OK</span>
+                                    <span v-else-if="gebcoHealth === 'bad'" class="badge badgeWarn">Warning</span>
+                                    <span v-else class="badge">Unknown</span>
+                                </div>
+
+                                <div v-if="gebcoHealth === 'bad'" class="warnText" style="margin-top: 6px;">
+                                    {{ gebcoHealthMsg }}
+                                    <button style="margin-left: 8px;" @click="probeGebcoTiles()">Re-check</button>
+                                </div>
+
+                                <div style="display:flex; align-items:center; gap:10px; margin-top: 8px;">
+                                    <span style="min-width: 64px; opacity: 0.9;">Alpha</span>
+                                    <input type="range"
+                                           :min="0" :max="1" :step="0.05"
+                                           v-model.number="gebcoAlpha"
+                                           :disabled="!gebcoEnabled"
+                                           style="flex: 1 1 auto;" />
+                                    <span style="width: 44px; text-align:right; opacity:0.9;">
+                                        {{ Math.round(gebcoAlpha * 100) }}%
+                                    </span>
+                                </div>
+
+                                <!-- Upstream warning: only shown in Bathymetry context -->
+                                <div v-if="hydrographyWarning && !hydrographyWarningDismissed"
+                                     class="warningBanner"
+                                     style="margin-top: 12px;">
+                                    <div style="font-weight: 600;">Hydrography warning</div>
+                                    <div>{{ hydrographyWarning }}</div>
+                                    <div v-if="hydrographyWarningDetails"
+                                         style="opacity: 0.85; font-size: 0.9em; margin-top: 4px;">
+                                        {{ hydrographyWarningDetails }}
+                                    </div>
+                                    <div style="margin-top: 8px; display: flex; gap: 8px;">
+                                        <button @click="checkHydrographyUpstreamOnce()">Re-check</button>
+                                        <button @click="hydrographyWarningDismissed = true">Dismiss</button>
+                                    </div>
+                                </div>
+                            </details>
+                        </div>
+
+
+
+                        <!-- Imported layers (draped imagery) -->
+                        <div class="row" style="flex-direction: column; align-items: stretch; gap: 8px;">
+                            <div style="font-weight: 600;">Imported layers</div>
+
+                            <div v-if="!importedLayers.length" class="badge">No imported layers detected</div>
+
+                            <div v-for="row in importedLayers" :key="row.id"
+                                 style="display:flex; align-items:center; gap:10px;">
+                                <label style="display:flex; align-items:center; gap:6px; flex: 1 1 auto;">
+                                    <input type="checkbox" v-model="row.on" @change="onToggleImported(row.id)" />
+                                    <span>{{ row.title || row.id }}</span>
+                                </label>
+
+                                <input type="range"
+                                       :min="0" :max="1" :step="0.05"
+                                       v-model.number="row.alpha"
+                                       @input="onAlphaImported(row.id)"
+                                       title="Opacity" style="width:140px;" />
+                                <span class="badge" style="min-width:44px; text-align:right;">
+                                    {{ (row.alpha ?? 1).toFixed(2) }}
+                                </span>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <label>Lat <input v-model.number="lat" type="number" step="0.0001" /></label>
+                            <label>Lon <input v-model.number="lon" type="number" step="0.0001" /></label>
+                            <label>Hgt (m) <input v-model.number="height" type="number" step="100" /></label>
+                            <button @click="fly">Fly</button>
+                        </div>
+
+                        <div class="row">
+                            <label>
+                                Exaggeration
+                                <input v-model.number="exaggeration" type="range" :min="0.01" :max="5" :step="0.01" />
+                                <span class="badge">{{ exaggeration.toFixed(2) }}×</span>
+                            </label>
+                        </div>
+
+                        <details open>
+                            <summary style="cursor: pointer; font-weight: 600;">3D Urban</summary>
+
+                            <label class="checkbox" style="margin-top: 8px;">
+                                <input type="checkbox" v-model="osmBuildingsEnabled" />
+                                Enable Cesium OSM Buildings
+                            </label>
+
+                            <div v-if="osmBuildingsEnabled" style="display:flex; align-items:center; gap:10px; margin-top: 8px;">
+                                <span style="min-width: 92px; opacity: 0.9;">Preset</span>
+
+                                <select v-model="osmBuildingsPreset" style="flex: 1 1 auto;">
+                                    <option value="gpu8gb">{{ OSM_BUILDINGS_PRESETS.gpu8gb.label }}</option>
+                                    <option value="gpu16gb">{{ OSM_BUILDINGS_PRESETS.gpu16gb.label }}</option>
+                                    <option value="ultra">{{ OSM_BUILDINGS_PRESETS.ultra.label }}</option>
+                                </select>
+                            </div>
+
+
+                            <div v-if="osmBuildingsEnabled" style="display:flex; align-items:center; gap:10px; margin-top: 8px;">
+                                <span style="min-width: 92px; opacity: 0.9;">Quality</span>
+                                <!-- maximumScreenSpaceError: 1 (best) ... 64 (fastest) -->
+                                <input type="range" min="1" max="64" step="1" v-model.number="osmBuildingsQuality" style="flex: 1 1 auto;" />
+                                <span style="width: 54px; text-align: right;">{{ osmBuildingsQuality }}</span>
+                            </div>
+
+                            <GlobeControls :globe="g"
+                                           @terrainChanged="onTerrainChanged" :passive="true" />
+
+                            <div style="margin-top: 8px; font-size: 12px; opacity: 0.85; line-height: 1.25;">
+                                Cesium OSM Buildings streams from Cesium ion and requires a valid ion access token in the app environment.
+                            </div>
+                        </details>
+
                     </div>
                 </div>
             </div>
@@ -1662,6 +2217,23 @@
                 <span v-else>«</span>
             </button>
         </div>
+        <!-- Unit Details dock (right side, under controls) -->
+        <div v-if="primarySelectedUnitId && unitDockOpen"
+             class="unitdock"
+             :style="{ top: unitDockTopPx + 'px', maxHeight: unitDockMaxHeight }">
+            <div class="unitdock-header">
+                <div style="font-weight:600;">Unit details</div>
+                <button class="unitdock-close" @click="unitDockOpen = false">✕</button>
+            </div>
+
+            <div class="unitdock-body">
+                <UnitDetails :unitId="primarySelectedUnitId"
+                             actionsButtonClass="bg-gray-200 text-gray-700 hover:bg-gray-300"
+                             actionsMenuClass="text-gray-700"
+                             actionsItemClass="text-gray-700" />
+            </div>
+        </div>
+
     </div>
 </template>
 
@@ -1737,6 +2309,33 @@
         font-weight: 500;
     }
 
+    /* ───────────────────── ORBAT Events tab ───────────────────── */
+    .events-list {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        margin-top: 6px;
+    }
+
+    .event-row {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 2px;
+        text-align: left;
+        padding: 7px 8px;
+    }
+
+    .event-time {
+        font-size: 12px;
+        opacity: 0.85;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .event-title {
+        font-size: 13px;
+        font-weight: 700;
+    }
+
     /* Inputs & dropdowns */
     .controls input[type="number"],
     .controls select,
@@ -1787,7 +2386,8 @@
     .controls-drawer--right {
         position: absolute;
         top: 12px;
-        z-index: 10050;
+        /* Keep these below most app pop-outs/modals (Tailwind z-50 etc.) */
+        z-index: 40;
         display: flex;
         align-items: flex-start;
         gap: 6px;
@@ -1846,7 +2446,7 @@
         user-select: none;
         backdrop-filter: blur(2px);
         box-shadow: 0 2px 8px rgba(0,0,0,0.35);
-        z-index: 10070;
+        z-index: 45;
     }
 
     .controls-drawer--left .drawer-toggle {
@@ -1883,7 +2483,7 @@
         left: 0;
         right: 0;
         bottom: 0;
-        z-index: 10010;
+        z-index: 35;
         pointer-events: auto;
     }
 
@@ -2083,5 +2683,267 @@
         background: rgba(255, 200, 0, 0.10);
         padding: 8px;
         border-radius: 8px;
+    }
+
+    /* ───────────────────── Drawer tabs + scroll ───────────────────── */
+    .controls.scrollable {
+        overflow: auto;
+        max-height: calc(100vh - 24px);
+    }
+
+    .drawer-tabs {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        margin-bottom: 8px;
+    }
+    /* Left ORBAT drawer: keep 4 tabs on ONE row + improve legibility */
+    .controls-drawer--left .drawer-tabs {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+    }
+
+        .controls-drawer--left .drawer-tabs::-webkit-scrollbar {
+            display: none;
+        }
+
+        .controls-drawer--left .drawer-tabs .tab {
+            flex: 1 1 0;
+            min-width: 0;
+            padding: 6px 6px;
+            font-size: 12px;
+            line-height: 1.1;
+            text-align: center;
+            white-space: nowrap;
+        }
+
+    /* Left ORBAT drawer: force readable text (override utility greys) */
+    .controls-drawer--left .controls {
+        color: #fff;
+    }
+
+        .controls-drawer--left .controls [class*='text-gray'],
+        .controls-drawer--left .controls [class*='text-slate'],
+        .controls-drawer--left .controls [class*='text-zinc'],
+        .controls-drawer--left .controls [class*='text-neutral'] {
+            color: #fff !important;
+        }
+
+    .drawer-tabs .tab {
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        color: #fff;
+        border-radius: 8px;
+        padding: 6px 10px;
+        cursor: pointer;
+        font-weight: 600;
+    }
+
+        .drawer-tabs .tab.active {
+            background: rgba(255, 255, 255, 0.18);
+            border-color: rgba(255, 255, 255, 0.28);
+        }
+
+    .drawer-body {
+        display: block;
+    }
+
+    .tab-pane {
+        display: block;
+    }
+
+    .unitdock {
+        position: absolute;
+        right: 10px;
+        width: 420px;
+        overflow: hidden;
+        z-index: 80;
+        background: rgba(0,0,0,0.65);
+        border: 1px solid rgba(255,255,255,0.18);
+        border-radius: 12px;
+        backdrop-filter: blur(6px);
+    }
+
+    .unitdock-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 10px;
+        border-bottom: 1px solid rgba(255,255,255,0.12);
+    }
+
+    .unitdock-body {
+        padding: 8px;
+        overflow: auto;
+        max-height: calc(100vh - 520px - var(--timeline-height, 0px));
+    }
+
+    .unitdock-close {
+        background: rgba(255,255,255,0.12);
+        border: 1px solid rgba(255,255,255,0.2);
+        border-radius: 8px;
+        padding: 4px 8px;
+        cursor: pointer;
+        color: #fff;
+    }
+
+    .bt-host {
+        position: fixed;
+        left: 50%;
+        bottom: calc(var(--timeline-height, 0px) + 10px);
+        transform: translateX(-50%);
+        pointer-events: none;
+        z-index: 90;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        align-items: center;
+    }
+    /* ───────────────── Global legibility in GlobeView UI panels (scoped-safe) ───────────────── */
+    /* Apply to: left ORBAT drawer + unit details dock (+ any other control drawers you have) */
+    .controls-drawer--left :deep(*),
+    .controls-drawer--right :deep(*),
+    .unitdock :deep(*) {
+        color: #fff !important;
+    }
+
+    /* Also catch utility color classes inside these panels */
+    .controls-drawer--left :deep([class*="text-"]),
+    .controls-drawer--right :deep([class*="text-"]),
+    .unitdock :deep([class*="text-"]) {
+        color: #fff !important;
+    }
+
+    /* Inputs/selects/textareas should be white text too */
+    .controls-drawer--left :deep(input),
+    .controls-drawer--left :deep(select),
+    .controls-drawer--left :deep(textarea),
+    .controls-drawer--right :deep(input),
+    .controls-drawer--right :deep(select),
+    .controls-drawer--right :deep(textarea),
+    .unitdock :deep(input),
+    .unitdock :deep(select),
+    .unitdock :deep(textarea) {
+        color: #fff !important;
+    }
+
+    /* Keep links readable and consistent */
+    .controls-drawer--left :deep(a),
+    .controls-drawer--right :deep(a),
+    .unitdock :deep(a) {
+        color: #fff !important;
+        text-decoration-color: rgba(255, 255, 255, 0.7);
+    }
+
+    /* Optional: if you use hover to invert buttons, preserve that behavior */
+    .controls-drawer--left :deep(button:hover),
+    .controls-drawer--right :deep(button:hover),
+    .unitdock :deep(button:hover) {
+        color: #000 !important;
+    }
+    /* ─────────── Black text on LIGHT grey backgrounds (side headers + dropdowns) ─────────── */
+    /* Tailwind light greys (50–400-ish). Keep it narrow so dark greys (700/800) stay white. */
+    .controls-drawer--left :deep([class*="bg-gray-50"]),
+    .controls-drawer--left :deep([class*="bg-gray-100"]),
+    .controls-drawer--left :deep([class*="bg-gray-200"]),
+    .controls-drawer--left :deep([class*="bg-gray-300"]),
+    .controls-drawer--left :deep([class*="bg-gray-400"]),
+    .unitdock :deep([class*="bg-gray-50"]),
+    .unitdock :deep([class*="bg-gray-100"]),
+    .unitdock :deep([class*="bg-gray-200"]),
+    .unitdock :deep([class*="bg-gray-300"]),
+    .unitdock :deep([class*="bg-gray-400"]) {
+        color: #000 !important;
+    }
+
+    .controls-drawer--left :deep([class*="bg-gray-50"] *),
+    .controls-drawer--left :deep([class*="bg-gray-100"] *),
+    .controls-drawer--left :deep([class*="bg-gray-200"] *),
+    .controls-drawer--left :deep([class*="bg-gray-300"] *),
+    .controls-drawer--left :deep([class*="bg-gray-400"] *),
+    .unitdock :deep([class*="bg-gray-50"] *),
+    .unitdock :deep([class*="bg-gray-100"] *),
+    .unitdock :deep([class*="bg-gray-200"] *),
+    .unitdock :deep([class*="bg-gray-300"] *),
+    .unitdock :deep([class*="bg-gray-400"] *) {
+        color: #000 !important;
+    }
+
+    /* ───────── ORBAT selection highlight: replace light-red with "side grey" ───────── */
+    /* Use a light grey consistent with side headers (Tailwind gray-200). */
+    .controls-drawer--left :deep([id^="ou-"] [class*="bg-red-"]),
+    .controls-drawer--left :deep([id^="os-"] [class*="bg-red-"]),
+    .controls-drawer--left :deep([id^="osg-"] [class*="bg-red-"]),
+    .controls-drawer--left :deep([id^="ou-"].bg-red-100),
+    .controls-drawer--left :deep([id^="ou-"].bg-red-200),
+    .controls-drawer--left :deep([id^="ou-"].bg-rose-100),
+    .controls-drawer--left :deep([id^="ou-"].bg-rose-200) {
+        background-color: #e5e7eb !important; /* gray-200 */
+        border-color: #e5e7eb !important;
+        color: #000 !important; /* black text on grey */
+    }
+
+    /* If the highlight is applied via text color rather than background */
+    .controls-drawer--left :deep([id^="ou-"] [class*="text-red-"]),
+    .controls-drawer--left :deep([id^="os-"] [class*="text-red-"]),
+    .controls-drawer--left :deep([id^="osg-"] [class*="text-red-"]) {
+        color: #000 !important;
+    }
+
+
+    /* Actions dropdown specifically: make select + options readable */
+    .unitdock :deep(select) {
+        color: #000 !important;
+    }
+
+    .unitdock :deep(select option) {
+        color: #000 !important;
+        background: #fff !important;
+    }
+    /* Radix UI / shadcn popovers */
+    :global([data-radix-popper-content-wrapper]) {
+        z-index: 10000 !important;
+    }
+
+    :global([data-radix-popper-content-wrapper] > *),
+    :global([data-radix-popper-content-wrapper] [data-radix-popover-content]),
+    :global([data-radix-popper-content-wrapper] [data-radix-menu-content]),
+    :global([data-radix-popper-content-wrapper] [data-radix-dropdown-menu-content]) {
+        background-color: #e5e7eb !important; /* gray-200 */
+        color: #374151 !important; /* gray-700 */
+    }
+
+    :global([data-radix-popper-content-wrapper] *),
+    :global([data-radix-popper-content-wrapper] [class*="text-"]),
+    :global([data-radix-popper-content-wrapper] [class*="text-black"]) {
+        color: #374151 !important;
+    }
+
+    /* Floating UI portals */
+    :global([data-floating-ui-portal] *),
+    :global([data-floating-ui-portal] [class*="text-"]) {
+        color: #374151 !important; /* gray-700 */
+    }
+
+    :global([data-floating-ui-portal] [class*="bg-gray-"]),
+    :global([data-floating-ui-portal] [class*="bg-slate-"]),
+    :global([data-floating-ui-portal] [class*="bg-zinc-"]),
+    :global([data-floating-ui-portal] [class*="bg-neutral-"]),
+    :global([data-floating-ui-portal] [class*="bg-stone-"]) {
+        color: #374151 !important; /* gray-700 */
+    }
+
+    /* HeadlessUI (when it DOES use roles) */
+    :global([role="menu"]),
+    :global([role="listbox"]) {
+        background-color: #e5e7eb !important; /* gray-200 */
+        color: #374151 !important;
+    }
+
+    :global([role="menu"] *),
+    :global([role="listbox"] *) {
+        color: #374151 !important;
     }
 </style>

@@ -3,8 +3,17 @@
     <div class="flex items-center justify-between">
         <span class="text-sm">Change</span>
         <div class="flex items-center gap-1">
-            <UnitStatusPopover @update="setUnitStatus" :disabled="isLocked" />
-            <SplitButton :items="stateItems" v-model:active-item="uiState.activeStateItem" />
+            <UnitStatusPopover @update="setUnitStatus"
+                               :disabled="isLocked"
+                               buttonClass="bg-gray-200 text-gray-700 hover:bg-gray-300"
+                               contentClass="z-[10000] bg-gray-200 text-gray-700 border border-gray-300 shadow-lg"
+                               submitClass="text-gray-700" />
+
+            <SplitButton :items="stateItems"
+                         v-model:active-item="uiState.activeStateItem"
+                         buttonClass="bg-gray-200 text-gray-700 hover:bg-gray-300"
+                         menuClass="text-gray-700"
+                         itemClass="text-gray-700" />
         </div>
     </div>
 
@@ -44,8 +53,9 @@
 
         <li v-for="(s, index) in state"
             :key="s.id"
-            class="relative flex items-center py-4"
-            :class="{ 'bg-blue-50': isActive(s, index) }">
+            class="relative flex items-center py-4 px-[10%]">
+            <div v-if="isActive(s, index)"
+                 class="pointer-events-none absolute inset-0 border-[3px] border-gray-300 rounded-md"></div>
             <div class="flex min-w-0 flex-auto flex-col text-sm">
                 <p class="leading-tight text-gray-900" v-if="s.title === undefined" @dblclick="editTitle(s)">
                     {{ formatDateString(s.t, store.state.info.timeZone) }}
@@ -84,7 +94,10 @@
                 <IconMapMarkerOffOutline v-if="s.location === null" class="h-5 w-5 text-gray-600" />
 
                 <div class="mt-1 flex gap-1">
-                    <span v-if="s.sidc" class="w-12 rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-800">sidc</span>
+                    <span v-if="s.sidc"
+                          class="w-12 rounded-full bg-gray-200 px-2.5 py-0.5 text-xs font-medium text-gray-700 border border-gray-300">
+                        sidc
+                    </span>
                     <span v-if="s.status"
                           class="w-auto rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-800">{{ unitStatusMap[s.status]?.name }}</span>
                     <span v-if="s.update?.equipment" class="badge">Equipment</span>
@@ -212,8 +225,46 @@
         return s.t <= currentTime && nextUnitTimestamp > currentTime;
     };
 
-    const changeToState = (stateEntry: NState) => {
+    function fly3DToLocation(pos: Position) {
+        const lon = Number(pos?.[0]);
+        const lat = Number(pos?.[1]);
+        if (!Number.isFinite(lon) || !Number.isFinite(lat)) return;
+
+        const alt = altOf(pos as any);
+        // Camera height in meters. If we have an altitude, keep some standoff.
+        const height = typeof alt === "number" ? Math.max(alt + 2500, 4000) : 12000;
+
+        const globe: any = (window as any).MentatGlobe;
+        if (!globe) return;
+
+        // Preferred: adapter method
+        const fly = globe.flyToLatLon;
+        if (typeof fly === "function") {
+            fly(lon, lat, height);
+            return;
+        }
+
+        // Fallback: viewer camera flyTo
+        const viewer = globe.getViewer?.() ?? globe.viewer;
+        const Cesium = globe.Cesium ?? (window as any).Cesium ?? (window as any).MentatGlobeAdapterDebug?.Cesium;
+        if (viewer?.camera && Cesium?.Cartesian3?.fromDegrees) {
+            viewer.camera.flyTo({
+                destination: Cesium.Cartesian3.fromDegrees(lon, lat, height),
+                duration: 0.8,
+            });
+        }
+    }
+
+
+    const changeToState = async (stateEntry: NState) => {
         time.setCurrentTime(stateEntry.t);
+
+        // Route the "place" in 3D directly using the state entry's location.
+        if (stateEntry.location) {
+            fly3DToLocation(stateEntry.location as any);
+        }
+
+        // Keep existing 2D behavior (and any other listeners) intact.
         if (stateEntry.location) onUnitAction(props.unit, UnitActions.Pan);
     };
 

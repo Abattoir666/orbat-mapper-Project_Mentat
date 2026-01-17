@@ -18,6 +18,7 @@ import {
     GeographicTilingScheme,
     ScreenSpaceEventHandler,
     ScreenSpaceEventType,
+    CameraEventType,
     Math as CesiumMath,
     JulianDate,
     HeadingPitchRoll,
@@ -55,6 +56,42 @@ initCesiumIonFromEnv();
 /* ─────────────────────────────── Helpers ────── */
 
 function clamp01(x: number) { return Math.max(0, Math.min(1, x)); }
+
+/**
+ * Camera input bindings.
+ *
+ * Cesium's defaults bind several camera actions to LEFT_DRAG with keyboard modifiers
+ * (notably CTRL and SHIFT). Those clash with our 3D unit box-selection gesture
+ * (which we intentionally bind to CTRL+SHIFT drag). To make the gesture reliable,
+ * we remove modifier-based camera bindings and keep camera controls on unmodified
+ * drags / right-drag / middle-drag / wheel / pinch.
+ */
+function configureCameraInputBindings(viewer: Viewer) {
+    try {
+        const ssc: any = viewer.scene.screenSpaceCameraController;
+        if (!ssc) return;
+
+        // Rotate: plain left-drag.
+        ssc.rotateEventTypes = [CameraEventType.LEFT_DRAG];
+
+        // Zoom: wheel + pinch.
+        ssc.zoomEventTypes = [CameraEventType.WHEEL, CameraEventType.PINCH];
+
+        // Tilt: right-drag + pinch.
+        ssc.tiltEventTypes = [CameraEventType.RIGHT_DRAG, CameraEventType.PINCH];
+
+        // Translate/pan: middle-drag only (no CTRL+left-drag).
+        ssc.translateEventTypes = [CameraEventType.MIDDLE_DRAG];
+
+        // Look: disable modifier-based look bindings.
+        ssc.lookEventTypes = [];
+
+        // Keep look disabled unless a user explicitly enables it elsewhere.
+        try { ssc.enableLook = false; } catch { }
+    } catch {
+        // best-effort; ignore if Cesium API differs
+    }
+}
 
 // Your existing code uses this; preserve.
 function cloneImageryProvider(p: any): ImageryProvider {
@@ -181,6 +218,12 @@ export function useGlobe(arg1: any, arg2?: any) {
         terrain: makeTerrainNow(),
         imageryProvider: opts.imageryProvider ?? defaultOSM,
     });
+
+    viewer.scene.globe.depthTestAgainstTerrain = true;
+
+    // Remove SHIFT/CTRL modifier camera bindings to avoid clashes with box selection.
+    configureCameraInputBindings(viewer);
+
 
     viewer.clock.shouldAnimate = false;
     viewer.clock.clockRange = ClockRange.UNBOUNDED;
@@ -732,6 +775,9 @@ export function useGlobe(arg1: any, arg2?: any) {
             terrain: makeTerrainNow(),
             imageryProvider: baseProv,
         });
+
+        // Re-apply camera input bindings on rebuilt viewer.
+        configureCameraInputBindings(viewer);
 
         const sc: any = viewer.scene;
         sc.backgroundColor = Color.BLACK;

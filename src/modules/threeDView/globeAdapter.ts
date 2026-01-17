@@ -136,8 +136,8 @@ function applyIconLift(ent: Cesium.Entity, u: UnitRenderable) {
     const liftPx = Number((u as any).__iconLiftPx ?? 0) || 0;
     setUnitIconLiftPx(ent, u, liftPx);
 
-    try { if (ent.billboard) (ent.billboard as any).disableDepthTestDistance = Number.POSITIVE_INFINITY; } catch { }
-    try { if (ent.label) (ent.label as any).disableDepthTestDistance = Number.POSITIVE_INFINITY; } catch { }
+    try { if (ent.billboard) (ent.billboard as any).disableDepthTestDistance = 0; } catch { }
+    try { if (ent.label) (ent.label as any).disableDepthTestDistance = 0; } catch { }
 }
 
 const posEquals = (a?: Cesium.Cartesian3, b?: Cesium.Cartesian3) =>
@@ -306,70 +306,126 @@ function upsertPedestalLines(
     pedestalWpx: number,
     pedestalHpx: number,
 ) {
-    const id = pedestalLinesIdForUnit(unitId);
-    const ent = viewer.entities.getById(id) ?? viewer.entities.add({ id });
+    if (!unitEnt) return;
 
-    ent.show = true;
+    // If pedestal is not meaningful, hide our pedestal polyline if present.
+    if (!pedestalWpx || !pedestalHpx || pedestalWpx <= 0 || pedestalHpx <= 0) {
+        const hasMine = Boolean((unitEnt as any).__hasPedestalPolyline);
+        if (hasMine && unitEnt.polyline) {
+            (unitEnt.polyline as any).show = false;
+        }
+        return;
+    }
 
-    ent.polyline = new Cesium.PolylineGraphics({
+
+    unitEnt.polyline = new Cesium.PolylineGraphics({
+        show: true,
         positions: new Cesium.CallbackProperty(() => {
-            const t = viewer.clock.currentTime;
-            const pos = unitEnt.position?.getValue(t);
-            if (!pos) return [];
+            try {
+                const pos = unitEnt.position?.getValue?.(viewer.clock.currentTime);
+                if (!pos) return undefined;
 
-            // Ground point on ellipsoid (terrain sampling can be added later)
-            const carto = Cesium.Cartographic.fromCartesian(pos);
+                const carto = Cesium.Cartographic.fromCartesian(pos);
 
-            // Terrain-aware ground height (may be undefined while tiles stream)
-            const terrainH = viewer.scene.globe.getHeight(carto);
+                // Terrain-aware ground point (fallback to cached, then near-0)
+                let ground = pedestalTipCache.get(unitId);
 
-            let ground: Cesium.Cartesian3;
-            if (typeof terrainH === "number" && Number.isFinite(terrainH)) {
-                carto.height = terrainH;
-                ground = Cesium.Cartesian3.fromRadians(carto.longitude, carto.latitude, carto.height);
-                pedestalTipCache.set(unitId, ground);
-            } else {
-                // Fall back to last known tip to avoid jitter while terrain loads
-                ground = pedestalTipCache.get(unitId) ?? Cesium.Cartesian3.fromRadians(carto.longitude, carto.latitude, 0);
+                try {
+                    const h = viewer.scene?.globe?.getHeight?.(
+                        new Cesium.Cartographic(carto.longitude, carto.latitude, carto.height),
+                    );
+
+                    if (typeof h === "number" && Number.isFinite(h)) {
+                        ground = Cesium.Cartesian3.fromRadians(carto.longitude, carto.latitude, h + 0.2);
+                        pedestalTipCache.set(unitId, ground);
+                    } else if (!ground) {
+                        ground = Cesium.Cartesian3.fromRadians(carto.longitude, carto.latitude, 0.2);
+                    }
+                } catch {
+                    if (!ground) {
+                        ground = Cesium.Cartesian3.fromRadians(carto.longitude, carto.latitude, 0.2);
+                    }
+                }
+                // --- Pedestal size vs camera distance ---
+                // Much smaller close-up, much larger far away, with “gradual then steep” shrink when zooming in.
+                const BASE_MAX_M = 2000; // try 2000..8000 depending on your typical standoff
+                const BASE_MIN_M = 20; // 0.5..1.5 feels right close-up
+
+                // Calibrate the transition band to *real* camera distances.
+                // Near = where you want it to be basically “small”, Far = where you want it basically “max”.
+                const NEAR_M =100000;      // close orbit / inspection distance
+                const FAR_M = 200000;   // ~200 km standoff for “strategic” view
+
+                const d = Cesium.Cartesian3.distance(viewer.camera.positionWC, ground);
+
+                // normalize [0..1]
+                let t = (d - NEAR_M) / (FAR_M - NEAR_M);
+                t = Math.min(1, Math.max(0, t));
+
+                // This shape increases quickly near t=0, then flattens near t=1.
+                // When you zoom in (t decreases), it shrinks gradually at first, then steeply near close-up.
+                const easeOutCubic = (x: number) => 1 - Math.pow(1 - x, 3);
+
+                // Exponent < 1 makes it *more* aggressive near close-up (steeper shrink as you get very close)
+                const shaped = Math.pow(easeOutCubic(t), 2.5);
+
+                const baseM = BASE_MIN_M + (BASE_MAX_M - BASE_MIN_M) * shaped;
+
+
+                // Keep arms 22.5° off vertical (45° between arms)
+                const TAN_22_5 = 0.41421356237309503;
+                const halfWidthM = baseM * 0.5;
+                let heightM = halfWidthM / TAN_22_5;
+
+                // ---- cap height so the V ends below the icon ----
+                try {
+                    const u = unitMeta.get(unitId);
+                    const liftPx = Number((u as any)?.__iconLiftPx ?? 0) || 0;
+
+                    if (liftPx > 0) {
+                        // Convert pixels to meters at the ground point for current camera distance
+                        const w = viewer.scene.drawingBufferWidth || viewer.canvas.clientWidth;
+                        const h = viewer.scene.drawingBufferHeight || viewer.canvas.clientHeight;
+                        const mpp = viewer.camera.getPixelSize(new Cesium.BoundingSphere(ground, 1.0), w, h);
+
+                        if (typeof mpp === "number" && Number.isFinite(mpp) && mpp > 0) {
+                            const liftM = liftPx * mpp;
+
+                            // Keep pedestal top below the icon (85% of lift, with a small safety margin)
+                            const capM = Math.max(0.5, liftM * 0.85);
+                            heightM = Math.min(heightM, capM);
+                        }
+                    }
+                } catch { /* ignore */ }
+                const enu = Cesium.Transforms.eastNorthUpToFixedFrame(ground);
+
+                const leftTop = Cesium.Matrix4.multiplyByPoint(
+                    enu,
+                    new Cesium.Cartesian3(-halfWidthM, 0, heightM),
+                    new Cesium.Cartesian3(),
+                );
+
+                const rightTop = Cesium.Matrix4.multiplyByPoint(
+                    enu,
+                    new Cesium.Cartesian3(halfWidthM, 0, heightM),
+                    new Cesium.Cartesian3(),
+                );
+
+                // V-shape (left -> ground -> right)
+                return [leftTop, ground, rightTop];
+            } catch {
+                return undefined;
             }
-
-            const mPerPx = viewer.camera.getPixelSize(
-                new Cesium.BoundingSphere(ground, 1),
-                viewer.canvas.clientWidth,
-                viewer.canvas.clientHeight,
-            );
-
-            if (!mPerPx || !Number.isFinite(mPerPx)) return [ground];
-
-            const heightM = mPerPx * pedestalHpx;
-            const halfWidthM = mPerPx * (pedestalWpx / 2);
-
-            const enu = Cesium.Transforms.eastNorthUpToFixedFrame(ground);
-
-            const leftTop = Cesium.Matrix4.multiplyByPoint(
-                enu,
-                new Cesium.Cartesian3(-halfWidthM, 0, heightM),
-                new Cesium.Cartesian3(),
-            );
-
-            const rightTop = Cesium.Matrix4.multiplyByPoint(
-                enu,
-                new Cesium.Cartesian3(halfWidthM, 0, heightM),
-                new Cesium.Cartesian3(),
-            );
-
-            return [leftTop, ground, rightTop];
         }, false),
+
         width: 2,
         arcType: Cesium.ArcType.NONE,
         material: Cesium.Color.BLACK.withAlpha(0.55),
-        depthFailMaterial: Cesium.Color.BLACK.withAlpha(0.55),
+        depthFailMaterial: Cesium.Color.TRANSPARENT,
     });
-
-    // If this entity ever had a billboard, kill it so it can’t fight visuals
-    ent.billboard = undefined as any;
-    return ent;
 }
+
+
 
 
 
@@ -381,6 +437,13 @@ function isPedestalId(id: string) {
 }
 function baseIdFromPedestalId(id: string) {
     return id.slice(0, -PEDESTAL_SUFFIX.length);
+}
+
+function isPedestalLinesId(id: string) {
+    return id.endsWith(PEDESTAL_LINES_SUFFIX);
+}
+function baseIdFromPedestalLinesId(id: string) {
+    return id.slice(0, -PEDESTAL_LINES_SUFFIX.length);
 }
 
 function makePedestalSvgDataUrl(iconPx: number) {
@@ -404,6 +467,20 @@ function isToeUnderbarId(id: string) {
 function baseIdFromToeUnderbarId(id: string) {
     return id.slice(0, -TOE_UNDERBAR_SUFFIX.length);
 }
+
+function tagEntityWithUnitId(ent: any, unitId: string) {
+    try {
+        const props: any = ent?.properties;
+        if (!props) {
+            ent.properties = new Cesium.PropertyBag({ unitId: new Cesium.ConstantProperty(unitId) });
+        } else {
+            props.unitId = new Cesium.ConstantProperty(unitId);
+        }
+    } catch {
+        /* ignore */
+    }
+}
+
 
 function getScenarioUnitById(id: string): any {
     try {
@@ -479,13 +556,16 @@ function hideToeUnderbar(viewer: Cesium.Viewer, unitId: string) {
     const ub = viewer.entities.getById(ubId);
     if (ub) ub.show = false;
 
-    const pedId = pedestalIdForUnit(unitId);
-    const pedLines = viewer.entities.getById(pedestalLinesIdForUnit(unitId));
-    if (pedLines) pedLines.show = false;
+    // Pedestal is now attached to the UNIT entity (unitEnt.polyline),
+    // so we hide that instead of a separate pedestal-lines entity.
+    const unitEnt = viewer.entities.getById(unitId);
+    if (unitEnt && (unitEnt as any).__hasPedestalPolyline && unitEnt.polyline) {
+        (unitEnt.polyline as any).show = false;
+    }
 
     pedestalTipCache.delete(unitId);
+
     // Reset icon/label lift so we don’t leave the unit “floating”
-    const unitEnt = viewer.entities.getById(unitId);
     const u = unitMeta.get(unitId);
     if (unitEnt && u) {
         (u as any).__iconLiftPx = 0;
@@ -522,10 +602,10 @@ function updateToeUnderbarForUnit(
         pedestalH = pedH;
         upsertPedestalLines(viewer, unitEnt, u.id, pedW, pedH);
     } else {
-        const pl = viewer.entities.getById(pedestalLinesIdForUnit(unitId));
-        if (pl) pl.show = false;
+        if ((unitEnt as any).__hasPedestalPolyline && unitEnt.polyline) {
+            (unitEnt.polyline as any).show = false;
+        }
     }
-
     // ─────────────────────────────────────────────────────────────
     // 2) Compute pct using the scenario unitMap (authoritative)
     // ─────────────────────────────────────────────────────────────
@@ -596,6 +676,7 @@ function updateToeUnderbarForUnit(
 
 
     const ubEnt = viewer.entities.getById(ubId) ?? viewer.entities.add({ id: ubId });
+    tagEntityWithUnitId(ubEnt, u.id);
     ubEnt.position = unitEnt.position;
     ubEnt.orientation = undefined as any;
 
@@ -612,7 +693,7 @@ function updateToeUnderbarForUnit(
             verticalOrigin,
             pixelOffset,
             heightReference,
-            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+            disableDepthTestDistance: 0,
             scaleByDistance: new Cesium.NearFarScalar(800, 1.0, 2_000_000, 0.4),
             distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0.0, 10_000_000.0),
         });
@@ -623,7 +704,7 @@ function updateToeUnderbarForUnit(
         bb.heightReference = heightReference;
         bb.width = w;
         bb.height = h;
-        bb.disableDepthTestDistance = Number.POSITIVE_INFINITY;
+        bb.disableDepthTestDistance = 0;
     }
     const unitBB: any = unitEnt.billboard;
     const ubBB: any = ubEnt.billboard;
@@ -925,7 +1006,7 @@ function makeSideLabel(
         verticalOrigin: VerticalOrigin.BOTTOM,
         horizontalOrigin: hOrigin,
         pixelOffset: new Cartesian2(offsetX, pixelOffsetY),
-        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        disableDepthTestDistance: 0,
         distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0.0, 2_000_000.0),
         scaleByDistance: new Cesium.NearFarScalar(800, 1.1, 2_000_000, 0.5),
         translucencyByDistance: new Cesium.NearFarScalar(50_000, 1.0, 1_500_000, 0.4),
@@ -1034,7 +1115,7 @@ function installIconLiftTick(viewer: Cesium.Viewer, ent: Cesium.Entity, u: UnitR
             new Cesium.ConstantProperty(new Cesium.Cartesian2(0, -liftPx));
 
         // Keep terrain-safe behavior stable
-        (ent.billboard as any).disableDepthTestDistance = Number.POSITIVE_INFINITY;
+        (ent.billboard as any).disableDepthTestDistance = 0;
     };
 
     (ent as any).__iconLiftTick = tick;
@@ -1309,7 +1390,7 @@ function applyBillboardGraphics(ent: Cesium.Entity, u: UnitRenderable, viewer?: 
             verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
             horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
             heightReference: hRef,
-            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+            disableDepthTestDistance: 0,
             scaleByDistance: new Cesium.NearFarScalar(800.0, 1.0, 2_000_000.0, 0.5),
             distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0.0, 10_000_000.0),
         });
@@ -1540,7 +1621,7 @@ function applySidcChange(
                     (u.clampToGround !== false && (u.alt == null || u.alt === 0))
                         ? HeightReference.CLAMP_TO_GROUND
                         : HeightReference.RELATIVE_TO_GROUND,
-                disableDepthTestDistance: Number.POSITIVE_INFINITY,
+                disableDepthTestDistance: 50_000,
                 scaleByDistance: new Cesium.NearFarScalar(800, 1.0, 2_000_000, 0.4),
                 distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0.0, 10_000_000.0),
             });
@@ -1598,7 +1679,7 @@ function providerFromTemplate(
     let u = url;
     if (u.startsWith("//")) u = (location?.protocol ?? "https:") + u;
 
-    return new Cesium.UrlTemplateImageryProvider({
+    const provider = new Cesium.UrlTemplateImageryProvider({
         url: u,
         minimumLevel: minLevel,
         maximumLevel: maxLevel,
@@ -1606,7 +1687,38 @@ function providerFromTemplate(
         tilingScheme: geographic ? new Cesium.GeographicTilingScheme() : new Cesium.WebMercatorTilingScheme(),
         subdomains: typeof subdomains === "string" ? subdomains.split("") : subdomains,
     });
+
+    // --- Resilience: return a transparent tile instead of rejecting ---
+    // This prevents Cesium from spamming “Failed to obtain image tile…”
+    // for sparse/partial overlays and transient fetch failures.
+    const blankCanvas = (() => {
+        const c = document.createElement("canvas");
+        c.width = 256;
+        c.height = 256;
+        return c;
+    })();
+
+    const origRequestImage = provider.requestImage?.bind(provider);
+    provider.requestImage = async (x: number, y: number, level: number, request?: any) => {
+        try {
+            // Hard clamp at runtime too (defensive)
+            const minL = (provider as any).minimumLevel ?? minLevel;
+            const maxL = (provider as any).maximumLevel ?? maxLevel;
+            if (typeof minL === "number" && level < minL) return blankCanvas;
+            if (typeof maxL === "number" && level > maxL) return blankCanvas;
+
+            const img = await origRequestImage?.(x, y, level, request);
+            return (img as any) || blankCanvas;
+        } catch {
+            return blankCanvas;
+        }
+    };
+
+    return provider;
 }
+
+
+
 
 export function createGlobeAdapter(): GlobePort {
     let api: GlobeApi | null = null;
@@ -1682,6 +1794,18 @@ export function createGlobeAdapter(): GlobePort {
             entities.set(u.id, ent);
             unitMeta.set(u.id, u);
 
+            // Make the entity reliably pickable by external click-selection bridges.
+            // (Some Cesium pick results hand back primitives, but Entities are always reachable
+            // through picked.id; giving them a unitId property makes the bridge more robust.)
+            try {
+                const props: any = (ent as any).properties;
+                if (!props) {
+                    (ent as any).properties = new Cesium.PropertyBag({ unitId: new Cesium.ConstantProperty(u.id) });
+                } else {
+                    (props as any).unitId = new Cesium.ConstantProperty(u.id);
+                }
+            } catch { /* ignore */ }
+
             // Resolve the event SIDC *now* so initial billboard uses it
             const tNow = currentViewerMs(viewer);
             const sidcNow = tNow != null ? lastSidcAtOrBefore((u as any).__sourceUnit ?? u, tNow) : undefined;
@@ -1722,6 +1846,12 @@ export function createGlobeAdapter(): GlobePort {
             // Keep pedestal entities if their base unit is still present
             if (isPedestalId(id)) {
                 const baseId = baseIdFromPedestalId(id);
+                if (seen.has(baseId)) return;
+            }
+
+            // Keep pedestal LINE entities if their base unit is still present
+            if (isPedestalLinesId(id)) {
+                const baseId = baseIdFromPedestalLinesId(id);
                 if (seen.has(baseId)) return;
             }
             if (!seen.has(id)) toRemove.push(id);
@@ -2743,16 +2873,14 @@ setSurfaceHeightSampler(sampleSurfaceHeightMeters);
                 if (existing) {
                     if (typeof opts?.alpha === "number") existing.alpha = opts.alpha;
                     existing.show = true;
+                    api.viewer.imageryLayers.raiseToTop(existing);
                     api.viewer.scene.requestRender();
                     return;
                 }
 
                 const provider = providerFromTemplate(url, opts);
                 const layer = api.viewer.imageryLayers.addImageryProvider(provider);
-                if (typeof opts?.alpha === "number") layer.alpha = opts.alpha;
-                layer.show = true;
-                overlayLayers.set(id, layer);
-                api.viewer.scene.requestRender();
+                api.viewer.imageryLayers.raiseToTop(layer);
             } catch (e) {
                 console.error("[GlobeAdapter] addOverlayTemplate failed:", e);
             }
@@ -2773,7 +2901,10 @@ setSurfaceHeightSampler(sampleSurfaceHeightMeters);
             const layer = overlayLayers.get(id);
             if (!layer) return;
             layer.show = !!show;
-            if (show) layer.alpha = Math.max(0.0, layer.alpha ?? 1.0);
+            if (show) {
+                layer.alpha = Math.max(0.0, layer.alpha ?? 1.0);
+                api!.viewer.imageryLayers.raiseToTop(layer);
+            }
             api!.viewer.scene.requestRender();
         },
 

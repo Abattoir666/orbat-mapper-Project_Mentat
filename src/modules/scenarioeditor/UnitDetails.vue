@@ -63,6 +63,7 @@
     import UnitDetailsPersonnel from "@/modules/scenarioeditor/Personnel/UnitDetailsPersonnel.vue";
     import { useAltitudeIndicator } from "@/composables/useAltitudeIndicator";
     import type { Position } from "geojson";
+    import { useInteractionAdapter } from "@/modules/threeDView/handling/interactionAdapter";
 
     const { format: formatAlt } = useAltitudeIndicator();
 
@@ -70,7 +71,28 @@
         () => import("@/modules/scenarioeditor/FeatureTransformations.vue"),
     );
 
-    const props = defineProps<{ unitId: EntityId }>();
+    const props = withDefaults(
+        defineProps<{
+            unitId: EntityId;
+
+            // Keep if you still want placement control, but not required for “on top of panel” behavior.
+            actionsMenuSide?: "top" | "bottom" | "left" | "right";
+
+            // Style passthroughs for GlobeView
+            actionsMenuClass?: string;
+            actionsItemClass?: string;
+            actionsButtonClass?: string;
+            actionsCaretButtonClass?: string;
+        }>(),
+        {
+            actionsMenuSide: "bottom",
+            actionsMenuClass: "",
+            actionsItemClass: "",
+            actionsButtonClass: "",
+            actionsCaretButtonClass: "",
+        },
+    );
+
     const activeScenario = injectStrict(activeScenarioKey);
     const {
         store,
@@ -140,6 +162,7 @@
     const isLocked = computed(() => isUnitLocked(props.unitId));
 
     const geoStore = useGeoStore();
+    const hasActiveMap = computed(() => !!geoStore.olMap);
 
     function toLonLat2D(pos: Position): [number, number] {
         return [pos[0] as number, pos[1] as number];
@@ -255,11 +278,48 @@
 
     const unitSidc = computed(() => unit.value._state?.sidc || unit.value.sidc);
 
-    const {
-        start: startGetLocation,
-        isActive: isGetLocationActive,
-        onGetLocation,
-    } = useGetMapLocation(geoStore.olMap as OLMap);
+    const mapLocation =
+        geoStore.olMap
+            ? useGetMapLocation(geoStore.olMap)
+            : {
+                isActive: ref(false),
+                start: () => { },
+                cancel: () => { },
+                onGetLocation: (_cb: (loc: any) => void) => { }, // <-- add this
+            };
+
+    const _locHandlers = new Set<(pos: any) => void>();
+    function onGetLocation(cb: (pos: any) => void) {
+        _locHandlers.add(cb);
+    }
+
+    const isGetLocationActive = ref(false);
+    let startGetLocation: () => void;
+
+    if (geoStore.olMap) {
+        // 2D mode
+        const mapLoc = useGetMapLocation(geoStore.olMap as OLMap);
+        startGetLocation = mapLoc.start;
+
+        watch(mapLoc.isActive, (v) => { isGetLocationActive.value = v; }, { immediate: true });
+
+        mapLoc.onGetLocation((pos) => {
+            _locHandlers.forEach((h) => h(pos));
+        });
+    } else {
+        // 3D mode (Cesium)
+        const ia = useInteractionAdapter();
+        startGetLocation = () => {
+            ia.requestLocationPick((pos) => {
+                _locHandlers.forEach((h) => h(pos));
+            });
+        };
+
+        watch(ia.isPickingLocation, (v) => { isGetLocationActive.value = v; }, { immediate: true });
+    }
+
+
+
     const { selectedUnitIds, clear: clearSelection } = useSelectedItems();
     const isMultiMode = computed(() => selectedUnitIds.value.size > 1);
     const selectedUnits = computed(() =>
@@ -504,7 +564,7 @@
 
                     <IconButton @click="startGetLocation()"
                                 title="Set unit location"
-                                :disabled="isMultiMode || isLocked">
+                                :disabled="isMultiMode || isLocked || !hasActiveMap">
                         <IconCrosshairsGps class="size-5" aria-hidden="true" />
                     </IconButton>
                     <IconButton title="Show in ORBAT"
@@ -515,6 +575,11 @@
                     <SplitButton class="ml-1"
                                  triggerClass="max-w-24"
                                  :items="buttonItems"
+                                 :menuSide="props.actionsMenuSide"
+                                 :menuClass="props.actionsMenuClass"
+                                 :itemClass="props.actionsItemClass"
+                                 :buttonClass="props.actionsButtonClass"
+                                 :caretButtonClass="props.actionsCaretButtonClass"
                                  v-model:active-item="uiStore.activeItem" />
                 </div>
                 <div>
@@ -633,3 +698,34 @@
                       @keyup.e="toggleEditMode()" />
     </div>
 </template>
+<style scoped>
+     /* Unit action dropdowns (SplitButton / DotsMenu):
+    force black text on your light-grey menu background */
+
+     /* Menu panels */
+     :deep([role="menu"]),
+     :deep([role="listbox"]) {
+         background-color: #e5e7eb !important; /* same grey as sides (gray-200) */
+         color: #000 !important;
+     }
+
+     /* Everything inside the menu panel */
+     :deep([role="menu"] *),
+     :deep([role="listbox"] *) {
+         color: #000 !important;
+     }
+
+     /* Individual items */
+     :deep([role="menuitem"]),
+     :deep([role="option"]) {
+         color: #000 !important;
+     }
+
+     /* Hover/active state (optional but makes it feel “2D-like”) */
+     :deep([role="menuitem"]:hover),
+     :deep([role="option"]:hover),
+     :deep([role="menuitem"][data-headlessui-state~="active"]),
+     :deep([role="option"][data-headlessui-state~="active"]) {
+         background-color: rgba(0, 0, 0, 0.08) !important;
+     }
+</style>
