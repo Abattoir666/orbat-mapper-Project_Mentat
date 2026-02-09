@@ -44,6 +44,7 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   (e: "select", action: unknown, item: MenuItemData): void;
+  (e: "action", action: unknown, item: MenuItemData): void;
 }>();
 
 const { items, layout, columns, maxHeightPx, disabled, title, size } = toRefs(props);
@@ -89,8 +90,9 @@ function onItemClick(item: MenuItemData) {
     return;
   }
 
-  emit("select", action, item);
-  isOpen.value = false;
+    emit("select", action, item); // backward-compatible
+    emit("action", action, item); // what OrbatTreeItem / UnitPanelState listen to
+    isOpen.value = false;
 }
 </script>
 

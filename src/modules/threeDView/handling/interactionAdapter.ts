@@ -21,14 +21,35 @@ export interface InteractionAdapter {
 export const interactionAdapterKey: InjectionKey<InteractionAdapter> =
   Symbol("mentatInteractionAdapter");
 
+/**
+ * Some UI (toolbars, dock panels) may not be descendants of GlobeView,
+ * so Vue inject() can legitimately fail in 3D mode. We keep a global fallback.
+ */
+let globalAdapter: InteractionAdapter | null = null;
+
+function getViewerFromWindow(): Cesium.Viewer | undefined {
+  const g: any = (globalThis as any).MentatGlobe;
+  return (g?.getViewer?.() ?? g?.viewer) as Cesium.Viewer | undefined;
+}
+
 export function provideInteractionAdapter(adapter: InteractionAdapter) {
   provide(interactionAdapterKey, adapter);
+  // Also store globally so non-descendant components can still pick locations.
+  globalAdapter = adapter;
 }
 
 export function useInteractionAdapter(): InteractionAdapter {
   const a = inject(interactionAdapterKey, null);
-  if (!a) throw new Error("InteractionAdapter not provided");
-  return a;
+  if (a) return a;
+
+  // Fallback: create a singleton Cesium-backed adapter using window.MentatGlobe viewer.
+  if (!globalAdapter) {
+    globalAdapter = createCesiumInteractionAdapter(() => getViewerFromWindow());
+    console.warn(
+      "[InteractionAdapter] Not provided via inject(); using window.MentatGlobe fallback."
+    );
+  }
+  return globalAdapter;
 }
 
 /**
@@ -63,7 +84,10 @@ export function createCesiumInteractionAdapter(
 
   function requestLocationPick(cb: (pos: GlobePickPosition) => void) {
     const viewer = getViewer();
-    if (!viewer) return;
+    if (!viewer) {
+      console.warn("[InteractionAdapter] requestLocationPick called but viewer is unavailable");
+      return;
+    }
 
     cancelLocationPick();
     isPickingLocation.value = true;
@@ -89,6 +113,8 @@ export function createCesiumInteractionAdapter(
           const alt = Number.isFinite(carto.height) ? carto.height : 0;
 
           cb([lon, lat, alt]);
+        } catch (e) {
+          console.warn("[InteractionAdapter] pick failed:", e);
         } finally {
           cancelLocationPick();
         }
@@ -96,7 +122,10 @@ export function createCesiumInteractionAdapter(
       Cesium.ScreenSpaceEventType.LEFT_CLICK
     );
 
-    handler.setInputAction(() => cancelLocationPick(), Cesium.ScreenSpaceEventType.RIGHT_CLICK);
+    handler.setInputAction(
+      () => cancelLocationPick(),
+      Cesium.ScreenSpaceEventType.RIGHT_CLICK
+    );
   }
 
   return { isPickingLocation, requestLocationPick, cancelLocationPick };

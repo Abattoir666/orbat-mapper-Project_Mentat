@@ -27,6 +27,8 @@
     import type { ScenarioEventCategory } from "@/modules/scenarioeditor/ExtendedScenarioEvents/eventIconRegistry";
     import { useScenarioEventLocation } from "@/modules/scenarioeditor/ExtendedScenarioEvents/useScenarioEventLocation";
     import ScenarioEventUnitsTab from "@/modules/scenarioeditor/ExtendedScenarioEvents/ScenarioEventUnitsTab.vue";
+    import { useScenarioEventLocation3D } from "@/modules/threeDView/objects/ScenarioEvents3D/useScenarioEventLocation3D";
+
 
     interface Props {
         eventId: EntityId;
@@ -49,8 +51,28 @@
     const scenarioEvent = computed(() => time.getEventById(props.eventId));
 
     // ---- Location picker + display ----
-    const { startGetLocation, eventLocation, formattedLocation, panToEventLocation } =
-        useScenarioEventLocation(props.eventId);
+    // NOTE: In 3D there is no OL map target element, so useScenarioEventLocation() can throw.
+    // We guard it so ScenarioEventDetails can render in the 3D dock.
+    let startGetLocation: any = () => { };
+    let eventLocation: any = ref(null);
+    let formattedLocation: any = computed(() => "");
+    let panToEventLocation: any = async () => { };
+
+    const hasGlobeViewer = !!(window as any)?.MentatGlobe?.viewer;
+
+    if (hasGlobeViewer) {
+        const loc3d = useScenarioEventLocation3D(String(props.eventId)) as any;
+        startGetLocation = loc3d.startGetLocation;
+        eventLocation = loc3d.eventLocation;
+        formattedLocation = loc3d.formattedLocation;
+        panToEventLocation = loc3d.panToEventLocation;
+    } else {
+        const loc2d = useScenarioEventLocation(props.eventId) as any;
+        startGetLocation = loc2d.startGetLocation;
+        eventLocation = loc2d.eventLocation;
+        formattedLocation = loc2d.formattedLocation;
+        panToEventLocation = loc2d.panToEventLocation;
+    }
 
     const hasEventLocation = computed(() => !!unref(eventLocation));
 
@@ -510,7 +532,10 @@
 <template>
     <div v-if="scenarioEvent">
         <header class="flex flex-col gap-1">
-            <EditableLabel v-model="title" @updateValue="updateTitle" />
+            <div class="eventTitleCenter">
+                <EditableLabel v-model="title" @updateValue="updateTitle" />
+            </div>
+
             <nav class="mt-1 flex items-center justify-between gap-2">
                 <div class="text-xs font-medium text-muted-foreground">
                     {{ formattedEventTime }}
@@ -696,7 +721,14 @@ https://t.me/channel/123 | Description / transcript / context" />
                     </div>
 
                     <DescriptionItem label="Event type">
-                        <SimpleSelect :modelValue="category" :items="categoryOptions" @update:modelValue="updateCategory" />
+                        <div class="eventTypeSelect">
+                            <SimpleSelect :modelValue="category"
+                                          :items="categoryOptions"
+                                          @update:modelValue="updateCategory"
+                                          triggerClass="border-white/25 hover:bg-black/40 focus-visible:ring-white/20"
+                                          triggerStyle="color: rgba(255,255,255,0.92); background: rgba(0,0,0,0.35);" />
+
+                        </div>
                     </DescriptionItem>
 
                     <DescriptionItem label="Location">
@@ -757,3 +789,63 @@ https://t.me/channel/123 | Description / transcript / context" />
         No event selected.
     </div>
 </template>
+
+<style scoped>
+     .eventTitleCenter {
+         width: 100%;
+         text-align: center;
+     }
+
+         /* EditableLabel implementations vary (input/contenteditable/etc).
+    These cover the usual cases without needing to edit EditableLabel.vue. */
+         .eventTitleCenter :deep(input),
+         .eventTitleCenter :deep(textarea),
+         .eventTitleCenter :deep([contenteditable="true"]),
+         .eventTitleCenter :deep(h1),
+         .eventTitleCenter :deep(h2),
+         .eventTitleCenter :deep(.editable-label) {
+             text-align: center;
+         }
+
+         /* If EditableLabel uses an inline element, this helps it center */
+         .eventTitleCenter :deep(*) {
+             margin-left: auto;
+             margin-right: auto;
+         }
+
+    /* Force the SimpleSelect trigger to look correct on the dark 3D dock */
+    .eventTypeSelect3D :deep(button),
+    .eventTypeSelect3D :deep([role="button"]),
+    .eventTypeSelect3D :deep(select) {
+        background: rgba(255, 255, 255, 0.06) !important;
+        border: 1px solid rgba(255, 255, 255, 0.18) !important;
+        color: rgba(255, 255, 255, 0.88) !important;
+    }
+
+    /* If the trigger text uses muted-foreground, override it */
+    .eventTypeSelect3D :deep(.text-muted-foreground),
+    .eventTypeSelect3D :deep([data-muted="true"]) {
+        color: rgba(255, 255, 255, 0.78) !important;
+    }
+
+    /* Hover/focus states */
+    .eventTypeSelect3D :deep(button:hover),
+    .eventTypeSelect3D :deep([role="button"]:hover),
+    .eventTypeSelect3D :deep(select:hover) {
+        background: rgba(255, 255, 255, 0.10) !important;
+    }
+
+    .eventTypeSelect3D :deep(button:focus),
+    .eventTypeSelect3D :deep([role="button"]:focus),
+    .eventTypeSelect3D :deep(select:focus) {
+        outline: none !important;
+        box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.12) !important;
+    }
+
+    /* Native select options need a solid-ish background */
+    .eventTypeSelect3D :deep(option) {
+        background: rgba(15, 15, 15, 0.98);
+        color: rgba(255, 255, 255, 0.9);
+    }
+
+</style>

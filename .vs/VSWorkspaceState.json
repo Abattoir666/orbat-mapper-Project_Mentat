@@ -2,15 +2,15 @@
   "ExpandedNodes": [
     "",
     "\\src",
-    "\\src\\geo",
+    "\\src\\components",
+    "\\src\\importexport",
     "\\src\\modules",
-    "\\src\\modules\\scenarioeditor",
-    "\\src\\modules\\scenarioeditor\\Personnel",
     "\\src\\modules\\threeDView",
-    "\\src\\modules\\threeDView\\hydrography",
-    "\\src\\scenariostore",
-    "\\src\\stores"
+    "\\src\\modules\\threeDView\\3dUrban",
+    "\\src\\symbology",
+    "\\src\\symbology\\standards",
+    "\\src\\symbology\\underbars"
   ],
-  "SelectedNode": "\\src\\modules\\threeDView\\hydrography\\gebcoOverlay.ts",
+  "SelectedNode": "\\src\\modules\\threeDView\\globeAdapter.ts",
   "PreviewInSolutionExplorer": false
 }

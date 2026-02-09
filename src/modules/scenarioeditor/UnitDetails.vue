@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
     import {
         computed,
         defineAsyncComponent,
@@ -61,38 +61,14 @@
     import MilSymbol from "@/components/MilSymbol.vue";
     import UnitDetailsLeaders from "@/modules/scenarioeditor/Leaders/UnitDetailsLeaders.vue";
     import UnitDetailsPersonnel from "@/modules/scenarioeditor/Personnel/UnitDetailsPersonnel.vue";
-    import { useAltitudeIndicator } from "@/composables/useAltitudeIndicator";
     import type { Position } from "geojson";
     import { useInteractionAdapter } from "@/modules/threeDView/handling/interactionAdapter";
-
-    const { format: formatAlt } = useAltitudeIndicator();
 
     const FeatureTransformations = defineAsyncComponent(
         () => import("@/modules/scenarioeditor/FeatureTransformations.vue"),
     );
 
-    const props = withDefaults(
-        defineProps<{
-            unitId: EntityId;
-
-            // Keep if you still want placement control, but not required for “on top of panel” behavior.
-            actionsMenuSide?: "top" | "bottom" | "left" | "right";
-
-            // Style passthroughs for GlobeView
-            actionsMenuClass?: string;
-            actionsItemClass?: string;
-            actionsButtonClass?: string;
-            actionsCaretButtonClass?: string;
-        }>(),
-        {
-            actionsMenuSide: "bottom",
-            actionsMenuClass: "",
-            actionsItemClass: "",
-            actionsButtonClass: "",
-            actionsCaretButtonClass: "",
-        },
-    );
-
+    const props = defineProps<{ unitId: EntityId }>();
     const activeScenario = injectStrict(activeScenarioKey);
     const {
         store,
@@ -121,8 +97,6 @@
     const isDragged = ref(false);
     const elRef = useTemplateRef("elRef");
 
-    const uiStore = useUiStore();
-
     const tabList = computed(() =>
         uiStore.debugMode
             ? [
@@ -130,7 +104,7 @@
                 "Map symbol",
                 "Unit state",
                 "Leaders",
-                "Personnel", // <-- add
+                "Personnel",
                 { label: "TO&E/S", title: "Table of organization, equipment and supplies" },
                 "Map display",
                 "Properties",
@@ -142,7 +116,7 @@
                 "Map symbol",
                 "Unit state",
                 "Leaders",
-                "Personnel", // <-- add
+                "Personnel",
                 { label: "TO&E/S", title: "Table of organization, equipment and supplies" },
                 "Map display",
                 "Properties",
@@ -154,6 +128,21 @@
         return getUnitById(props.unitId);
     });
 
+    const initialLocation = computed<Position | null>(() => {
+        const st: any[] = (unit.value as any)?.state ?? [];
+        let best: any = null;
+
+        for (const e of st) {
+            if (!e || !e.location) continue;
+            const t = Number(e.t);
+            if (!Number.isFinite(t)) continue;
+
+            if (!best || t < Number(best.t)) best = e;
+        }
+
+        return (best?.location as Position) ?? ((unit.value as any)?.location ?? null);
+    });
+
     const unitStatus = computed(() => {
         const status = unit.value._state?.status || unit.value.status;
         return status ? unitStatusMap[status]?.name : undefined;
@@ -162,24 +151,6 @@
     const isLocked = computed(() => isUnitLocked(props.unitId));
 
     const geoStore = useGeoStore();
-    const hasActiveMap = computed(() => !!geoStore.olMap);
-
-    function toLonLat2D(pos: Position): [number, number] {
-        return [pos[0] as number, pos[1] as number];
-    }
-
-    /**
-     * "Current position at current scenario time".
-     * - If _state.location is null => explicitly removed from map at this time
-     * - If _state.location is undefined => fallback to initial unit.location
-     */
-    const currentLocation = computed<Position | null | undefined>(() => {
-        const stLoc = (unit.value as any)?._state?.location as Position | null | undefined;
-        if (stLoc === null) return null;
-        if (stLoc !== undefined) return stLoc;
-        return (unit.value as any)?.location as Position | undefined;
-    });
-
     const unitSettings = useUnitSettingsStore();
     const { getModalSidc } = injectStrict(sidcModalKey);
 
@@ -246,7 +217,6 @@
         },
         { immediate: true },
     );
-
     watch(
         () => unit.value?.shortName,
         () => {
@@ -254,15 +224,13 @@
         },
         { immediate: true },
     );
-
     watch(
-        () => unit.value?.unitNumber,
+        () => (unit.value as any)?.unitNumber,
         () => {
-            unitNumber.value = unit.value?.unitNumber || "";
+            unitNumber.value = (unit.value as any)?.unitNumber || "";
         },
         { immediate: true },
     );
-
     watch(
         () => unitSettings.editHistory,
         (v) => {
@@ -278,30 +246,26 @@
 
     const unitSidc = computed(() => unit.value._state?.sidc || unit.value.sidc);
 
-    const mapLocation =
-        geoStore.olMap
-            ? useGetMapLocation(geoStore.olMap)
-            : {
-                isActive: ref(false),
-                start: () => { },
-                cancel: () => { },
-                onGetLocation: (_cb: (loc: any) => void) => { }, // <-- add this
-            };
-
     const _locHandlers = new Set<(pos: any) => void>();
     function onGetLocation(cb: (pos: any) => void) {
         _locHandlers.add(cb);
     }
 
     const isGetLocationActive = ref(false);
-    let startGetLocation: () => void;
+    let startGetLocation: () => void = () => { };
 
     if (geoStore.olMap) {
-        // 2D mode
+        // 2D mode (OpenLayers)
         const mapLoc = useGetMapLocation(geoStore.olMap as OLMap);
         startGetLocation = mapLoc.start;
 
-        watch(mapLoc.isActive, (v) => { isGetLocationActive.value = v; }, { immediate: true });
+        watch(
+            mapLoc.isActive,
+            (v) => {
+                isGetLocationActive.value = v;
+            },
+            { immediate: true },
+        );
 
         mapLoc.onGetLocation((pos) => {
             _locHandlers.forEach((h) => h(pos));
@@ -310,18 +274,35 @@
         // 3D mode (Cesium)
         const ia = useInteractionAdapter();
         startGetLocation = () => {
+            isGetLocationActive.value = true;
             ia.requestLocationPick((pos) => {
-                _locHandlers.forEach((h) => h(pos));
+                try {
+                    _locHandlers.forEach((h) => h(pos));
+                } finally {
+                    isGetLocationActive.value = false;
+                }
             });
         };
-
-        watch(ia.isPickingLocation, (v) => { isGetLocationActive.value = v; }, { immediate: true });
     }
 
-
-
+    const uiStore = useUiStore();
     const { selectedUnitIds, clear: clearSelection } = useSelectedItems();
     const isMultiMode = computed(() => selectedUnitIds.value.size > 1);
+
+
+    onGetLocation((location) => {
+        const pos = location as Position;
+
+        if (isMultiMode.value) {
+            store.groupUpdate(() => {
+                selectedUnitIds.value.forEach((id) => addUnitPosition(String(id), pos));
+            });
+            return;
+        }
+
+        addUnitPosition(props.unitId, pos);
+    });
+
     const selectedUnits = computed(() =>
         [...selectedUnitIds.value].map((id) => getUnitById(id)),
     );
@@ -336,13 +317,22 @@
     const isTruncated = computed(
         () => selectedUnits.value.length > visibleSelectedUnits.value.length,
     );
-
-    onGetLocation((location) => addUnitPosition(props.unitId, location));
     const isEditMode = ref(false);
     const toggleEditMode = useToggle(isEditMode);
 
     const isEditMediaMode = ref(false);
     const toggleEditMediaMode = useToggle(isEditMediaMode);
+
+    function commitUnitField(field: "name" | "shortName" | "unitNumber", nextRaw: any) {
+        const next = (nextRaw ?? "").toString();
+        const cur = ((unit.value as any)?.[field] ?? "").toString();
+
+        // Prevent redundant updates that cause label redraw "twitch"
+        if (next === cur) return;
+
+        updateUnit(props.unitId, { [field]: next } as any);
+    }
+
 
     const onFormSubmit = (unitUpdate: UnitUpdate) => {
         updateUnit(props.unitId, unitUpdate);
@@ -391,7 +381,52 @@
 
     const { onUnitAction } = useUnitActions();
 
+    function tryZoom3D(units: any | any[]): boolean {
+        const g: any = (window as any)?.MentatGlobe;
+        if (!g || typeof g.flyToLatLon !== "function") return false;
+
+        const arr = Array.isArray(units) ? units : [units];
+
+        const pts = arr
+            .map((u) => (u as any)?._state?.location ?? (u as any)?.location ?? null)
+            .filter(Boolean) as Position[];
+
+        if (!pts.length) return false;
+
+        // If multiple, fly to the centroid. If single, fly to that point.
+        let lon = pts[0][0];
+        let lat = pts[0][1];
+
+        if (pts.length > 1) {
+            let minLon = lon, maxLon = lon, minLat = lat, maxLat = lat;
+            for (const p of pts) {
+                minLon = Math.min(minLon, p[0]);
+                maxLon = Math.max(maxLon, p[0]);
+                minLat = Math.min(minLat, p[1]);
+                maxLat = Math.max(maxLat, p[1]);
+            }
+            lon = (minLon + maxLon) / 2;
+            lat = (minLat + maxLat) / 2;
+        }
+
+        // Height heuristic (meters): closer for single unit, higher for multi-selection
+        const height = pts.length > 1 ? 200000 : 12000;
+
+        g.flyToLatLon(lon, lat, height);
+        return true;
+    }
+
     function actionWrapper(action: UnitAction) {
+        // 3D zoom fallback: use Cesium camera if available
+        if (action === UnitActions.Zoom) {
+            if (isMultiMode.value) {
+                if (tryZoom3D(selectedUnits.value)) return;
+            } else {
+                if (tryZoom3D(unit.value)) return;
+            }
+            // if not in 3D / no positions, fall through to 2D behavior
+        }
+
         if (isMultiMode.value) {
             onUnitAction(selectedUnits.value, action);
             return;
@@ -489,105 +524,160 @@
 
     function locateInOrbat() {
         onUnitSelectHook.trigger({ unitId: props.unitId, options: { noZoom: true } });
-    }</script>
+    }
+</script>
 <template>
     <div v-if="unit" class="@container" :key="unit.id">
         <ItemMedia v-if="media" :media="media" />
         <header class="-mx-4 px-2 pt-2">
-            <div v-if="!isMultiMode" class="flex">
-                <button type="button"
-                        class="mr-2 inline-flex h-20 w-16 shrink-0 justify-center"
-                        @click="handleChangeSymbol()"
-                        ref="elRef">
-                    <MilitarySymbol :sidc="unitSidc" :size="34" :options="combinedSymbolOptions" />
-                </button>
-                <div class="-mt-1.5 flex-auto pr-4">
-                    <EditableLabel v-model="unitName"
-                                   @update-value="updateUnit(unitId, { name: $event })"
-                                   class="relative z-10 bg-transparent"
-                                   :disabled="isLocked" />
-                    <EditableLabel class="relative -top-4"
-                                   v-model="shortName"
-                                   @update-value="updateUnit(unitId, { shortName: $event })"
-                                   text-class="text-sm text-gray-500 dark:text-slate-300"
-                                   :disabled="isLocked" />
-                    <EditableLabel class="relative -top-4"
-                                   v-model="unitNumber"
-                                   @update-value="updateUnit(unitId, { unitNumber: $event })"
-                                   text-class="text-sm text-gray-500 dark:text-slate-300"
-                                   :disabled="isLocked" />
-                </div>
-                <IconLockOutline v-if="isLocked" class="size-5 text-gray-400" />
-                <div v-if="unitStatus">
-                    <span class="inline-flex items-center rounded-full bg-gray-50 px-2 py-1 text-xs font-medium text-gray-600 ring-1 ring-gray-500/10 ring-inset">{{ unitStatus }}</span>
-                </div>
-            </div>
-            <div v-else>
-                <div class="flex items-center justify-between">
-                    <p class="font-medium">{{ selectedUnitIds.size }} units selected</p>
-                    <Button type="button" size="sm" variant="outline" @click="clearSelection()">
-                        Clear
-                    </Button>
-                </div>
-                <ul class="relative my-4 flex w-full flex-wrap gap-1 pb-4">
-                    <li v-for="sUnit in visibleSelectedUnits" class="relative flex">
-                        <MilitarySymbol :sidc="sUnit.sidc"
-                                        :size="24"
-                                        class="block"
-                                        :options="{ ...getCombinedSymbolOptions(sUnit), outlineWidth: 8 }" />
-                        <span v-if="sUnit._state?.location" class="text-red-700">&deg;</span>
-                    </li>
-                    <li v-if="isTruncated">
+            <div class="flex flex-col">
+                <!-- Row 1: SIDC + editable fields (discrete row) -->
+                <div class="mb-3">
+                    <div v-if="!isMultiMode" class="flex items-start gap-3">
+                        <!-- Bigger SIDC box -->
                         <button type="button"
-                                class="bg-opacity-80 absolute right-0 bottom-0 left-0 border bg-white p-2 text-center text-gray-600"
-                                @click="truncateUnits = !truncateUnits">
-                            +{{ selectedUnits.length - visibleSelectedUnits.length }}
+                                class="inline-flex h-24 w-20 shrink-0 items-center justify-center rounded-md"
+                                @click="handleChangeSymbol()"
+                                ref="elRef">
+                            <MilitarySymbol :sidc="unitSidc" :size="46" :options="combinedSymbolOptions" />
                         </button>
-                    </li>
-                </ul>
-            </div>
-            <nav class="-mt-4 mb-4 flex items-center justify-between">
-                <div class="flex items-center gap-0.5">
-                    <IconButton title="Zoom to" @click="actionWrapper(UnitActions.Zoom)">
-                        <ZoomIcon class="size-5" />
-                    </IconButton>
-                    <IconButton title="Edit unit"
-                                @click="toggleEditMode()"
-                                :disabled="isMultiMode || isLocked">
-                        <EditIcon class="size-5" />
-                    </IconButton>
-                    <IconButton title="Add/modify unit image"
-                                @click="toggleEditMediaMode()"
-                                :disabled="isMultiMode || isLocked">
-                        <ImageIcon class="size-5" />
-                    </IconButton>
 
-                    <IconButton @click="startGetLocation()"
-                                title="Set unit location"
-                                :disabled="isMultiMode || isLocked || !hasActiveMap">
-                        <IconCrosshairsGps class="size-5" aria-hidden="true" />
-                    </IconButton>
-                    <IconButton title="Show in ORBAT"
-                                :disabled="isMultiMode"
-                                @click="locateInOrbat()">
-                        <TreeLocateIcon class="size-5" aria-hidden="true" />
-                    </IconButton>
-                    <SplitButton class="ml-1"
-                                 triggerClass="max-w-24"
-                                 :items="buttonItems"
-                                 :menuSide="props.actionsMenuSide"
-                                 :menuClass="props.actionsMenuClass"
-                                 :itemClass="props.actionsItemClass"
-                                 :buttonClass="props.actionsButtonClass"
-                                 :caretButtonClass="props.actionsCaretButtonClass"
-                                 v-model:active-item="uiStore.activeItem" />
+                        <!-- Fields (full width to the right of SIDC) -->
+                        <div class="flex-auto pr-4">
+                            <div class="grid w-full">
+                                <!-- Name -->
+                                <div class="relative w-full min-h-8">
+                                    <span v-if="!unitName"
+                                          class="pointer-events-none absolute inset-0 flex items-center justify-center text-sm text-gray-400 dark:text-slate-500">
+                                        Name
+                                    </span>
+                                    <EditableLabel v-model="unitName"
+                                                   @update-value="commitUnitField('name', $event)"
+                                                   class="relative z-10 w-full bg-transparent"
+                                                   text-class="text-sm font-semibold text-gray-700 dark:text-slate-100"
+                                                   :disabled="isLocked" />
+                                </div>
+
+                                <!-- Short name -->
+                                <div class="relative w-full min-h-6">
+                                    <span v-if="!shortName"
+                                          class="pointer-events-none absolute inset-0 flex items-center justify-center text-xs text-gray-400 dark:text-slate-500">
+                                        Short name
+                                    </span>
+                                    <EditableLabel v-model="shortName"
+                                                   @update-value="commitUnitField('shortName', $event)"
+                                                   class="relative z-10 w-full bg-transparent"
+                                                   text-class="text-sm font-semibold text-gray-700 dark:text-slate-100"
+                                                   :disabled="isLocked" />
+                                </div>
+
+                                <!-- Unit number -->
+                                <div class="relative w-full min-h-6">
+                                    <span v-if="!unitNumber"
+                                          class="pointer-events-none absolute inset-0 flex items-center justify-center text-xs text-gray-400 dark:text-slate-500">
+                                        Unit number
+                                    </span>
+                                    <EditableLabel v-model="unitNumber"
+                                                   @update-value="commitUnitField('shortName', $event)"
+                                                   class="relative z-10 w-full bg-transparent"
+                                                   text-class="text-sm font-semibold text-gray-700 dark:text-slate-100"
+                                                   :disabled="isLocked" />
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Lock + status (right edge) -->
+                        <div class="flex flex-col items-end gap-2 pt-1">
+                            <IconLockOutline v-if="isLocked" class="size-5 text-gray-400" />
+                            <div v-if="unitStatus">
+                                <span class="inline-flex items-center rounded-full bg-gray-50 px-2 py-1 text-xs font-medium text-gray-600 ring-1 ring-gray-500/10 ring-inset">
+                                    {{ unitStatus }}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Multi-select header (keep your existing block) -->
+                    <div v-else>
+                        <div class="flex items-center justify-between">
+                            <p class="font-medium">{{ selectedUnitIds.size }} units selected</p>
+                            <Button type="button" size="sm" variant="outline" @click="clearSelection()">Clear</Button>
+                        </div>
+
+                        <ul class="relative my-4 flex w-full flex-wrap gap-1 pb-4">
+                            <li v-for="sUnit in visibleSelectedUnits" class="relative flex">
+                                <MilitarySymbol :sidc="sUnit.sidc"
+                                                :size="24"
+                                                class="block"
+                                                :options="{ ...getCombinedSymbolOptions(sUnit), outlineWidth: 8 }" />
+                                <span v-if="sUnit._state?.location" class="text-red-700">&deg;</span>
+                            </li>
+
+                            <li v-if="isTruncated">
+                                <button type="button"
+                                        class="bg-opacity-80 absolute right-0 bottom-0 left-0 border bg-white p-2 text-center text-gray-600"
+                                        @click="truncateUnits = !truncateUnits">
+                                    +{{ selectedUnits.length - visibleSelectedUnits.length }}
+                                </button>
+                            </li>
+                        </ul>
+                    </div>
                 </div>
-                <div>
-                    <DotsMenu :items="unitMenuItems" />
-                </div>
-            </nav>
+
+                <!-- Row 2: controls (discrete row; no negative margin) -->
+                <nav class="mb-4 relative flex items-center">
+                    <!-- Centered controls (do not shift when dots width changes) -->
+                    <div class="absolute left-1/2 -translate-x-1/2 flex items-center gap-0.5">
+                        <IconButton title="Zoom to" @click="actionWrapper(UnitActions.Zoom)">
+                            <ZoomIcon class="size-5" />
+                        </IconButton>
+
+                        <IconButton title="Edit unit"
+                                    @click="toggleEditMode()"
+                                    :disabled="isMultiMode || isLocked"
+                                    :class="[
+        'unitdock-toggle-btn',
+        isEditMode ? 'unitdock-toggle-btn--active' : ''
+      ]">
+                            <EditIcon class="size-5" />
+                        </IconButton>
+
+                        <IconButton title="Add/modify unit image"
+                                    @click="toggleEditMediaMode()"
+                                    :disabled="isMultiMode || isLocked"
+                                    :class="[
+        'unitdock-toggle-btn',
+        isEditMediaMode ? 'unitdock-toggle-btn--active' : ''
+      ]">
+                            <ImageIcon class="size-5" />
+                        </IconButton>
+
+                        <IconButton @click="startGetLocation()"
+                                    title="Set unit location"
+                                    :disabled="isMultiMode || isLocked">
+                            <IconCrosshairsGps class="size-5" aria-hidden="true" />
+                        </IconButton>
+
+                        <IconButton title="Show in ORBAT" :disabled="isMultiMode" @click="locateInOrbat()">
+                            <TreeLocateIcon class="size-5" aria-hidden="true" />
+                        </IconButton>
+
+                        <SplitButton triggerClass="max-w-24"
+                                     buttonClass="unit-actions-btn"
+                                     caretButtonClass="unit-actions-btn"
+                                     :items="buttonItems"
+                                     v-model:active-item="uiStore.activeItem" />
+                    </div>
+
+                    <!-- Right-aligned dots (stays right; doesn't move center group) -->
+                    <div class="ml-auto flex items-center justify-end unitdock-dots">
+                        <DotsMenu :items="unitMenuItems" />
+                    </div>
+                </nav>
+            </div>
         </header>
-        <TabWrapper :tab-list="tabList" v-model="selectedTab" wrap-tabs>
+
+        <TabWrapper :tab-list="tabList" v-model="selectedTab">
             <TabPanel class="pt-4">
                 <section class="relative" v-if="!isMultiMode">
                     <EditMetaForm v-if="isEditMode"
@@ -600,12 +690,8 @@
                                    @update="updateMedia" />
                     <div v-else-if="!isMultiMode" class="mb-4 space-y-4">
                         <DescriptionItem label="Name">{{ unit.name }}</DescriptionItem>
-                        <DescriptionItem v-if="unit.shortName" label="Short name">
-                            {{ unit.shortName }}
-                        </DescriptionItem>
-                        <DescriptionItem v-if="unit.unitNumber" label="Unit number">
-                            {{ unit.unitNumber }}
-                        </DescriptionItem>
+                        <DescriptionItem v-if="unit.shortName" label="Short name">{{ unit.shortName }}</DescriptionItem>
+                        <DescriptionItem v-if="unit.unitNumber" label="Unit number">{{ unit.unitNumber }}</DescriptionItem>
                         <DescriptionItem v-if="unit.externalUrl"
                                          label="External URL"
                                          dd-class="truncate">
@@ -614,37 +700,14 @@
                                class="underline"
                                :href="unit.externalUrl">{{ unit.externalUrl }}</a>
                         </DescriptionItem>
-                        <DescriptionItem label="Current position">
-                            <div class="flex items-center justify-between">
-                                <p v-if="currentLocation">
-                                    {{ formatPosition(currentLocation) }}
-                                    <span class="ml-2 text-xs text-gray-500">{{ formatAlt(currentLocation) }}</span>
-                                </p>
-                                <p v-else-if="currentLocation === null" class="text-sm text-gray-500">
-                                    Removed from map
-                                </p>
-                                <p v-else class="text-sm text-gray-500">
-                                    No location
-                                </p>
-
-                                <IconButton v-if="currentLocation"
-                                            @click="geoStore.panToLocation(toLonLat2D(currentLocation))">
-                                    <IconCrosshairsGps class="h-5 w-5" />
-                                </IconButton>
-                            </div>
-                        </DescriptionItem>
-
                         <DescriptionItem v-if="unit.description" label="Description">
                             <div class="prose prose-sm dark:prose-invert" v-html="hDescription"></div>
                         </DescriptionItem>
 
-                        <DescriptionItem v-if="unit.location" label="Initial location">
+                        <DescriptionItem v-if="initialLocation" label="Initial location">
                             <div class="flex items-center justify-between">
-                                <p>
-                                    {{ formatPosition(unit.location) }}
-                                    <span class="ml-2 text-xs text-gray-500">{{ formatAlt(unit.location) }}</span>
-                                </p>
-                                <IconButton @click="geoStore.panToLocation(unit.location)">
+                                <p>{{ formatPosition(initialLocation) }}</p>
+                                <IconButton @click="geoStore.panToLocation(initialLocation)">
                                     <IconCrosshairsGps class="h-5 w-5" />
                                 </IconButton>
                             </div>
@@ -663,9 +726,12 @@
                 <UnitPanelState v-if="!isMultiMode" :unit="unit" :is-locked="isLocked" />
                 <p v-else class="p-2 pt-4 text-sm">Multi edit mode not supported yet.</p>
             </TabPanel>
+
             <TabPanel>
-                <UnitDetailsLeaders v-if="!isMultiMode" :unit="unit" :is-locked="isLocked" />
-                <p v-else class="p-2 pt-4 text-sm">Multi edit mode not supported yet.</p>
+                <div class="leaders-panel">
+                    <UnitDetailsLeaders v-if="!isMultiMode" :unit="unit" :is-locked="isLocked" />
+                    <p v-else class="p-2 pt-4 text-sm">Multi edit mode not supported yet.</p>
+                </div>
             </TabPanel>
 
             <TabPanel>
@@ -698,34 +764,3 @@
                       @keyup.e="toggleEditMode()" />
     </div>
 </template>
-<style scoped>
-     /* Unit action dropdowns (SplitButton / DotsMenu):
-    force black text on your light-grey menu background */
-
-     /* Menu panels */
-     :deep([role="menu"]),
-     :deep([role="listbox"]) {
-         background-color: #e5e7eb !important; /* same grey as sides (gray-200) */
-         color: #000 !important;
-     }
-
-     /* Everything inside the menu panel */
-     :deep([role="menu"] *),
-     :deep([role="listbox"] *) {
-         color: #000 !important;
-     }
-
-     /* Individual items */
-     :deep([role="menuitem"]),
-     :deep([role="option"]) {
-         color: #000 !important;
-     }
-
-     /* Hover/active state (optional but makes it feel “2D-like”) */
-     :deep([role="menuitem"]:hover),
-     :deep([role="option"]:hover),
-     :deep([role="menuitem"][data-headlessui-state~="active"]),
-     :deep([role="option"][data-headlessui-state~="active"]) {
-         background-color: rgba(0, 0, 0, 0.08) !important;
-     }
-</style>

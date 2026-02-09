@@ -44,6 +44,7 @@ import ScenarioFeatureVisibilitySettings from "@/modules/scenarioeditor/Scenario
 import PanelDataGrid from "@/components/PanelDataGrid.vue";
 import { Button } from "@/components/ui/button";
 
+
 interface Props {
   selectedIds: SelectedScenarioFeatures;
 }

@@ -65,6 +65,79 @@
     import { injectStrict } from "@/utils";
     import { activeScenarioKey } from "@/components/injects";
     import type { Position } from "geojson";
+    import { useUnitDetailsDock3D } from "@/modules/threeDView/objects/UnitDetails3D";
+    import UnitDetailsDock3D from "@/modules/threeDView/objects/UnitDetails3D/UnitDetailsDock3D.vue";
+    import ScenarioEventsDock3D from "@/modules/threeDView/objects/ScenarioEvents3D/ScenarioEventsDock3D.vue";
+    import { useScenarioEventSelection3D } from "@/modules/threeDView/objects/ScenarioEvents3D";
+    import { createScenarioEventMarkers3D, type ScenarioEventMarkers3D } from "@/modules/threeDView/objects/ScenarioEvents3D/eventMarkers3D";
+    import { dropTargetForElements } from "@atlaskit/pragmatic-drag-and-drop/element/adapter";
+    import { isUnitDragItem } from "@/types/draggables";
+    import { ref } from "vue";
+
+    const repeatAddEventsMode = ref(false);
+
+    function onAddEventClick(e: MouseEvent) {
+        const wantsRepeat = !!e.shiftKey;
+
+        // If shift-click: toggle repeat mode on/off
+        if (wantsRepeat) {
+            repeatAddEventsMode.value = !repeatAddEventsMode.value;
+
+            if (!repeatAddEventsMode.value) {
+                // turned off
+                cancelGlobeLocation();
+                return;
+            }
+        } else {
+            // normal click always one-shot
+            repeatAddEventsMode.value = false;
+        }
+
+        // Start placement
+        beginAddEventPlacement();
+    }
+
+    function beginAddEventPlacement() {
+        requestGlobeLocation((pos) => {
+            addScenarioEventAtPos(pos as any);
+
+            // If repeating, immediately arm another pick
+            if (repeatAddEventsMode.value) {
+                // Re-arm on next tick so we don't fight the current callback stack
+                queueMicrotask(() => beginAddEventPlacement());
+            }
+        });
+    }
+
+    function addScenarioEventAtPos(pos: [number, number, number]) {
+        const [lon, lat, altRaw] = pos;
+        const alt = Number.isFinite(altRaw as any) ? Number(altRaw) : 0;
+
+        const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+
+        const now = Number(+tlScenarioTime.value);
+        const eventId = tlAddScenarioEvent({
+            title: "Event",
+            startTime: now,
+            endTime: now + ONE_DAY_MS, // default duration: 1 scenario day
+        });
+
+        // Canonical location storage
+        (activeScenario.time as any).updateScenarioEvent?.(eventId, {
+            where: {
+                type: "geometry",
+                geometry: { type: "Point", coordinates: [lon, lat, alt] },
+                maxZoom: 14,
+            },
+        });
+
+        // keep UI on events tab
+        try { orbatTab.value = "events"; } catch { }
+    }
+
+    let eventMarkers3d: ScenarioEventMarkers3D | null = null;
+    let stopWatchEventMarkers: (() => void) | null = null;
+    const viewerReadyTick = ref(0);
 
     const hydrographyWarning = ref<string | null>(null);
     const hydrographyWarningDetails = ref<string | null>(null);
@@ -90,12 +163,89 @@
         }
     }
 
+    const dndDbg = () => (window as any).__MENTAT_DEBUG_DND === true;
+    const dndLog = (...a: any[]) => { if (dndDbg()) console.log(...a); };
+
+    let globeDropCleanup: null | (() => void) = null;
+
+    function ensureGlobeDropTarget(viewer: Cesium.Viewer) {
+        if (globeDropCleanup) return;
+
+        if (!geo || !unitActions) {
+            console.warn("🌍 3D DROP ▶ missing geo/unitActions; drop ignored", { geo: !!geo, unitActions: !!unitActions });
+            return;
+        }
+
+        const canvas = viewer.scene.canvas as HTMLCanvasElement;
+
+        globeDropCleanup = dropTargetForElements({
+            element: canvas,
+            canDrop: ({ source }) => isUnitDragItem(source.data),
+            getData: () => ({ kind: "map-drop", target: "3d" }),
+            onDrop: ({ source, location }) => {
+                const input: any = location.current.input ?? location.initial.input;
+                const rect = canvas.getBoundingClientRect();
+                const x = (input.clientX ?? 0) - rect.left;
+                const y = (input.clientY ?? 0) - rect.top;
+
+                const pos = new Cesium.Cartesian2(x, y);
+                const scene: any = viewer.scene;
+
+                const world =
+                    scene.pickPosition?.(pos) ??
+                    viewer.camera.pickEllipsoid(pos, scene.globe?.ellipsoid);
+
+                if (!world) return;
+
+                const carto = Cesium.Cartographic.fromCartesian(world);
+                const lon = Cesium.Math.toDegrees(carto.longitude);
+                const lat = Cesium.Math.toDegrees(carto.latitude);
+                const alt = Number.isFinite(carto.height) ? carto.height : 0;
+
+                const src: any = source.data;
+
+                // Normal drag payload: UnitDragItem => { unit: { id } }
+                // Optional fallback: multi-select drags that may set unitIds
+                const unitIds: string[] =
+                    Array.isArray(src.unitIds) ? src.unitIds :
+                        (src.unit?.id ? [src.unit.id] : []);
+
+                if (!unitIds.length) return;
+
+                const copying = !!(input.ctrlKey || input.metaKey);
+                const copyingState = copying && !!input.altKey;
+
+                dndLog("🌍 3D DROP ▶", { lon, lat, alt, unitIds, copying, copyingState });
+
+                store.groupUpdate(() => {
+                    const targets = copying
+                        ? unitIds
+                            .map((id) => {
+                                const out = unitActions.cloneUnit(id, {
+                                    includeSubordinates: false,
+                                    includeState: copyingState,
+                                });
+                                return typeof out === "string" ? out : out?.id;
+                            })
+                            .filter(Boolean) as string[]
+                        : unitIds;
+
+                    for (const id of targets) {
+                        geo.addUnitPosition(id, [lon, lat, alt]);
+                    }
+                });
+            },
+        });
+
+        dndLog("🌍 3D DROP ▶ installed");
+    }
+
+
     async function onTerrainChanged() {
         try {
             await osmBuildingsHandle?.recomputeDatumCompensationNow();
         } catch { }
     }
-
 
     onMounted(() => {
         void checkHydrographyUpstreamOnce();
@@ -437,6 +587,8 @@
     /* Scenario store (2D) */
     const scenario = useActiveScenario();
     const store = (scenario as any)?.store ?? scenario;
+
+    const unitActions = (scenario as any)?.unitActions;
     // Use the store-like object as the source for imported layer conversion
     const scenarioForLayers = computed(() => (scenario as any)?.store ?? scenario);
 
@@ -453,25 +605,39 @@
     const orbatTab = ref<OrbatTab>("orbat");
 
     const selectedItems = useSelectedItems();
-    const activeUnitId = computed(() => {
-        const v = (selectedItems as any).activeUnitId;
-        return v && typeof v === "object" && "value" in v ? v.value : v ?? null;
-    });
 
-    const selectedUnitIds = computed<Set<string>>(() => {
-        const v = (selectedItems as any).selectedUnitIds;
-        if (v && typeof v === "object" && "value" in v) return v.value as Set<string>;
-        return (v as Set<string>) ?? new Set<string>();
-    });
+    // UnitDetails dock state + positioning (moved out of GlobeView)
+    const {
+        rightControlsEl,
+        unitDockOpen,
+        primarySelectedUnitId,
+        unitDockTopPx,
+        unitDockMaxHeight,
+    } = useUnitDetailsDock3D({ rightOpen });
 
-    const primarySelectedUnitId = computed<string | null>(() => {
-        if (activeUnitId.value) return activeUnitId.value;
-        const set = selectedUnitIds.value;
-        return set && set.size ? Array.from(set)[0] : null;
-    });
+    const eventsDockOpen = ref(true);
+    const rightDockMode = ref<"unit" | "events">("unit");
 
+    const { activeScenarioEventId } = useScenarioEventSelection3D();
 
-    const unitDockOpen = ref(true);
+    // If an event becomes active, prefer the Events dock.
+    watch(
+        () => activeScenarioEventId.value,
+        (id) => {
+            if (id) rightDockMode.value = "events";
+        },
+        { immediate: true },
+    );
+
+    // If a unit becomes active and no event is selected, prefer Unit dock.
+    watch(
+        () => primarySelectedUnitId.value,
+        (id) => {
+            if (id && !activeScenarioEventId.value) rightDockMode.value = "unit";
+        },
+        { immediate: true },
+    );
+
 
     // UX: a plain click in OrbatPanel sets activeUnitId; shift/ctrl clicks do not.
     // Auto-switch to the Unit tab on selection so the user doesn't need an extra click.
@@ -505,7 +671,13 @@
             (tlGoToScenarioEvent as any)(ev);
             return;
         } catch { /* fall through */ }
-
+        try {
+            // best-effort fly for 3D
+            const { panToEventLocation } = useScenarioEventLocation3D(String(ev.id));
+            panToEventLocation();
+        } catch {
+            // ignore
+        }
         const t = Number(ev.startTime ?? ev.time ?? ev.timestamp);
         if (Number.isFinite(t)) tlSetCurrentTime(t);
     }
@@ -831,7 +1003,11 @@
 
                 await mount(mountRef.value);
                 await nextTick();
+                viewerReadyTick.value++;
                 console.log("[GlobeView] Globe mounted.", g.value);
+
+                // ─────────── 3D Scenario Event markers ───────────
+
                 if (g.value && !overlaySync) {
                     overlaySync = syncImported2DTo3D(g.value, scenarioForLayers);
                 }
@@ -1022,6 +1198,12 @@
         try { osmBuildingsHandle?.disable(true); } catch { }
         osmBuildingsHandle = null;
 
+        try { stopWatchEventMarkers?.(); } catch { }
+        stopWatchEventMarkers = null;
+
+        try { eventMarkers3d?.destroy(); } catch { }
+        eventMarkers3d = null;
+
     });
 
     /* Controls */
@@ -1152,10 +1334,11 @@
         timeZone: "UTC",
     });
 
+    const activeScenario = useActiveScenario();
     const {
         time: tlTime,
         store: tlStore,
-    } = useActiveScenario();
+    } = activeScenario;
     const {
         scenarioTime: tlScenarioTime,
         setCurrentTime: tlSetCurrentTime,
@@ -1526,14 +1709,14 @@
     }
 
     function setActiveUnitId(unitId: string | null, addToMulti = false) {
-        const sel = selectedItemsStoreRef.value;
-        if (!sel) return;
+        // Write to the eager store first (this is what the panel watches)
+        const sel: any = selectedItems;
 
-        const set: Set<string> | undefined = sel.selectedUnitIds?.value;
+        const set: Set<string> | undefined = sel.selectedUnitIds?.value ?? sel.selectedUnitIds;
 
         if (!unitId) {
             try { sel.clear?.(); } catch { }
-            try { sel.activeUnitId.value = null; } catch { }
+            try { (sel.activeUnitId?.value !== undefined) ? (sel.activeUnitId.value = null) : (sel.activeUnitId = null); } catch { }
             return;
         }
 
@@ -1541,7 +1724,7 @@
         if (!addToMulti) {
             try { sel.clear?.(); } catch { }
             try { set?.add?.(unitId); } catch { }
-            try { sel.activeUnitId.value = unitId; } catch { }
+            try { (sel.activeUnitId?.value !== undefined) ? (sel.activeUnitId.value = unitId) : (sel.activeUnitId = unitId); } catch { }
             return;
         }
 
@@ -1553,15 +1736,135 @@
 
         // Active follows only if exactly one remains
         try {
-            sel.activeUnitId.value = (set && set.size === 1) ? Array.from(set)[0] : null;
+            const next = (set && set.size === 1) ? Array.from(set)[0] : null;
+            (sel.activeUnitId?.value !== undefined) ? (sel.activeUnitId.value = next) : (sel.activeUnitId = next);
         } catch { }
     }
 
-    function applySelection(unitIds: string[], addToMulti = false) {
-        const sel = selectedItemsStoreRef.value;
-        if (!sel) return;
+    function clearUnitSelectionForEventPick() {
+        const sel: any = selectedItems;
 
-        const set: Set<string> | undefined = sel.selectedUnitIds?.value;
+        const set: Set<string> | undefined = sel.selectedUnitIds?.value ?? sel.selectedUnitIds;
+        try { set?.clear?.(); } catch { /* ignore */ }
+
+        try {
+            if (sel.activeUnitId?.value !== undefined) sel.activeUnitId.value = null;
+            else sel.activeUnitId = null;
+        } catch { /* ignore */ }
+    }
+
+    /** Accepts either ev3d:<id>:cyl/icon OR a raw event id. */
+    function extractScenarioEventIdFromPickId(id: any): string | null {
+        if (typeof id !== "string" || !id) return null;
+
+        const m = id.match(/^ev3d:([^:]+):/);
+        if (m?.[1]) return m[1];
+
+        // Sometimes the bridge may pass the raw event id (pTrLktGM9C etc.)
+        // Only treat it as an event if it exists in our events list.
+        if (orbatEvents.value?.some((e: any) => String(e?.id) === id)) return id;
+
+        return null;
+    }
+
+    function activateScenarioEventById(eventId: string) {
+        if (!eventId) return;
+
+        const ev = orbatEvents.value?.find((e: any) => String(e?.id) === String(eventId));
+        if (ev) {
+            orbatGoToEvent(ev);
+        } else {
+            // Fallback: select + open events dock even if object isn't in list for some reason
+            try { activeScenarioEventId.value = eventId as any; } catch { /* ignore */ }
+            rightDockMode.value = "events";
+        }
+
+        // Avoid the Filters tab crash by removing any bogus "unit selection" state
+        clearUnitSelectionForEventPick();
+    }
+
+    function patchScenarioEventLocation(eventId: string, pos: [number, number, number]) {
+        const st: any = (tlStore as any)?.state;
+        if (!st?.eventMap || !eventId) return;
+
+        const ev = st.eventMap[eventId];
+        if (!ev) return;
+
+        // Mutate in-place (Pinia reactive object); also set a few aliases for compatibility
+        const [lon, lat, alt] = pos;
+
+        // Most likely candidates used across your codebase / older scenarios
+        ev.location = [lon, lat, alt];
+        ev.position = [lon, lat, alt];
+        ev.coords = [lon, lat, alt];
+
+        // GeoJSON-friendly variant (some renderers key off this)
+        ev.geojson = { type: "Point", coordinates: [lon, lat, alt] };
+
+        // If your marker layer expects lat/lon fields (common in UI panels)
+        ev.lon = lon;
+        ev.lat = lat;
+        ev.alt = alt;
+    }
+
+    function addScenarioEventAtCurrentTimeAndPos(pos: [number, number, number]) {
+        const nowMs = Number((store as any)?.state?.currentTime ?? Date.now());
+
+        const eventId = tlAddScenarioEvent({
+            title: "Event",
+            startTime: nowMs,
+        });
+
+        patchScenarioEventLocation(eventId, pos);
+
+        // Select + open Events dock
+        try { activeScenarioEventId.value = eventId as any; } catch { /* ignore */ }
+        rightDockMode.value = "events";
+
+        return eventId;
+    }
+
+    function requestAddScenarioEvent3D() {
+        // One-shot globe click → create event at current scenario time → set where.geometry
+        requestGlobeLocation((pos) => {
+            const [lon, lat, altRaw] = pos;
+            const alt = Number.isFinite(altRaw as any) ? Number(altRaw) : 0;
+
+            const now = Number(+tlScenarioTime.value);
+            const eventId = tlAddScenarioEvent({
+                title: "Event",
+                startTime: now,
+            });
+
+            // Set location in the canonical place used by scenarioEvents.ts and location composables
+            try {
+                (activeScenario.time as any).updateScenarioEvent?.(eventId, {
+                    where: {
+                        type: "geometry",
+                        geometry: { type: "Point", coordinates: [lon, lat, alt] },
+                        maxZoom: 14,
+                    },
+                });
+            } catch (e) {
+                console.warn("[GlobeView] updateScenarioEvent(where) failed:", e);
+            }
+
+            // Keep selection in sync + open the events tab so user sees it immediately
+            try {
+                const sel = selectedItemsStoreRef.value as any;
+                if (sel?.activeScenarioEventId?.value !== undefined) {
+                    sel.activeScenarioEventId.value = eventId;
+                }
+            } catch { /* ignore */ }
+
+            try { orbatTab.value = "events"; } catch { /* ignore */ }
+        });
+    }
+
+
+    function applySelection(unitIds: string[], addToMulti = false) {
+        const sel: any = selectedItems;
+        const set: Set<string> | undefined = sel.selectedUnitIds?.value ?? sel.selectedUnitIds;
         if (!set) return;
 
         if (!addToMulti) {
@@ -1569,8 +1872,7 @@
         }
 
         if (!unitIds?.length) {
-            // if it was a replacement selection, ensure active clears too
-            try { sel.activeUnitId.value = null; } catch { }
+            try { (sel.activeUnitId?.value !== undefined) ? (sel.activeUnitId.value = null) : (sel.activeUnitId = null); } catch { }
             return;
         }
 
@@ -1578,9 +1880,9 @@
             try { set.add(id); } catch { }
         }
 
-        // Important: only set activeUnitId when exactly one unit is selected
         try {
-            sel.activeUnitId.value = (set.size === 1) ? Array.from(set)[0] : null;
+            const next = (set.size === 1) ? Array.from(set)[0] : null;
+            (sel.activeUnitId?.value !== undefined) ? (sel.activeUnitId.value = next) : (sel.activeUnitId = next);
         } catch { }
     }
 
@@ -1628,8 +1930,15 @@
                 isSuppressed: () => isAnyToolPickingLocation(),
                 isMoveMode: () => !!moveUnitEnabled.value,
 
-                onUnitClick: (unitId, addToMulti) => {
-                    setActiveUnitId(unitId, addToMulti);
+                onUnitClick: (pickedId, addToMulti) => {
+                    const eventId = extractScenarioEventIdFromPickId(pickedId);
+                    if (eventId) {
+                        activateScenarioEventById(eventId);
+                        return;
+                    }
+
+                    // Normal unit selection path
+                    setActiveUnitId(pickedId, addToMulti);
                 },
 
                 onEmptyClick: () => {
@@ -1653,11 +1962,69 @@
         }
 
         selectionBridge.install();
+        ensureGlobeDropTarget(viewer);
         console.log("[3DSEL] selection bridge installed");
     }
 
-    watch([() => getViewerSafe(), () => getViewerCanvasSafe()], () => {
+    function getEventMarkerHelpers() {
+        return (
+            (store as any)?.helpers ??
+            (scenario as any)?.helpers ??
+            (scenario as any)?.store?.helpers ??
+            {
+                getUnitById: (id: string) => {
+                    const st: any = (store as any)?.state;
+                    const map = st?.unitMap ?? st?.unitsById ?? st?.unitById ?? st?.units ?? null;
+                    if (map && typeof map === "object" && !Array.isArray(map)) return map[id] ?? null;
+                    if (Array.isArray(map)) return map.find((u: any) => String(u?.id) === String(id)) ?? null;
+                    return null;
+                },
+                getSideById: (id: string) => {
+                    const st: any = (store as any)?.state;
+                    const map = st?.sideMap ?? st?.sidesById ?? st?.sideById ?? st?.sides ?? null;
+                    if (map && typeof map === "object" && !Array.isArray(map)) return map[id] ?? null;
+                    if (Array.isArray(map)) return map.find((s: any) => String(s?.id) === String(id)) ?? null;
+                    return null;
+                },
+            }
+        );
+    }
+
+    function ensureEventMarkersInstalled() {
+        const viewer = getViewerSafe();
+        if (!viewer) return;
+
+        if (!eventMarkers3d) {
+            eventMarkers3d = createScenarioEventMarkers3D(viewer);
+
+            stopWatchEventMarkers = watch(
+                [orbatEvents, () => store.state.currentTime],
+                ([evs]) => {
+                    try {
+                        const helpers: any = getEventMarkerHelpers() ?? {};
+                        helpers.currentTime = store.state.currentTime;
+                        // optional but good: make scenarioNow() work through helpers.store.state.currentTime too
+                        helpers.store = store;
+                        helpers.state = store.state;
+
+                        eventMarkers3d?.sync(evs ?? [], helpers);
+                    } catch (e) {
+                        console.warn("[3D events] marker sync failed", e);
+                    }
+                },
+                { immediate: true, deep: true }
+            );
+
+            console.log("[3D events] markers installed", { eventCount: orbatEvents.value?.length ?? 0 });
+        }
+    }
+
+
+
+
+    watch([viewerReadyTick, () => getViewerSafe(), () => getViewerCanvasSafe()], () => {
         ensureSelectionBridgeInstalled();
+        ensureEventMarkersInstalled();
     }, { immediate: true });
 
     onBeforeUnmount(() => {
@@ -1668,9 +2035,13 @@
 
     provide("mentatRequestGlobeLocation", requestGlobeLocation);
     provide("mentatCancelGlobeLocation", cancelGlobeLocation);
-
+    provide("mentatAddScenarioEvent3D", requestAddScenarioEvent3D);
 
     onBeforeUnmount(() => cancelGlobeLocation());
+    onBeforeUnmount(() => {
+        globeDropCleanup?.();
+        globeDropCleanup = null;
+    });
 
     /* ─────────── Bottom-toolbar time helpers ─────────── */
     function onOpenTimeModal() {
@@ -1740,34 +2111,14 @@
         rightPanelTab.value = "environment";
     }
 
-    // Right panel sizing -> used to push UnitDetails down when controls expand.
-    const RIGHT_PANEL_TOP_PX = 12;
-    const RIGHT_PANEL_GAP_PX = 30;
+    // NOTE: rightControlsEl/unitDockTopPx/unitDockMaxHeight are now owned by useUnitDetailsDock3D.
 
-    const rightControlsEl = ref<HTMLElement | null>(null);
-    const { height: rightControlsH } = useElementSize(rightControlsEl);
-
-    const unitDockTopPx = computed(() => {
-        const h = rightOpen.value ? (rightControlsH.value || 0) : 0;
-        return RIGHT_PANEL_TOP_PX + h + (rightOpen.value ? RIGHT_PANEL_GAP_PX : 0);
-    });
-
-    // Optional: keep the dock from running under the timeline
-    const unitDockMaxHeight = computed(() => {
-        // uses your existing timeline var if you have it; otherwise it just behaves like 0px
-        return `calc(100vh - ${unitDockTopPx.value}px - var(--timeline-height, 0px) - 12px)`;
-    });
 
     function getViewerSafe(): any | undefined {
-        return g.value?.getViewer?.() ?? (g.value as any)?.viewer;
         try {
-            const v = g.value?.getViewer?.();
+            const v = g.value?.getViewer?.() ?? (g.value as any)?.viewer;
             if (!v) return undefined;
-
-            // Touch scene inside try to ensure it's actually available (Cesium uses getters that can throw)
-            const _scene = (v as any).scene;
-            if (!_scene) return undefined;
-
+            if (!(v as any).scene) return undefined;
             return v;
         } catch {
             return undefined;
@@ -1793,6 +2144,9 @@
             }
         }
     }
+
+    try { (window as any).__MentatOrbatEvents = orbatEvents; } catch { }
+
 </script>
 
 <template>
@@ -1832,8 +2186,13 @@
                     </div>
 
                     <div v-show="orbatTab === 'events'" class="tab-pane">
-                        <div v-if="!orbatEvents.length" class="badge">No scenario events</div>
-                        <div v-else class="events-list">
+                        <div class="events-toolbar">
+
+
+                            <div v-if="!orbatEvents.length" class="badge">No scenario events</div>
+                        </div>
+
+                        <div v-if="orbatEvents.length" class="events-list">
                             <button v-for="ev in orbatEvents"
                                     :key="ev.id ?? `${ev.title ?? 'event'}-${ev.startTime ?? ev.time ?? ev.timestamp}`"
                                     class="event-row"
@@ -1841,6 +2200,12 @@
                                     :title="ev.title ?? 'Event'">
                                 <span class="event-time">{{ orbatFormatEventTime(ev) }}</span>
                                 <span class="event-title">{{ ev.title ?? 'Event' }}</span>
+                            </button>
+                        </div>
+                        <div class="events-footer">
+                            <button class="events-add" @click="onAddEventClick">
+                                <span v-if="repeatAddEventsMode">+ (REPEAT MODE Esc/right-click to end!)</span>
+                                <span v-else>+ Add Event (click location on map)</span>
                             </button>
                         </div>
                     </div>
@@ -2209,6 +2574,7 @@
 
                     </div>
                 </div>
+
             </div>
 
             <!-- Tiny arrow tab (mirrored) -->
@@ -2217,23 +2583,19 @@
                 <span v-else>«</span>
             </button>
         </div>
-        <!-- Unit Details dock (right side, under controls) -->
-        <div v-if="primarySelectedUnitId && unitDockOpen"
-             class="unitdock"
-             :style="{ top: unitDockTopPx + 'px', maxHeight: unitDockMaxHeight }">
-            <div class="unitdock-header">
-                <div style="font-weight:600;">Unit details</div>
-                <button class="unitdock-close" @click="unitDockOpen = false">✕</button>
-            </div>
+        <button class="..." @click="rightDockMode = 'unit'">Unit</button>
+        <button class="..." @click="rightDockMode = 'events'">Events</button>
 
-            <div class="unitdock-body">
-                <UnitDetails :unitId="primarySelectedUnitId"
-                             actionsButtonClass="bg-gray-200 text-gray-700 hover:bg-gray-300"
-                             actionsMenuClass="text-gray-700"
-                             actionsItemClass="text-gray-700" />
-            </div>
-        </div>
+        <UnitDetailsDock3D v-if="rightDockMode === 'unit'"
+                           :unitId="primarySelectedUnitId"
+                           v-model:open="unitDockOpen"
+                           :topPx="unitDockTopPx"
+                           :maxHeight="unitDockMaxHeight" />
 
+        <ScenarioEventsDock3D v-else
+                              v-model:open="eventsDockOpen"
+                              :topPx="unitDockTopPx"
+                              :maxHeight="unitDockMaxHeight" />
     </div>
 </template>
 
@@ -2379,6 +2741,71 @@
             background: rgba(255,255,255,0.4);
             color: #000;
         }
+
+    .events-toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+    }
+
+    .events-add {
+        background: rgba(255,255,255,0.12);
+        border: 1px solid rgba(255,255,255,0.2);
+        border-radius: 8px;
+        padding: 4px 10px;
+        cursor: pointer;
+        color: #fff;
+        line-height: 1;
+        font-weight: 600;
+        white-space: nowrap;
+    }
+
+    /* Events tab bottom button spacing */
+    .events-footer {
+        margin-top: 10px; /* space above footer */
+        padding-top: 10px; /* space between list and footer */
+        border-top: 1px solid rgba(255,255,255,0.12);
+    }
+
+    .events-add {
+        display: block;
+        width: 100%;
+        margin-top: 0;
+        padding: 8px 10px; /* more clickable */
+    }
+
+    :global(:root) {
+        --timeline-h: 72px; /* adjust to your timeline height */
+        --drawer-top: 12px; /* your drawer top offset */
+        --drawer-pad: 12px; /* breathing room */
+    }
+
+    /* Keep the drawer where it already is (top/left/etc), but limit its usable height */
+    .controls-drawer--left .controls.scrollable {
+        max-height: calc(100vh - var(--drawer-top) - var(--timeline-h) - var(--drawer-pad));
+        overflow-y: auto;
+        overflow-x: hidden;
+        padding-bottom: 10px; /* small, always */
+        box-sizing: border-box;
+    }
+
+    .controls-drawer--left .controls {
+        flex-shrink: 0; /* do NOT let the panel collapse horizontally */
+        box-sizing: border-box;
+    }
+
+    .controls-drawer--left {
+        align-items: flex-start; /* you already have this effectively, keep it */
+    }
+
+    .events-add {
+        margin-top: 10px;
+    }
+
+    .events-list {
+        margin-bottom: 10px; /* keeps rows away from the button */
+    }
 
     /* ───────────────────── Drawers (left & right) ───────────────────── */
     .controls-drawer,
@@ -2754,40 +3181,7 @@
         display: block;
     }
 
-    .unitdock {
-        position: absolute;
-        right: 10px;
-        width: 420px;
-        overflow: hidden;
-        z-index: 80;
-        background: rgba(0,0,0,0.65);
-        border: 1px solid rgba(255,255,255,0.18);
-        border-radius: 12px;
-        backdrop-filter: blur(6px);
-    }
 
-    .unitdock-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 8px 10px;
-        border-bottom: 1px solid rgba(255,255,255,0.12);
-    }
-
-    .unitdock-body {
-        padding: 8px;
-        overflow: auto;
-        max-height: calc(100vh - 520px - var(--timeline-height, 0px));
-    }
-
-    .unitdock-close {
-        background: rgba(255,255,255,0.12);
-        border: 1px solid rgba(255,255,255,0.2);
-        border-radius: 8px;
-        padding: 4px 8px;
-        cursor: pointer;
-        color: #fff;
-    }
 
     .bt-host {
         position: fixed;
@@ -2804,15 +3198,13 @@
     /* ───────────────── Global legibility in GlobeView UI panels (scoped-safe) ───────────────── */
     /* Apply to: left ORBAT drawer + unit details dock (+ any other control drawers you have) */
     .controls-drawer--left :deep(*),
-    .controls-drawer--right :deep(*),
-    .unitdock :deep(*) {
+    .controls-drawer--right :deep(*), {
         color: #fff !important;
     }
 
     /* Also catch utility color classes inside these panels */
     .controls-drawer--left :deep([class*="text-"]),
-    .controls-drawer--right :deep([class*="text-"]),
-    .unitdock :deep([class*="text-"]) {
+    .controls-drawer--right :deep([class*="text-"]), {
         color: #fff !important;
     }
 
@@ -2822,25 +3214,20 @@
     .controls-drawer--left :deep(textarea),
     .controls-drawer--right :deep(input),
     .controls-drawer--right :deep(select),
-    .controls-drawer--right :deep(textarea),
-    .unitdock :deep(input),
-    .unitdock :deep(select),
-    .unitdock :deep(textarea) {
+    .controls-drawer--right :deep(textarea),{
         color: #fff !important;
     }
 
     /* Keep links readable and consistent */
     .controls-drawer--left :deep(a),
-    .controls-drawer--right :deep(a),
-    .unitdock :deep(a) {
+    .controls-drawer--right :deep(a), {
         color: #fff !important;
         text-decoration-color: rgba(255, 255, 255, 0.7);
     }
 
     /* Optional: if you use hover to invert buttons, preserve that behavior */
     .controls-drawer--left :deep(button:hover),
-    .controls-drawer--right :deep(button:hover),
-    .unitdock :deep(button:hover) {
+    .controls-drawer--right :deep(button:hover), {
         color: #000 !important;
     }
     /* ─────────── Black text on LIGHT grey backgrounds (side headers + dropdowns) ─────────── */
@@ -2849,12 +3236,7 @@
     .controls-drawer--left :deep([class*="bg-gray-100"]),
     .controls-drawer--left :deep([class*="bg-gray-200"]),
     .controls-drawer--left :deep([class*="bg-gray-300"]),
-    .controls-drawer--left :deep([class*="bg-gray-400"]),
-    .unitdock :deep([class*="bg-gray-50"]),
-    .unitdock :deep([class*="bg-gray-100"]),
-    .unitdock :deep([class*="bg-gray-200"]),
-    .unitdock :deep([class*="bg-gray-300"]),
-    .unitdock :deep([class*="bg-gray-400"]) {
+    .controls-drawer--left :deep([class*="bg-gray-400"]), {
         color: #000 !important;
     }
 
@@ -2862,12 +3244,7 @@
     .controls-drawer--left :deep([class*="bg-gray-100"] *),
     .controls-drawer--left :deep([class*="bg-gray-200"] *),
     .controls-drawer--left :deep([class*="bg-gray-300"] *),
-    .controls-drawer--left :deep([class*="bg-gray-400"] *),
-    .unitdock :deep([class*="bg-gray-50"] *),
-    .unitdock :deep([class*="bg-gray-100"] *),
-    .unitdock :deep([class*="bg-gray-200"] *),
-    .unitdock :deep([class*="bg-gray-300"] *),
-    .unitdock :deep([class*="bg-gray-400"] *) {
+    .controls-drawer--left :deep([class*="bg-gray-400"] *), {
         color: #000 !important;
     }
 
@@ -2892,16 +3269,6 @@
         color: #000 !important;
     }
 
-
-    /* Actions dropdown specifically: make select + options readable */
-    .unitdock :deep(select) {
-        color: #000 !important;
-    }
-
-    .unitdock :deep(select option) {
-        color: #000 !important;
-        background: #fff !important;
-    }
     /* Radix UI / shadcn popovers */
     :global([data-radix-popper-content-wrapper]) {
         z-index: 10000 !important;

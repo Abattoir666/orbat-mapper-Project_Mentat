@@ -218,6 +218,10 @@ export function useGlobe(arg1: any, arg2?: any) {
         terrain: makeTerrainNow(),
         imageryProvider: opts.imageryProvider ?? defaultOSM,
     });
+    // Debug tap: expose viewer for console inspection
+    try {
+        (window as any).__mentatViewer = viewer;
+    } catch { /* ignore */ }
 
     viewer.scene.globe.depthTestAgainstTerrain = true;
 

@@ -364,7 +364,7 @@
 
 <template>
     <Teleport to="body">
-        <div v-if="open" class="fixed inset-0 z-50" @keydown="onKeydown">
+        <div v-if="open" class="fixed inset-0 z-[5000]" @keydown="onKeydown">
             <div class="absolute inset-0 bg-black/40" @click="close"></div>
 
             <!-- Smaller drawer -->

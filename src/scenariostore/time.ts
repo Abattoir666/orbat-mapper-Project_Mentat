@@ -711,31 +711,66 @@ export function useScenarioTime(store: NewScenarioStore) {
         return state.eventMap[id];
     }
 
+    function mintEventId(): string {
+        // Prefer cryptographic UUIDs when available; fallback to nanoid().
+        // This eliminates “same id” regressions even if nanoid() gets stubbed.
+        try {
+            const uuid = (globalThis as any)?.crypto?.randomUUID?.();
+            if (typeof uuid === "string" && uuid) return uuid;
+        } catch {
+            /* ignore */
+        }
+        return nanoid();
+    }
+
+    function mintUniqueEventId(eventMap: Record<string, any>): string {
+        // Loop extremely unlikely, but deterministic safety beats mystery bugs.
+        for (let i = 0; i < 25; i++) {
+            const id = mintEventId();
+            if (!eventMap[id]) return id;
+        }
+        // Last-ditch fallback (still unique in practice)
+        return `ev_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+    }
+
+
     function addScenarioEvent(event: NScenarioEvent | ScenarioEvent) {
-        let newEvent = klona(event) as NScenarioEvent;
+        const newEvent = klona(event) as NScenarioEvent;
         if (!newEvent._type) newEvent._type = "scenario";
 
-        if (!newEvent.id) newEvent.id = nanoid();
-
-        // Accumulation safety (same intent as the version I sent earlier)
-        if ((state as any).eventMap?.[newEvent.id]) {
-            const oldId = newEvent.id;
-            newEvent.id = nanoid();
-            (newEvent as any).sourceEventId = oldId;
-            console.warn("[events] ID collision; accumulating as new event", {
-                incomingId: oldId,
-                mintedId: newEvent.id,
-            });
-        }
+        // We mint/validate the final id *inside* update(), against the draft state.
+        let createdId: string = "";
 
         update((s) => {
-            s.events.push(newEvent.id);
-            s.eventMap[newEvent.id] = newEvent;
-            s.events.sort((a, b) => s.eventMap[a].startTime - s.eventMap[b].startTime);
+            // Accept an incoming id if provided, but never allow collisions.
+            let id = (newEvent as any).id as string | undefined;
+
+            if (!id || typeof id !== "string" || !id.trim()) {
+                id = mintUniqueEventId(s.eventMap as any);
+            } else if (s.eventMap[id]) {
+                // Collision (duplicate id). Mint a fresh one and preserve the original for debugging/auditing.
+                const oldId = id;
+                id = mintUniqueEventId(s.eventMap as any);
+                (newEvent as any).sourceEventId = oldId;
+                console.warn("[events] ID collision; accumulating as new event", {
+                    incomingId: oldId,
+                    mintedId: id,
+                });
+            }
+
+            newEvent.id = id;
+            createdId = id;
+
+            s.events.push(id);
+            s.eventMap[id] = newEvent;
+
+            // Sort safely (avoid hard-crash if any legacy bad ids exist)
+            s.events.sort((a, b) => (s.eventMap[a]?.startTime ?? 0) - (s.eventMap[b]?.startTime ?? 0));
         });
 
-        return newEvent.id;
+        return createdId;
     }
+
 
     function deleteScenarioEvent(id: EntityId) {
         update((s) => {

@@ -342,6 +342,46 @@ const onUnitMenuAction = (unit: NUnit, action: UnitAction) => {
   emit("unit-action", unit, action);
 };
 
+const dbg = () => (window as any).__MENTAT_DEBUG_ORBAT === true;
+
+/** DotsMenu has emitted multiple payload shapes over time; normalize them to our UnitAction. */
+function resolveUnitAction(ev: unknown): UnitAction | undefined {
+  const items = menuItems.value ?? [];
+
+  const resolveString = (s: string): UnitAction | undefined => {
+    const byAction = items.find((i) => i.action === s);
+    if (byAction) return byAction.action;
+    const byLabel = items.find((i) => i.label === s);
+    if (byLabel) return byLabel.action;
+    return undefined;
+  };
+
+  if (typeof ev === "string") return resolveString(ev);
+
+  if (ev && typeof ev === "object") {
+    const o: any = ev;
+    const candidates = [o.action, o.id, o.value, o.label].filter(
+      (x: any) => typeof x === "string",
+    ) as string[];
+    for (const c of candidates) {
+      const r = resolveString(c);
+      if (r) return r;
+    }
+  }
+
+  return undefined;
+}
+
+const onDotsMenuAction = (ev: unknown) => {
+  const action = resolveUnitAction(ev);
+  if (!action) {
+    if (dbg()) console.warn("[OrbatTreeItem] Unrecognized menu payload", ev);
+    return;
+  }
+  emit("unit-action", unit.value, action);
+};
+
+
 const onUnitClick = (unit: NUnit, event: MouseEvent) => {
   emit("unit-click", unit, event);
 };
@@ -398,7 +438,7 @@ const onUnitClick = (unit: NUnit, event: MouseEvent) => {
                 <IconLockOutline v-if="unit.locked" class="h-5 w-5 text-gray-400" />
                 <DotsMenu class="shrink-0 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100"
                           :items="menuItems"
-                          @action="onUnitMenuAction(unit, $event)" />
+                          @action="onDotsMenuAction" />
             </div>
             <TreeDropIndicator v-if="instruction" :instruction="instruction" />
         </div>

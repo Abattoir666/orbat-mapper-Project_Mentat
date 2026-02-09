@@ -3,20 +3,172 @@
   "WorkspaceRootPath": "C:\\Users\\astut\\source\\repos\\Current-Build\\",
   "Documents": [
     {
-      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\threeDView\\hydrography\\gebcoOverlay.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
-      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\modules\\threeDView\\hydrography\\gebcoOverlay.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\ExtendedScenarioEvents\\UnitPickerDialog.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\modules\\scenarioeditor\\ExtendedScenarioEvents\\UnitPickerDialog.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\threeDView\\objects\\ScenarioEvents3D\\ScenarioEventsDock3D.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\modules\\threeDView\\objects\\ScenarioEvents3D\\ScenarioEventsDock3D.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\ScenarioEventDetails.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\modules\\scenarioeditor\\ScenarioEventDetails.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}"
     },
     {
       "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\threeDView\\GlobeView.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}",
       "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\modules\\threeDView\\GlobeView.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\Personnel\\UnitDetailsPersonnel.vue||{8B382828-6202-11D1-8870-0000F87579D2}",
-      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\modules\\scenarioeditor\\Personnel\\UnitDetailsPersonnel.vue||{8B382828-6202-11D1-8870-0000F87579D2}"
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\threeDView\\objects\\ScenarioEvents3D\\eventMarkers3D.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\modules\\threeDView\\objects\\ScenarioEvents3D\\eventMarkers3D.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\Current-Build\\src\\scenariostore\\newScenarioStore.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\scenariostore\\newScenarioStore.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\Current-Build\\src\\scenariostore\\io.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\scenariostore\\io.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\Current-Build\\src\\scenariostore\\localdb.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\scenariostore\\localdb.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\Current-Build\\src\\components\\SimpleSelect.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\components\\SimpleSelect.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\threeDView\\objects\\ScenarioEvents3D\\ScenarioEventsList3D.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\modules\\threeDView\\objects\\ScenarioEvents3D\\ScenarioEventsList3D.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\ItemMedia.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\modules\\scenarioeditor\\ItemMedia.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\EditMediaForm.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\modules\\scenarioeditor\\EditMediaForm.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\UnitDetailsMapDisplay.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\modules\\scenarioeditor\\UnitDetailsMapDisplay.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\threeDView\\objects\\UnitDetails3D\\UnitDetailsDock3D.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\modules\\threeDView\\objects\\UnitDetails3D\\UnitDetailsDock3D.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}"
     },
     {
       "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\UnitDetails.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}",
       "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\modules\\scenarioeditor\\UnitDetails.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\UnitPanelState.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\modules\\scenarioeditor\\UnitPanelState.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\Leaders\\rankProfiles.ts||{8B382828-6202-11D1-8870-0000F87579D2}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\modules\\scenarioeditor\\Leaders\\rankProfiles.ts||{8B382828-6202-11D1-8870-0000F87579D2}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\Leaders\\rankAssets.ts||{8B382828-6202-11D1-8870-0000F87579D2}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\modules\\scenarioeditor\\Leaders\\rankAssets.ts||{8B382828-6202-11D1-8870-0000F87579D2}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\Leaders\\rankGrades.ts||{8B382828-6202-11D1-8870-0000F87579D2}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\modules\\scenarioeditor\\Leaders\\rankGrades.ts||{8B382828-6202-11D1-8870-0000F87579D2}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\Leaders\\UnitDetailsLeaders.vue||{8B382828-6202-11D1-8870-0000F87579D2}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\modules\\scenarioeditor\\Leaders\\UnitDetailsLeaders.vue||{8B382828-6202-11D1-8870-0000F87579D2}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\types.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\modules\\scenarioeditor\\types.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\UnitDetailsToe.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\modules\\scenarioeditor\\UnitDetailsToe.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\grid\\TanstackGridTestView.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\modules\\grid\\TanstackGridTestView.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\grid\\OrbatGridRow.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\modules\\grid\\OrbatGridRow.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\grid\\OrbatGridHeader.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\modules\\grid\\OrbatGridHeader.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\grid\\OrbatGridGroupRow.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\modules\\grid\\OrbatGridGroupRow.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\grid\\OrbatGrid.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\modules\\grid\\OrbatGrid.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\grid\\gridTypes.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\modules\\grid\\gridTypes.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\grid\\helpers.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\modules\\grid\\helpers.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\grid\\DataGrid.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\modules\\grid\\DataGrid.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\Current-Build\\src\\scenariostore\\unitManipulations.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\scenariostore\\unitManipulations.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\grid\\GridTestView.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\modules\\grid\\GridTestView.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\grid\\GridHeaderResizeHandle.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\modules\\grid\\GridHeaderResizeHandle.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\grid\\ToeGrid.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\modules\\grid\\ToeGrid.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\UnitDetailsProperties.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\modules\\scenarioeditor\\UnitDetailsProperties.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\OrbatPanel.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\modules\\scenarioeditor\\OrbatPanel.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\threeDView\\weatherSkyController.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\modules\\threeDView\\weatherSkyController.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\Current-Build\\src\\components\\DotsMenu.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\components\\DotsMenu.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\MapEditorMainToolbar.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\modules\\scenarioeditor\\MapEditorMainToolbar.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\threeDView\\handling\\moveUnit.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\modules\\threeDView\\handling\\moveUnit.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\threeDView\\hydrography\\gebcoOverlay.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\modules\\threeDView\\hydrography\\gebcoOverlay.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\Personnel\\UnitDetailsPersonnel.vue||{8B382828-6202-11D1-8870-0000F87579D2}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\modules\\scenarioeditor\\Personnel\\UnitDetailsPersonnel.vue||{8B382828-6202-11D1-8870-0000F87579D2}"
     },
     {
       "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\Current-Build\\src\\types\\scenarioModels.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
@@ -87,28 +239,8 @@
       "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\modules\\scenarioeditor\\ScenarioMapLayerDetails.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\Leaders\\UnitDetailsLeaders.vue||{8B382828-6202-11D1-8870-0000F87579D2}",
-      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\modules\\scenarioeditor\\Leaders\\UnitDetailsLeaders.vue||{8B382828-6202-11D1-8870-0000F87579D2}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\Current-Build\\src\\components\\DotsMenu.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}",
-      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\components\\DotsMenu.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}"
-    },
-    {
       "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\Current-Build\\src\\components\\TabWrapper.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}",
       "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\components\\TabWrapper.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\Leaders\\rankAssets.ts||{8B382828-6202-11D1-8870-0000F87579D2}",
-      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\modules\\scenarioeditor\\Leaders\\rankAssets.ts||{8B382828-6202-11D1-8870-0000F87579D2}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\Leaders\\rankProfiles.ts||{8B382828-6202-11D1-8870-0000F87579D2}",
-      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\modules\\scenarioeditor\\Leaders\\rankProfiles.ts||{8B382828-6202-11D1-8870-0000F87579D2}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\Leaders\\rankGrades.ts||{8B382828-6202-11D1-8870-0000F87579D2}",
-      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\modules\\scenarioeditor\\Leaders\\rankGrades.ts||{8B382828-6202-11D1-8870-0000F87579D2}"
     },
     {
       "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\ExtendedScenarioEvents\\eventIconRegistry.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
@@ -117,10 +249,6 @@
     {
       "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\ExtendedScenarioEvents\\eventIconStyle.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
       "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\modules\\scenarioeditor\\ExtendedScenarioEvents\\eventIconStyle.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\ScenarioEventDetails.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}",
-      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\modules\\scenarioeditor\\ScenarioEventDetails.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}"
     },
     {
       "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\ExtendedScenarioEvents\\ScenarioEventExternalMediaGallery.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}",
@@ -135,16 +263,8 @@
       "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\modules\\scenarioeditor\\ScenarioEventsPanel.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\ExtendedScenarioEvents\\UnitPickerDialog.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}",
-      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\modules\\scenarioeditor\\ExtendedScenarioEvents\\UnitPickerDialog.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}"
-    },
-    {
       "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\ExtendedScenarioEvents\\ScenarioEventUnitsTab.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}",
       "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\modules\\scenarioeditor\\ExtendedScenarioEvents\\ScenarioEventUnitsTab.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\UnitDetailsToe.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}",
-      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\modules\\scenarioeditor\\UnitDetailsToe.vue||{40D31677-CBC0-4297-A9EF-89D907823A98}"
     },
     {
       "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\ExtendedScenarioEvents\\useScenarioEventLayer.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
@@ -182,11 +302,11 @@
       "DocumentGroups": [
         {
           "DockedWidth": 200,
-          "SelectedChildIndex": 1,
+          "SelectedChildIndex": 63,
           "Children": [
             {
               "$type": "Document",
-              "DocumentIndex": 42,
+              "DocumentIndex": 72,
               "Title": "iconCache.ts",
               "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\symbology\\iconCache.ts",
               "RelativeDocumentMoniker": "src\\symbology\\iconCache.ts",
@@ -199,28 +319,67 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 0,
-              "Title": "gebcoOverlay.ts",
-              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\threeDView\\hydrography\\gebcoOverlay.ts",
-              "RelativeDocumentMoniker": "src\\modules\\threeDView\\hydrography\\gebcoOverlay.ts",
-              "ToolTip": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\threeDView\\hydrography\\gebcoOverlay.ts",
-              "RelativeToolTip": "src\\modules\\threeDView\\hydrography\\gebcoOverlay.ts",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAUAAAA7AAAAAAAAAA==",
+              "DocumentIndex": 6,
+              "Title": "io.ts",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\scenariostore\\io.ts",
+              "RelativeDocumentMoniker": "src\\scenariostore\\io.ts",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\scenariostore\\io.ts",
+              "RelativeToolTip": "src\\scenariostore\\io.ts",
+              "ViewState": "AgIAAGsBAAAAAAAAAAAcwAAAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
-              "WhenOpened": "2026-01-14T04:56:58.97Z",
+              "WhenOpened": "2026-02-04T03:20:42.132Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 4,
+              "Title": "eventMarkers3D.ts",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\threeDView\\objects\\ScenarioEvents3D\\eventMarkers3D.ts",
+              "RelativeDocumentMoniker": "src\\modules\\threeDView\\objects\\ScenarioEvents3D\\eventMarkers3D.ts",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\threeDView\\objects\\ScenarioEvents3D\\eventMarkers3D.ts",
+              "RelativeToolTip": "src\\modules\\threeDView\\objects\\ScenarioEvents3D\\eventMarkers3D.ts",
+              "ViewState": "AgIAAAoAAAAAAAAAAAAAAFAAAAAqAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2026-02-04T00:23:41.497Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 8,
+              "Title": "SimpleSelect.vue",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\components\\SimpleSelect.vue",
+              "RelativeDocumentMoniker": "src\\components\\SimpleSelect.vue",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\components\\SimpleSelect.vue",
+              "RelativeToolTip": "src\\components\\SimpleSelect.vue",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAADcAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003491|",
+              "WhenOpened": "2026-02-03T21:31:21.161Z",
               "EditorCaption": ""
             },
             {
               "$type": "Document",
               "DocumentIndex": 1,
-              "Title": "GlobeView.vue",
-              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\threeDView\\GlobeView.vue",
-              "RelativeDocumentMoniker": "src\\modules\\threeDView\\GlobeView.vue",
-              "ToolTip": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\threeDView\\GlobeView.vue",
-              "RelativeToolTip": "src\\modules\\threeDView\\GlobeView.vue",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Title": "ScenarioEventsDock3D.vue",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\threeDView\\objects\\ScenarioEvents3D\\ScenarioEventsDock3D.vue",
+              "RelativeDocumentMoniker": "src\\modules\\threeDView\\objects\\ScenarioEvents3D\\ScenarioEventsDock3D.vue",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\threeDView\\objects\\ScenarioEvents3D\\ScenarioEventsDock3D.vue",
+              "RelativeToolTip": "src\\modules\\threeDView\\objects\\ScenarioEvents3D\\ScenarioEventsDock3D.vue",
+              "ViewState": "AgIAAE4AAAAAAAAAAAAAAKwAAAAFAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003491|",
-              "WhenOpened": "2026-01-14T04:56:26.96Z",
+              "WhenOpened": "2026-02-03T20:44:30.347Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 12,
+              "Title": "UnitDetailsMapDisplay.vue",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\UnitDetailsMapDisplay.vue",
+              "RelativeDocumentMoniker": "src\\modules\\scenarioeditor\\UnitDetailsMapDisplay.vue",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\UnitDetailsMapDisplay.vue",
+              "RelativeToolTip": "src\\modules\\scenarioeditor\\UnitDetailsMapDisplay.vue",
+              "ViewState": "AgIAADsBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003491|",
+              "WhenOpened": "2026-02-03T20:28:45.533Z",
               "EditorCaption": ""
             },
             {
@@ -241,7 +400,338 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 2,
+              "DocumentIndex": 10,
+              "Title": "ItemMedia.vue",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\ItemMedia.vue",
+              "RelativeDocumentMoniker": "src\\modules\\scenarioeditor\\ItemMedia.vue",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\ItemMedia.vue",
+              "RelativeToolTip": "src\\modules\\scenarioeditor\\ItemMedia.vue",
+              "ViewState": "AgIAAHMAAAAAAAAAAAAmwOQAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003491|",
+              "WhenOpened": "2026-02-03T09:08:08.59Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 11,
+              "Title": "EditMediaForm.vue",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\EditMediaForm.vue",
+              "RelativeDocumentMoniker": "src\\modules\\scenarioeditor\\EditMediaForm.vue",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\EditMediaForm.vue",
+              "RelativeToolTip": "src\\modules\\scenarioeditor\\EditMediaForm.vue",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAADEAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003491|",
+              "WhenOpened": "2026-02-03T09:07:58.514Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 9,
+              "Title": "ScenarioEventsList3D.vue",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\threeDView\\objects\\ScenarioEvents3D\\ScenarioEventsList3D.vue",
+              "RelativeDocumentMoniker": "src\\modules\\threeDView\\objects\\ScenarioEvents3D\\ScenarioEventsList3D.vue",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\threeDView\\objects\\ScenarioEvents3D\\ScenarioEventsList3D.vue",
+              "RelativeToolTip": "src\\modules\\threeDView\\objects\\ScenarioEvents3D\\ScenarioEventsList3D.vue",
+              "ViewState": "AgIAALMAAAAAAAAAAAAswPIAAAARAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003491|",
+              "WhenOpened": "2026-02-03T04:17:10.179Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 13,
+              "Title": "UnitDetailsDock3D.vue",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\threeDView\\objects\\UnitDetails3D\\UnitDetailsDock3D.vue",
+              "RelativeDocumentMoniker": "src\\modules\\threeDView\\objects\\UnitDetails3D\\UnitDetailsDock3D.vue",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\threeDView\\objects\\UnitDetails3D\\UnitDetailsDock3D.vue",
+              "RelativeToolTip": "src\\modules\\threeDView\\objects\\UnitDetails3D\\UnitDetailsDock3D.vue",
+              "ViewState": "AgIAAB0AAAAAAAAAAAAmwB4AAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003491|",
+              "WhenOpened": "2026-02-03T04:06:44.42Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 20,
+              "Title": "types.ts",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\types.ts",
+              "RelativeDocumentMoniker": "src\\modules\\scenarioeditor\\types.ts",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\types.ts",
+              "RelativeToolTip": "src\\modules\\scenarioeditor\\types.ts",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2026-02-03T03:08:49.62Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 5,
+              "Title": "newScenarioStore.ts",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\scenariostore\\newScenarioStore.ts",
+              "RelativeDocumentMoniker": "src\\scenariostore\\newScenarioStore.ts",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\scenariostore\\newScenarioStore.ts",
+              "RelativeToolTip": "src\\scenariostore\\newScenarioStore.ts",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAcAAAATAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2026-02-03T02:54:47.443Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 7,
+              "Title": "localdb.ts",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\scenariostore\\localdb.ts",
+              "RelativeDocumentMoniker": "src\\scenariostore\\localdb.ts",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\scenariostore\\localdb.ts",
+              "RelativeToolTip": "src\\scenariostore\\localdb.ts",
+              "ViewState": "AgIAAGMAAAAAAAAAAAAowAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2026-02-03T02:54:39.749Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 30,
+              "Title": "unitManipulations.ts",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\scenariostore\\unitManipulations.ts",
+              "RelativeDocumentMoniker": "src\\scenariostore\\unitManipulations.ts",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\scenariostore\\unitManipulations.ts",
+              "RelativeToolTip": "src\\scenariostore\\unitManipulations.ts",
+              "ViewState": "AgIAADQBAAAAAAAAAAAswAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2026-02-03T02:54:19.864Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 22,
+              "Title": "TanstackGridTestView.vue",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\grid\\TanstackGridTestView.vue",
+              "RelativeDocumentMoniker": "src\\modules\\grid\\TanstackGridTestView.vue",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\grid\\TanstackGridTestView.vue",
+              "RelativeToolTip": "src\\modules\\grid\\TanstackGridTestView.vue",
+              "ViewState": "AgIAAHgAAAAAAAAAAAAAAIkAAAAEAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003491|",
+              "WhenOpened": "2026-02-03T02:45:42.135Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 28,
+              "Title": "helpers.ts",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\grid\\helpers.ts",
+              "RelativeDocumentMoniker": "src\\modules\\grid\\helpers.ts",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\grid\\helpers.ts",
+              "RelativeToolTip": "src\\modules\\grid\\helpers.ts",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2026-02-03T02:44:22.451Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 32,
+              "Title": "GridHeaderResizeHandle.vue",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\grid\\GridHeaderResizeHandle.vue",
+              "RelativeDocumentMoniker": "src\\modules\\grid\\GridHeaderResizeHandle.vue",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\grid\\GridHeaderResizeHandle.vue",
+              "RelativeToolTip": "src\\modules\\grid\\GridHeaderResizeHandle.vue",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003491|",
+              "WhenOpened": "2026-02-03T02:44:04.785Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 33,
+              "Title": "ToeGrid.vue",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\grid\\ToeGrid.vue",
+              "RelativeDocumentMoniker": "src\\modules\\grid\\ToeGrid.vue",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\grid\\ToeGrid.vue",
+              "RelativeToolTip": "src\\modules\\grid\\ToeGrid.vue",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003491|",
+              "WhenOpened": "2026-02-03T02:41:09.113Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 23,
+              "Title": "OrbatGridRow.vue",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\grid\\OrbatGridRow.vue",
+              "RelativeDocumentMoniker": "src\\modules\\grid\\OrbatGridRow.vue",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\grid\\OrbatGridRow.vue",
+              "RelativeToolTip": "src\\modules\\grid\\OrbatGridRow.vue",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAADIAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003491|",
+              "WhenOpened": "2026-02-03T02:40:55.888Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 31,
+              "Title": "GridTestView.vue",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\grid\\GridTestView.vue",
+              "RelativeDocumentMoniker": "src\\modules\\grid\\GridTestView.vue",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\grid\\GridTestView.vue",
+              "RelativeToolTip": "src\\modules\\grid\\GridTestView.vue",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003491|",
+              "WhenOpened": "2026-02-03T02:39:46.807Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 27,
+              "Title": "gridTypes.ts",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\grid\\gridTypes.ts",
+              "RelativeDocumentMoniker": "src\\modules\\grid\\gridTypes.ts",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\grid\\gridTypes.ts",
+              "RelativeToolTip": "src\\modules\\grid\\gridTypes.ts",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2026-02-03T02:39:45.797Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 29,
+              "Title": "DataGrid.vue",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\grid\\DataGrid.vue",
+              "RelativeDocumentMoniker": "src\\modules\\grid\\DataGrid.vue",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\grid\\DataGrid.vue",
+              "RelativeToolTip": "src\\modules\\grid\\DataGrid.vue",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAO4AAAAlAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003491|",
+              "WhenOpened": "2026-02-03T02:39:23.956Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 26,
+              "Title": "OrbatGrid.vue",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\grid\\OrbatGrid.vue",
+              "RelativeDocumentMoniker": "src\\modules\\grid\\OrbatGrid.vue",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\grid\\OrbatGrid.vue",
+              "RelativeToolTip": "src\\modules\\grid\\OrbatGrid.vue",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAUAAAAFAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003491|",
+              "WhenOpened": "2026-02-03T02:38:37.97Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 25,
+              "Title": "OrbatGridGroupRow.vue",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\grid\\OrbatGridGroupRow.vue",
+              "RelativeDocumentMoniker": "src\\modules\\grid\\OrbatGridGroupRow.vue",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\grid\\OrbatGridGroupRow.vue",
+              "RelativeToolTip": "src\\modules\\grid\\OrbatGridGroupRow.vue",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003491|",
+              "WhenOpened": "2026-02-03T02:38:35.628Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 24,
+              "Title": "OrbatGridHeader.vue",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\grid\\OrbatGridHeader.vue",
+              "RelativeDocumentMoniker": "src\\modules\\grid\\OrbatGridHeader.vue",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\grid\\OrbatGridHeader.vue",
+              "RelativeToolTip": "src\\modules\\grid\\OrbatGridHeader.vue",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAACoAAAAqAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003491|",
+              "WhenOpened": "2026-02-03T02:38:31.718Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 34,
+              "Title": "UnitDetailsProperties.vue",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\UnitDetailsProperties.vue",
+              "RelativeDocumentMoniker": "src\\modules\\scenarioeditor\\UnitDetailsProperties.vue",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\UnitDetailsProperties.vue",
+              "RelativeToolTip": "src\\modules\\scenarioeditor\\UnitDetailsProperties.vue",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003491|",
+              "WhenOpened": "2026-02-03T02:37:54.196Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 36,
+              "Title": "weatherSkyController.ts",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\threeDView\\weatherSkyController.ts",
+              "RelativeDocumentMoniker": "src\\modules\\threeDView\\weatherSkyController.ts",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\threeDView\\weatherSkyController.ts",
+              "RelativeToolTip": "src\\modules\\threeDView\\weatherSkyController.ts",
+              "ViewState": "AgIAAB4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2026-02-02T09:15:29.018Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 35,
+              "Title": "OrbatPanel.vue",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\OrbatPanel.vue",
+              "RelativeDocumentMoniker": "src\\modules\\scenarioeditor\\OrbatPanel.vue",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\OrbatPanel.vue",
+              "RelativeToolTip": "src\\modules\\scenarioeditor\\OrbatPanel.vue",
+              "ViewState": "AgIAAHEAAAAAAAAAAAAwwMAAAAATAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003491|",
+              "WhenOpened": "2026-02-02T03:12:41.532Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 15,
+              "Title": "UnitPanelState.vue",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\UnitPanelState.vue",
+              "RelativeDocumentMoniker": "src\\modules\\scenarioeditor\\UnitPanelState.vue",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\UnitPanelState.vue",
+              "RelativeToolTip": "src\\modules\\scenarioeditor\\UnitPanelState.vue",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAA8AAAA1AAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003491|",
+              "WhenOpened": "2026-02-02T02:04:48.853Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 38,
+              "Title": "MapEditorMainToolbar.vue",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\MapEditorMainToolbar.vue",
+              "RelativeDocumentMoniker": "src\\modules\\scenarioeditor\\MapEditorMainToolbar.vue",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\MapEditorMainToolbar.vue",
+              "RelativeToolTip": "src\\modules\\scenarioeditor\\MapEditorMainToolbar.vue",
+              "ViewState": "AgIAAL8AAAAAAAAAAAAwwAsBAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003491|",
+              "WhenOpened": "2026-02-02T02:03:44.522Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 39,
+              "Title": "moveUnit.ts",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\threeDView\\handling\\moveUnit.ts",
+              "RelativeDocumentMoniker": "src\\modules\\threeDView\\handling\\moveUnit.ts",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\threeDView\\handling\\moveUnit.ts",
+              "RelativeToolTip": "src\\modules\\threeDView\\handling\\moveUnit.ts",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAYAAABZAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2026-02-01T03:50:10.158Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 40,
+              "Title": "gebcoOverlay.ts",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\threeDView\\hydrography\\gebcoOverlay.ts",
+              "RelativeDocumentMoniker": "src\\modules\\threeDView\\hydrography\\gebcoOverlay.ts",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\threeDView\\hydrography\\gebcoOverlay.ts",
+              "RelativeToolTip": "src\\modules\\threeDView\\hydrography\\gebcoOverlay.ts",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAABIAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2026-01-14T04:56:58.97Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 3,
+              "Title": "GlobeView.vue",
+              "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\threeDView\\GlobeView.vue",
+              "RelativeDocumentMoniker": "src\\modules\\threeDView\\GlobeView.vue",
+              "ToolTip": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\threeDView\\GlobeView.vue",
+              "RelativeToolTip": "src\\modules\\threeDView\\GlobeView.vue",
+              "ViewState": "AgIAAAwHAAAAAAAAAAAswEsHAABBAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003491|",
+              "WhenOpened": "2026-01-14T04:56:26.96Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 41,
               "Title": "UnitDetailsPersonnel.vue",
               "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\Personnel\\UnitDetailsPersonnel.vue",
               "RelativeDocumentMoniker": "src\\modules\\scenarioeditor\\Personnel\\UnitDetailsPersonnel.vue",
@@ -249,12 +739,11 @@
               "RelativeToolTip": "src\\modules\\scenarioeditor\\Personnel\\UnitDetailsPersonnel.vue",
               "ViewState": "AgIAAE8BAAAAAAAAAAAgwHIBAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003491|",
-              "WhenOpened": "2026-01-06T19:19:56.442Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-01-06T19:19:56.442Z"
             },
             {
               "$type": "Document",
-              "DocumentIndex": 5,
+              "DocumentIndex": 43,
               "Title": "GridEditView.vue",
               "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\GridEditView.vue",
               "RelativeDocumentMoniker": "src\\modules\\scenarioeditor\\GridEditView.vue",
@@ -266,7 +755,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 6,
+              "DocumentIndex": 44,
               "Title": "geoUnitLayers.ts",
               "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\composables\\geoUnitLayers.ts",
               "RelativeDocumentMoniker": "src\\composables\\geoUnitLayers.ts",
@@ -278,7 +767,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 7,
+              "DocumentIndex": 45,
               "Title": "ScenarioMapLogic.vue",
               "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\components\\ScenarioMapLogic.vue",
               "RelativeDocumentMoniker": "src\\components\\ScenarioMapLogic.vue",
@@ -290,7 +779,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 8,
+              "DocumentIndex": 46,
               "Title": "time.ts",
               "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\scenariostore\\time.ts",
               "RelativeDocumentMoniker": "src\\scenariostore\\time.ts",
@@ -302,7 +791,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 9,
+              "DocumentIndex": 47,
               "Title": "CommandPaletteUnitItem.vue",
               "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\components\\CommandPaletteUnitItem.vue",
               "RelativeDocumentMoniker": "src\\components\\CommandPaletteUnitItem.vue",
@@ -314,7 +803,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 13,
+              "DocumentIndex": 51,
               "Title": "countrybordersjsonsindex.json",
               "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\public\\countrybordersjsonsindex.json",
               "RelativeDocumentMoniker": "public\\countrybordersjsonsindex.json",
@@ -326,7 +815,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 16,
+              "DocumentIndex": 54,
               "Title": "ScenarioInfoUnitStatuses.vue",
               "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\ScenarioInfoUnitStatuses.vue",
               "RelativeDocumentMoniker": "src\\modules\\scenarioeditor\\ScenarioInfoUnitStatuses.vue",
@@ -338,7 +827,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 15,
+              "DocumentIndex": 53,
               "Title": "ScenarioLayersTabPanel.vue",
               "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\ScenarioLayersTabPanel.vue",
               "RelativeDocumentMoniker": "src\\modules\\scenarioeditor\\ScenarioLayersTabPanel.vue",
@@ -350,7 +839,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 19,
+              "DocumentIndex": 57,
               "Title": "package.json",
               "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\package.json",
               "RelativeDocumentMoniker": "package.json",
@@ -362,7 +851,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 20,
+              "DocumentIndex": 58,
               "Title": "ScenarioMapLayerDetails.vue",
               "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\ScenarioMapLayerDetails.vue",
               "RelativeDocumentMoniker": "src\\modules\\scenarioeditor\\ScenarioMapLayerDetails.vue",
@@ -374,7 +863,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 17,
+              "DocumentIndex": 55,
               "Title": "scenarioMapLayers.ts",
               "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\scenarioMapLayers.ts",
               "RelativeDocumentMoniker": "src\\modules\\scenarioeditor\\scenarioMapLayers.ts",
@@ -386,7 +875,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 18,
+              "DocumentIndex": 56,
               "Title": "internalModels.ts",
               "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\types\\internalModels.ts",
               "RelativeDocumentMoniker": "src\\types\\internalModels.ts",
@@ -398,7 +887,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 14,
+              "DocumentIndex": 52,
               "Title": "scenarioGeoModels.ts",
               "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\types\\scenarioGeoModels.ts",
               "RelativeDocumentMoniker": "src\\types\\scenarioGeoModels.ts",
@@ -410,7 +899,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 10,
+              "DocumentIndex": 48,
               "Title": "FIRMSMapLayerSettingsForm.vue",
               "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\FIRMSLayer\\FIRMSMapLayerSettingsForm.vue",
               "RelativeDocumentMoniker": "src\\modules\\scenarioeditor\\FIRMSLayer\\FIRMSMapLayerSettingsForm.vue",
@@ -422,7 +911,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 11,
+              "DocumentIndex": 49,
               "Title": "FIRMSMapLayerSettings.vue",
               "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\FIRMSLayer\\FIRMSMapLayerSettings.vue",
               "RelativeDocumentMoniker": "src\\modules\\scenarioeditor\\FIRMSLayer\\FIRMSMapLayerSettings.vue",
@@ -434,7 +923,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 12,
+              "DocumentIndex": 50,
               "Title": "firmsLayerController.ts",
               "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\FIRMSLayer\\firmsLayerController.ts",
               "RelativeDocumentMoniker": "src\\modules\\scenarioeditor\\FIRMSLayer\\firmsLayerController.ts",
@@ -446,19 +935,19 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 22,
+              "DocumentIndex": 37,
               "Title": "DotsMenu.vue",
               "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\components\\DotsMenu.vue",
               "RelativeDocumentMoniker": "src\\components\\DotsMenu.vue",
               "ToolTip": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\components\\DotsMenu.vue",
               "RelativeToolTip": "src\\components\\DotsMenu.vue",
-              "ViewState": "AgIAACcAAAAAAAAAAAAAwI8AAAAAAAAAAAAAAA==",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAF4AAAAZAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003491|",
               "WhenOpened": "2025-12-20T17:47:06.886Z"
             },
             {
               "$type": "Document",
-              "DocumentIndex": 4,
+              "DocumentIndex": 42,
               "Title": "scenarioModels.ts",
               "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\types\\scenarioModels.ts",
               "RelativeDocumentMoniker": "src\\types\\scenarioModels.ts",
@@ -470,7 +959,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 24,
+              "DocumentIndex": 17,
               "Title": "rankAssets.ts",
               "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\Leaders\\rankAssets.ts",
               "RelativeDocumentMoniker": "src\\modules\\scenarioeditor\\Leaders\\rankAssets.ts",
@@ -482,19 +971,19 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 25,
+              "DocumentIndex": 16,
               "Title": "rankProfiles.ts",
               "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\Leaders\\rankProfiles.ts",
               "RelativeDocumentMoniker": "src\\modules\\scenarioeditor\\Leaders\\rankProfiles.ts",
               "ToolTip": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\Leaders\\rankProfiles.ts",
               "RelativeToolTip": "src\\modules\\scenarioeditor\\Leaders\\rankProfiles.ts",
-              "ViewState": "AgIAAAgAAAAAAAAAAAAQwF8AAAAAAAAAAAAAAA==",
+              "ViewState": "AgIAAAgAAAAAAAAAAAAQwDYAAABhAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
               "WhenOpened": "2025-12-20T16:00:46.143Z"
             },
             {
               "$type": "Document",
-              "DocumentIndex": 26,
+              "DocumentIndex": 18,
               "Title": "rankGrades.ts",
               "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\Leaders\\rankGrades.ts",
               "RelativeDocumentMoniker": "src\\modules\\scenarioeditor\\Leaders\\rankGrades.ts",
@@ -506,19 +995,19 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 21,
+              "DocumentIndex": 19,
               "Title": "UnitDetailsLeaders.vue",
               "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\Leaders\\UnitDetailsLeaders.vue",
               "RelativeDocumentMoniker": "src\\modules\\scenarioeditor\\Leaders\\UnitDetailsLeaders.vue",
               "ToolTip": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\Leaders\\UnitDetailsLeaders.vue",
               "RelativeToolTip": "src\\modules\\scenarioeditor\\Leaders\\UnitDetailsLeaders.vue",
-              "ViewState": "AgIAAF8CAAAAAAAAAAAAwI4CAAA+AAAAAAAAAA==",
+              "ViewState": "AgIAAF4CAAAAAAAAAAAAwI8CAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003491|",
               "WhenOpened": "2025-12-20T15:33:12.184Z"
             },
             {
               "$type": "Document",
-              "DocumentIndex": 23,
+              "DocumentIndex": 59,
               "Title": "TabWrapper.vue",
               "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\components\\TabWrapper.vue",
               "RelativeDocumentMoniker": "src\\components\\TabWrapper.vue",
@@ -530,43 +1019,44 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 35,
+              "DocumentIndex": 21,
               "Title": "UnitDetailsToe.vue",
               "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\UnitDetailsToe.vue",
               "RelativeDocumentMoniker": "src\\modules\\scenarioeditor\\UnitDetailsToe.vue",
               "ToolTip": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\UnitDetailsToe.vue",
               "RelativeToolTip": "src\\modules\\scenarioeditor\\UnitDetailsToe.vue",
-              "ViewState": "AgIAAG8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "ViewState": "AgIAABEBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003491|",
               "WhenOpened": "2025-12-19T23:45:26.917Z"
             },
             {
               "$type": "Document",
-              "DocumentIndex": 3,
+              "DocumentIndex": 14,
               "Title": "UnitDetails.vue",
               "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\UnitDetails.vue",
               "RelativeDocumentMoniker": "src\\modules\\scenarioeditor\\UnitDetails.vue",
               "ToolTip": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\UnitDetails.vue",
               "RelativeToolTip": "src\\modules\\scenarioeditor\\UnitDetails.vue",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAAIoAAAAwAAAAAAAAAA==",
+              "ViewState": "AgIAAF0CAAAAAAAAAAApwA8CAAABAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003491|",
               "WhenOpened": "2025-12-19T23:45:06.212Z"
             },
             {
               "$type": "Document",
-              "DocumentIndex": 33,
+              "DocumentIndex": 0,
               "Title": "UnitPickerDialog.vue",
               "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\ExtendedScenarioEvents\\UnitPickerDialog.vue",
               "RelativeDocumentMoniker": "src\\modules\\scenarioeditor\\ExtendedScenarioEvents\\UnitPickerDialog.vue",
               "ToolTip": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\ExtendedScenarioEvents\\UnitPickerDialog.vue",
               "RelativeToolTip": "src\\modules\\scenarioeditor\\ExtendedScenarioEvents\\UnitPickerDialog.vue",
-              "ViewState": "AgIAAGEBAAAAAAAAAAAowKoBAAA1AAAAAAAAAA==",
+              "ViewState": "AgIAADUBAAAAAAAAAAAswG4BAABNAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003491|",
-              "WhenOpened": "2025-12-19T22:16:24.608Z"
+              "WhenOpened": "2025-12-19T22:16:24.608Z",
+              "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 34,
+              "DocumentIndex": 65,
               "Title": "ScenarioEventUnitsTab.vue",
               "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\ExtendedScenarioEvents\\ScenarioEventUnitsTab.vue",
               "RelativeDocumentMoniker": "src\\modules\\scenarioeditor\\ExtendedScenarioEvents\\ScenarioEventUnitsTab.vue",
@@ -578,7 +1068,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 37,
+              "DocumentIndex": 67,
               "Title": "useInvolvedUnits.ts",
               "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\ExtendedScenarioEvents\\useInvolvedUnits.ts",
               "RelativeDocumentMoniker": "src\\modules\\scenarioeditor\\ExtendedScenarioEvents\\useInvolvedUnits.ts",
@@ -590,7 +1080,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 30,
+              "DocumentIndex": 62,
               "Title": "ScenarioEventExternalMediaGallery.vue",
               "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\ExtendedScenarioEvents\\ScenarioEventExternalMediaGallery.vue",
               "RelativeDocumentMoniker": "src\\modules\\scenarioeditor\\ExtendedScenarioEvents\\ScenarioEventExternalMediaGallery.vue",
@@ -602,7 +1092,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 31,
+              "DocumentIndex": 63,
               "Title": "parseExternalMedia.ts",
               "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\ExtendedScenarioEvents\\parseExternalMedia.ts",
               "RelativeDocumentMoniker": "src\\modules\\scenarioeditor\\ExtendedScenarioEvents\\parseExternalMedia.ts",
@@ -614,7 +1104,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 38,
+              "DocumentIndex": 68,
               "Title": "ScenarioTimeline.vue",
               "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\ScenarioTimeline.vue",
               "RelativeDocumentMoniker": "src\\modules\\scenarioeditor\\ScenarioTimeline.vue",
@@ -626,7 +1116,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 32,
+              "DocumentIndex": 64,
               "Title": "ScenarioEventsPanel.vue",
               "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\ScenarioEventsPanel.vue",
               "RelativeDocumentMoniker": "src\\modules\\scenarioeditor\\ScenarioEventsPanel.vue",
@@ -638,7 +1128,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 40,
+              "DocumentIndex": 70,
               "Title": "scenarioEvents.ts",
               "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\scenarioEvents.ts",
               "RelativeDocumentMoniker": "src\\modules\\scenarioeditor\\scenarioEvents.ts",
@@ -650,7 +1140,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 41,
+              "DocumentIndex": 71,
               "Title": "ScenarioEventDropdownMenu.vue",
               "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\ScenarioEventDropdownMenu.vue",
               "RelativeDocumentMoniker": "src\\modules\\scenarioeditor\\ScenarioEventDropdownMenu.vue",
@@ -662,19 +1152,20 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 29,
+              "DocumentIndex": 2,
               "Title": "ScenarioEventDetails.vue",
               "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\ScenarioEventDetails.vue",
               "RelativeDocumentMoniker": "src\\modules\\scenarioeditor\\ScenarioEventDetails.vue",
               "ToolTip": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\ScenarioEventDetails.vue",
               "RelativeToolTip": "src\\modules\\scenarioeditor\\ScenarioEventDetails.vue",
-              "ViewState": "AgIAAKICAAAAAAAAAAAowKkCAAAWAAAAAAAAAA==",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAEoAAAAFAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003491|",
-              "WhenOpened": "2025-12-16T13:59:44.067Z"
+              "WhenOpened": "2025-12-16T13:59:44.067Z",
+              "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 36,
+              "DocumentIndex": 66,
               "Title": "useScenarioEventLayer.ts",
               "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\ExtendedScenarioEvents\\useScenarioEventLayer.ts",
               "RelativeDocumentMoniker": "src\\modules\\scenarioeditor\\ExtendedScenarioEvents\\useScenarioEventLayer.ts",
@@ -686,7 +1177,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 39,
+              "DocumentIndex": 69,
               "Title": "useScenarioEventLocation.ts",
               "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\ExtendedScenarioEvents\\useScenarioEventLocation.ts",
               "RelativeDocumentMoniker": "src\\modules\\scenarioeditor\\ExtendedScenarioEvents\\useScenarioEventLocation.ts",
@@ -698,7 +1189,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 27,
+              "DocumentIndex": 60,
               "Title": "eventIconRegistry.ts",
               "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\ExtendedScenarioEvents\\eventIconRegistry.ts",
               "RelativeDocumentMoniker": "src\\modules\\scenarioeditor\\ExtendedScenarioEvents\\eventIconRegistry.ts",
@@ -710,7 +1201,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 28,
+              "DocumentIndex": 61,
               "Title": "eventIconStyle.ts",
               "DocumentMoniker": "C:\\Users\\astut\\source\\repos\\Current-Build\\src\\modules\\scenarioeditor\\ExtendedScenarioEvents\\eventIconStyle.ts",
               "RelativeDocumentMoniker": "src\\modules\\scenarioeditor\\ExtendedScenarioEvents\\eventIconStyle.ts",

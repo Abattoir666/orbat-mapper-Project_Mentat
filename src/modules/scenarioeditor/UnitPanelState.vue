@@ -5,51 +5,19 @@
         <div class="flex items-center gap-1">
             <UnitStatusPopover @update="setUnitStatus"
                                :disabled="isLocked"
-                               buttonClass="bg-gray-200 text-gray-700 hover:bg-gray-300"
+                               buttonClass="bg-gray-200 text-gray-700 hover:bg-gray-300 unitstate-pill"
                                contentClass="z-[10000] bg-gray-200 text-gray-700 border border-gray-300 shadow-lg"
                                submitClass="text-gray-700" />
 
             <SplitButton :items="stateItems"
                          v-model:active-item="uiState.activeStateItem"
-                         buttonClass="bg-gray-200 text-gray-700 hover:bg-gray-300"
+                         buttonClass="bg-gray-200 text-gray-700 hover:bg-gray-300 unitstate-pill"
                          menuClass="text-gray-700"
                          itemClass="text-gray-700" />
         </div>
     </div>
 
     <ul class="mt-2 divide-y divide-gray-200 border-t border-b border-gray-200">
-        <li v-if="unit.location" class="relative flex items-center py-4">
-            <div class="flex min-w-0 flex-auto flex-col text-sm">
-                <span class="font-medium text-gray-500">Initial position</span>
-
-                <template v-if="editInitialPosition">
-                    <CoordinateInput v-model="newPosition"
-                                     :format="coordinateInputFormat"
-                                     @update:format="coordinateInputFormat = $event"
-                                     @outBlur="doneEditInitialPosition()"
-                                     @keyup.enter="doneEditInitialPosition()"
-                                     @keyup.esc="cancelEdit()"
-                                     autofocus />
-                    <div class="mt-1 flex items-center gap-2">
-                        <span class="text-xs text-gray-500">Alt (m)</span>
-                        <input v-model.number="newAltitude"
-                               type="number"
-                               inputmode="numeric"
-                               class="w-24 rounded border border-gray-300 px-1 py-0.5 text-xs text-gray-900"
-                               :disabled="isLocked"
-                               placeholder="(clamped)" />
-                        <span class="text-xs text-gray-400">blank = SFC</span>
-                    </div>
-                </template>
-
-                <p v-else class="text-gray-700" @dblclick="startEditInitialPosition()">
-                    {{ formatPosition(unit.location) }}
-                    <span class="ml-2 text-xs text-gray-500">{{ formatAlt(unit.location) }}</span>
-                </p>
-            </div>
-
-            <div class="relative flex flex-0 items-center space-x-0"></div>
-        </li>
 
         <li v-for="(s, index) in state"
             :key="s.id"
@@ -93,7 +61,7 @@
 
                 <IconMapMarkerOffOutline v-if="s.location === null" class="h-5 w-5 text-gray-600" />
 
-                <div class="mt-1 flex gap-1">
+                <div class="mt-1 flex gap-1 unitstate-flags">
                     <span v-if="s.sidc"
                           class="w-12 rounded-full bg-gray-200 px-2.5 py-0.5 text-xs font-medium text-gray-700 border border-gray-300">
                         sidc
@@ -176,9 +144,13 @@
 
     const { onUnitAction } = useUnitActions();
     const uiState = useUiStore();
-
     const state = computed(() => props.unit.state ?? []);
     const unit = computed(() => props.unit);
+
+
+    // If the unit already has any time-stamped location entries, we suppress the separate
+    // 'Initial position' row (baseline) to avoid mismatched formatting / duplicate rows.
+    const hasAnyLocationState = computed(() => state.value.some((e: any) => e && e.location));
 
     const coordinateInputFormat = useLocalStorage<CoordinateInputFormat>("coordinateInputFormat", "LonLat");
 

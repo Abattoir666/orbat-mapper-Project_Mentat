@@ -28,9 +28,15 @@ import {
 import * as Cesium from "cesium";
 import { useGlobe, type GlobeApi } from "./useGlobe";
 import { makeImageryProviders } from "./makeImageryProviders";
+import { ICON_PX, TOE_UNDERBAR_SUFFIX, PEDESTAL_SUFFIX, PEDESTAL_LINES_SUFFIX } from "./globeAdapter/constants";
+import type { GlobePort, UnitRenderable } from "./globeAdapter/types";
+import { extractGroupFill, normalizeHex, safeCssColor, withSymbolColor } from "./globeAdapter/utils/color";
+import { setEntityPosition } from "./globeAdapter/utils/position";
+import { currentViewerMs, evtTime } from "./globeAdapter/utils/time";
 import { getUnitPositionAtTime } from "@/scenariostore/time";
 import { getSidcIconSync } from "@/symbology/iconCache";
-import { WeatherSkyController, type GibsCloudOptions } from "./weatherSkyController";
+import { WeatherSkyController } from "./weatherSkyController";
+import type { GibsCloudOptions } from "./weatherSkyController";
 import {
     isInstallationBySidc,
     applyInstallationGraphics,
@@ -48,7 +54,6 @@ import { usePersonnelEditStore } from "@/stores/toeStore";
 import {
     computeToePctForUnit,
     makeToeUnderbarSvgDataUrl,
-    TOE_UNDERBAR_HIDE_AT_OR_ABOVE,
 } from "@/symbology/underbars/toeUnderbarBillboard";
 import { effectiveToeUnderbarEnabled } from "@/symbology/underbars/underbarSettings";
 
@@ -123,74 +128,12 @@ try {
     (window as any).computeSnapshot3D = computeSnapshot;
 } catch { }
 
-function safeCssColor(css?: string, fallback: Color = Color.WHITE): Color {
-    try {
-        if (!css || !css.trim()) return fallback;
-        return Color.fromCssColorString(css.trim());
-    } catch {
-        return fallback;
-    }
-}
-
 function applyIconLift(ent: Cesium.Entity, u: UnitRenderable) {
     const liftPx = Number((u as any).__iconLiftPx ?? 0) || 0;
     setUnitIconLiftPx(ent, u, liftPx);
 
     try { if (ent.billboard) (ent.billboard as any).disableDepthTestDistance = 0; } catch { }
     try { if (ent.label) (ent.label as any).disableDepthTestDistance = 0; } catch { }
-}
-
-const posEquals = (a?: Cesium.Cartesian3, b?: Cesium.Cartesian3) =>
-    !!a && !!b && Cesium.Cartesian3.equalsEpsilon(a, b, Cesium.Math.EPSILON7);
-
-function setEntityPosition(ent: Cesium.Entity, lon: number, lat: number, alt = 0) {
-    const next = Cesium.Cartesian3.fromDegrees(lon, lat, alt);
-    const now = ent.position?.getValue?.(new Cesium.JulianDate());
-    if (!posEquals(now, next)) ent.position = next;
-}
-
-/** Group-color helpers (icons carry their own color via URL params) */
-function extractGroupFill(u: UnitRenderable): string | undefined {
-    return u.symbolOptions?.iconFillColor || u.symbolOptions?.fillColor;
-}
-function normalizeHex(c?: string): string | undefined {
-    if (!c) return;
-    try {
-        const col = Color.fromCssColorString(c);
-        const r = Math.round(col.red * 255).toString(16).padStart(2, "0");
-        const g = Math.round(col.green * 255).toString(16).padStart(2, "0");
-        const b = Math.round(col.blue * 255).toString(16).padStart(2, "0");
-        return `#${r}${g}${b}`;
-    } catch {
-        return;
-    }
-}
-
-/** Remove any existing fill/fc params. */
-function stripFillParams(url: string): string {
-    return url
-        .replace(/([?&])(fill|fc)=[^&]*/gi, "$1")
-        .replace(/[?&](&|$)/, "$1");
-}
-
-/**
- * Ensure URL has our color:
- *  - For http(s): strip prior fill/fc and append new ?fill=&fc= if hex provided.
- *  - For data: URLs, return unchanged (color is baked into pixels).
- *  - If hex is falsy: just strip prior params.
- */
-function withSymbolColor(url?: string, hex?: string): string | undefined {
-    if (!url || !hex) return url;
-    if (url.startsWith("data:")) return url; // can't recolor embedded bitmaps
-
-    // Strip any existing fill/fc params, then append ours
-    const cleaned = url
-        .replace(/([?&])(fill|fc)=[^&]*/gi, "$1")
-        .replace(/[?&](&|$)/, "$1");
-
-    const enc = encodeURIComponent(hex);
-    const hasQ = cleaned.includes("?");
-    return `${cleaned}${hasQ ? "&" : "?"}fill=${enc}&fc=${enc}`;
 }
 
 /** Extract the SIDC currently encoded in an entity's billboard image URL. */
@@ -241,20 +184,6 @@ function tryGet2DIconSnapshotSync(sidc: string, size = 48, hex?: string): string
     return undefined;
 }
 
-/** Coerce event time to epoch ms; returns undefined if not parseable */
-function evtTime(e: any): number | undefined {
-    const t = e?.t;
-    if (typeof t === "number" && Number.isFinite(t)) return t;
-    if (typeof t === "string") {
-        // try fast number path first
-        const n = Number(t);
-        if (Number.isFinite(n)) return n;
-        const d = Date.parse(t);
-        if (Number.isFinite(d)) return d;
-    }
-    return undefined;
-}
-
 /** Prefer app/global base endpoint if provided; else undefined. */
 function getGlobalSymbolBase(): string | undefined {
     const w = window as any;
@@ -287,13 +216,7 @@ function tryMilsymbolDataUrlSync(sidc: string, size = 48, fillHex?: string): str
     } catch { return undefined; }
 }
 
-const ICON_PX = 40;
-
-const TOE_UNDERBAR_SUFFIX = "__toeUnderbar";
 const lastToeUnderbarSig = new Map<string, string>();
-
-const PEDESTAL_SUFFIX = "__pedestal";
-const PEDESTAL_LINES_SUFFIX = "__pedestal_lines";
 
 function pedestalLinesIdForUnit(id: string) {
     return `${id}${PEDESTAL_LINES_SUFFIX}`;
@@ -458,6 +381,12 @@ function makePedestalSvgDataUrl(iconPx: number) {
     return { url: "data:image/svg+xml;utf8," + encodeURIComponent(svg), w, h };
 }
 
+function setToeWinsUnderbarPolicy(u: any, toeDataAvailableForUnit: boolean) {
+    // If TOE data is available for this unit, suppress any SIDC-menu underbar
+    // baked into icon generation so underbar sources are mutually exclusive.
+    (u as any).__toeWinsUnderbar = !!toeDataAvailableForUnit;
+}
+
 function toeUnderbarIdForUnit(id: string) {
     return `${id}${TOE_UNDERBAR_SUFFIX}`;
 }
@@ -589,6 +518,8 @@ function updateToeUnderbarForUnit(
 
     if (!enabled || !unitEnt?.show) {
         hideToeUnderbar(viewer, u.id); // hides pedestal + underbar + resets lift
+        setToeWinsUnderbarPolicy(u, false);
+        applyBillboardGraphics(unitEnt as any, u as any, viewer);
         return;
     }
 
@@ -619,6 +550,32 @@ function updateToeUnderbarForUnit(
         pct = null;
     }
 
+    // TOE wins if we have enough personnel/baseline data to compute TOE pct.
+    // This keeps SIDC-menu underbars mutually exclusive with TOE-driven underbars.
+    const toeDataAvailableForUnit = pct != null && Number.isFinite(pct);
+
+    const prevToeWins = Boolean((u as any).__toeWinsUnderbar);
+    setToeWinsUnderbarPolicy(u, toeDataAvailableForUnit);
+
+    // If policy changed, force an icon rebuild this tick so baked underbar disappears/returns.
+    if (prevToeWins !== toeDataAvailableForUnit) {
+        // Only force “plain SIDC icon” if we can actually build one.
+        const sidcNow = effectiveSidc(u, viewer);
+        const canBuildPlain = (typeof sidcNow === "string" && sidcNow.trim().length > 0);
+
+        if (toeDataAvailableForUnit && canBuildPlain) {
+            // Only clear generated (data:) icons; don't nuke user media URLs.
+            if (typeof u.iconUrl === "string" && u.iconUrl.startsWith("data:")) {
+                u.iconUrl = undefined;
+            }
+            applyBillboardGraphics(unitEnt as any, u as any, viewer);
+        } else if (!toeDataAvailableForUnit) {
+            // TOE no longer winning → allow baked SIDC-menu underbar again.
+            applyBillboardGraphics(unitEnt as any, u as any, viewer);
+        }
+    }
+
+
     // If pct not available or full strength, hide ONLY the underbar (keep pedestal).
     if (pct == null) {
         const ub = viewer.entities.getById(ubId);
@@ -635,7 +592,8 @@ function updateToeUnderbarForUnit(
     // ─────────────────────────────────────────────────────────────
     // 3) Underbar render
     // ─────────────────────────────────────────────────────────────
-    const { url, w, h, gapPx } = makeToeUnderbarSvgDataUrl(pct, iconPx);
+    const { url: rawUrl, w, h, gapPx } = makeToeUnderbarSvgDataUrl(pct, iconPx);
+    const url = sanitizeIconUrlForImageLoad(rawUrl);
 
     function getBillboardBasePx(viewer: Cesium.Viewer, ent: Cesium.Entity, fallbackPx: number): number {
         try {
@@ -668,7 +626,7 @@ function updateToeUnderbarForUnit(
 
     // Icon lift: cone -> bar -> gap -> icon
     const liftPx = surfaceAnchored
-        ? (pedestalH + BAR_PLATFORM_GAP_PX + h) // icon bottom touches underbar top
+        ? (pedestalH + BAR_PLATFORM_GAP_PX + h + ICON_BAR_GAP_PX)
         : 0;
 
     (u as any).__iconLiftPx = liftPx;
@@ -712,11 +670,70 @@ function updateToeUnderbarForUnit(
     ubEnt.show = true;
 }
 
+function stripSidcMenuUnderbarEncoding(sidc: string): string {
+    // Underbar-encoded example: 10031030161211000000
+    // Plain version:            10031000161211000000
+    if (typeof sidc !== "string" || sidc.length < 8) return sidc;
+
+    const a = sidc.split("");
+
+    // 0-based indices: 6 = 7th char, 7 = 8th char
+    if (a[6] === "3") a[6] = "0";
+    if (a[7] === "3") a[7] = "0";
+
+    return a.join("");
+}
+
+function stripSidcUnderbarForIcon(u: UnitRenderable, forcedSidc?: string): UnitRenderable {
+    const copy: any = { ...u };
+
+    // Force builders/hooks that read u.sidc (instead of the sidc argument) to see the *plain* SIDC.
+    if (typeof forcedSidc === "string" && forcedSidc.trim()) {
+        copy.sidc = forcedSidc;
+        if (copy.__sourceUnit && typeof copy.__sourceUnit === "object") {
+            copy.__sourceUnit = { ...copy.__sourceUnit, sidc: forcedSidc };
+        }
+    }
+
+    delete copy.iconUrl;
+    if (copy.__sourceUnit && typeof copy.__sourceUnit === "object") {
+        const su = { ...copy.__sourceUnit };
+        delete su.iconUrl;
+        copy.__sourceUnit = su;
+    }
+
+    // Remove common direct fields (defensive)
+    delete copy.underbar;
+    delete copy.underbars;
+    delete copy.underbarText;
+    delete copy.underbarValue;
+    delete copy.underbarEnabled;
+
+    // Scrub symbolOptions keys containing "underbar" (if present)
+    if (copy.symbolOptions && typeof copy.symbolOptions === "object") {
+        const so: any = { ...copy.symbolOptions };
+        for (const k of Object.keys(so)) {
+            if (/underbar/i.test(k)) delete so[k];
+        }
+        copy.symbolOptions = so;
+    }
+
+    return copy as UnitRenderable;
+}
 
 /** Build a URL/dataURL for a unit's icon synchronously (no async, no point fallback). */
 function buildIconUrlSync(u: UnitRenderable, viewer?: Cesium.Viewer): string | undefined {
+    let toeWins = Boolean((u as any).__toeWinsUnderbar);
+
+    // If we cannot resolve a SIDC, never suppress iconUrl/2D snapshot;
+    // otherwise we risk removing the unit billboard entirely (common at TOE=0 edge cases).
+    const sidcForToe = effectiveSidc(u, viewer);
+    if (!(typeof sidcForToe === "string" && sidcForToe.trim())) {
+        toeWins = false;
+    }
+
     // 0) If we already have an explicit image, keep it (do NOT invalidate it).
-    if (typeof u.iconUrl === "string" && u.iconUrl.trim()) {
+    if (!toeWins && typeof u.iconUrl === "string" && u.iconUrl.trim()) {
         const hex0 = normalizeHex(extractGroupFill(u));
         // Only tint real URLs; data: already baked
         const kept = (hex0 && !u.iconUrl.startsWith("data:"))
@@ -727,23 +744,38 @@ function buildIconUrlSync(u: UnitRenderable, viewer?: Cesium.Viewer): string | u
     }
 
     // 1) Resolve a SIDC if possible, but do NOT fail just because we can't.
-    const sidc = effectiveSidc(u, viewer) ?? (u as any)?.sidc;
+    let sidc = effectiveSidc(u, viewer) ?? (u as any)?.sidc;
 
-    // 2) First try the 2D cache snapshot (most reliable for “something shows”).
-    // This works even if sidc is missing, but if it *is* present we pass color.
-    const hex = normalizeHex(extractGroupFill(u));
-    {
-        const from2D = sidc ? tryGet2DIconSnapshotSync(sidc, ICON_PX, hex) : undefined;
-        if (from2D && typeof from2D === "string") {
-            u.iconUrl = from2D; // data URL (baked color) or http (ok)
-            return from2D;
-        }
+    // TOE wins: prevent SIDC-menu underbar from being baked into the ICON by normalizing
+    // the underbar-encoded SIDC only for the billboard render.
+    if (toeWins && typeof sidc === "string" && sidc.trim()) {
+        sidc = stripSidcMenuUnderbarEncoding(sidc);
     }
+
+    const hex = normalizeHex(extractGroupFill(u));
+
+    // 2D snapshot is allowed even when TOE wins because we pass the *stripped* SIDC.
+    const from2D = sidc ? tryGet2DIconSnapshotSync(sidc, ICON_PX, hex) : undefined;
+    if (from2D && typeof from2D === "string") {
+        return from2D;
+    }
+
+    const uForIcon = toeWins ? stripSidcUnderbarForIcon(u, sidc) : u;
+
+    // 3) Builders (also allowed when TOE wins; uForIcon has sidc stripped)
+    const fromBuilder = tryGlobalUnitIconBuilder(uForIcon, sidc);
+    if (fromBuilder && typeof fromBuilder === "string") return fromBuilder;
+
+    const fromSidc = buildIconUrlForSidc(uForIcon, sidc);
+    if (fromSidc && typeof fromSidc === "string") return fromSidc;
 
     // 3) App-level URL builders (prefer URL so we can tint later on change).
     let url: string | undefined = undefined;
-    if (sidc) {
-        url = tryGlobalUnitIconBuilder(u, sidc) ?? buildIconUrlForSidc(u, sidc);
+
+    // IMPORTANT: when TOE wins, skip app hooks/builders that may re-apply SIDC underbars
+    // by reading u.sidc / unit state internally. Let the SIDC-only fallbacks below run.
+    if (sidc && !toeWins) {
+        url = tryGlobalUnitIconBuilder(uForIcon, sidc) ?? buildIconUrlForSidc(uForIcon, sidc);
     }
 
     // 4) If still nothing and we have a global symbol base, build a URL.
@@ -756,7 +788,13 @@ function buildIconUrlSync(u: UnitRenderable, viewer?: Cesium.Viewer): string | u
     if (!url && sidc) {
         url = tryMilsymbolDataUrlSync(sidc, ICON_PX, hex);
     }
-
+    // 5b) Fallback: use the app icon cache (works even if milsymbol isn't available in 3D)
+    if (!url && sidc) {
+        const cached = getSidcIconSync(sidc, { fillColor: hex }, ICON_PX);
+        if (typeof cached === "string" && cached.length > 0) {
+            url = cached;
+        }
+    }
     // 6) Final guard: if we still have nothing, don’t nuke the entity—return undefined
     // so the caller can keep whatever billboard it already had. (applyBillboardGraphics
     // already avoids creating a billboard when no string is returned.)
@@ -863,107 +901,7 @@ function applyPathGraphics(ent: Cesium.Entity, u: UnitRenderable) {
 
 /* ─────────────────────────────── Types ─────────────────────────────── */
 
-export type TrackPoint = { t: number; lon: number; lat: number; alt?: number };
-
-export type UnitRenderable = {
-    id: string;
-    name?: string;
-    lat: number;
-    lon: number;
-
-    alt?: number;
-    altIsAgl?: boolean;
-    track?: TrackPoint[];
-
-    iconUrl?: string;
-    clampToGround?: boolean;
-    interpolation?: "linear" | "hermite" | "lagrange";
-
-    render?: "billboard" | "block";
-    hoverMeters?: number;
-    blockSize?: { x: number; y: number; z: number };
-
-    symbolOptions?: {
-        fillColor?: string;
-        iconFillColor?: string;
-        [k: string]: any;
-    };
-
-    blockColorCss?: string;
-
-    labelOffsetPxY?: number;
-
-    validFromMs?: number;
-    validToMs?: number;
-
-    motionKeyframes?: Array<{ t: number; lon: number; lat: number; alt?: number }>;
-
-    /** If present, this should be the 2D/store unit object (with .state[]). */
-    __sourceUnit?: any;
-
-    getPositionAtTime?: (tUnixMs: number) => { lon: number; lat: number; alt?: number } | undefined;
-
-    pathStyle?: { show?: boolean; leadTime?: number; trailTime?: number; width?: number; colorCss?: string };
-};
-
-export interface GlobePort {
-    mount: (el: HTMLDivElement) => Promise<void>;
-    unmount: () => void;
-    getViewer?: () => Viewer | undefined;
-    setUnits: (units: UnitRenderable[]) => void;
-    upsertUnit: (u: UnitRenderable) => void;
-    removeUnit: (id: string) => void;
-
-    setTime?: (epochMs: number) => void;
-    setTimeBounds?: (startMs: number, stopMs: number) => void;
-
-    enableDayNight?: (enabled: boolean) => void;
-    enableSkybox?: (enabled: boolean) => void;
-    enableCloudOverlay?: (enabled: boolean, options?: GibsCloudOptions) => void;
-
-    flyToLatLon: (lon: number, lat: number, height?: number) => void;
-
-    setExaggeration: (factor: number) => Promise<void>;
-
-    // New: master toggle for 3D range-rings
-    setRangeRingsVisible?: (visible: boolean) => void;
-
-    setBaseLayer: (key: string) => void;
-    setBaseLayerTemplate: (
-        url: string,
-        opts?: {
-            minLevel?: number;
-            maxLevel?: number;
-            attribution?: string;
-            geographic?: boolean;
-            subdomains?: string[] | string;
-        }
-    ) => void;
-    setTerrainKey: (key: "world" | "flat" | "bathymetry" | "bathy" ) => Promise<void>;
-    setWaterEffectEnabled: (enabled: boolean) => void;
-
-    updateUnitPosition?: (id: string, lon: number, lat: number, alt?: number) => void;
-
-    addOverlayTemplate: (
-        id: string,
-        url: string,
-        opts?: {
-            minLevel?: number;
-            maxLevel?: number;
-            attribution?: string;
-            geographic?: boolean;
-            subdomains?: string[] | string;
-            alpha?: number;
-        }
-    ) => void;
-    removeOverlay: (id: string) => void;
-    setOverlayVisibility: (id: string, show: boolean) => void;
-    setOverlayAlpha: (id: string, alpha: number) => void;
-    listOverlays: () => { id: string; show: boolean; alpha: number }[];
-
-    setUnitFilter?: (fn?: (u: any) => boolean) => void;
-    refreshVisibility?: () => void;
-}
+export type { TrackPoint, UnitRenderable, GlobePort } from "./globeAdapter/types";
 
 /* ─────────────────────────────── CRS & terrain ─────────────────────────────── */
 
@@ -1172,7 +1110,10 @@ function alignLabelToIconLeftEdge(
 
     // Try to ensure we have intrinsic width even when bb.width isn't set and image is a URL
     const ensureIntrinsicWidth = () => {
-        const imgVal: any = v(bb.image, undefined);
+        const rawImgVal: any = v(bb.image, undefined);
+        const imgVal: any = typeof rawImgVal === "string"
+            ? sanitizeIconUrlForImageLoad(rawImgVal)
+            : rawImgVal;
         if (!imgVal) return;
 
         // If already an HTMLImageElement (from 2D cache), use its dimensions directly
@@ -1320,16 +1261,6 @@ function unitHeightRef(u: any): HeightReference {
     return HeightReference.RELATIVE_TO_GROUND;
 }
 
-/** Current epoch ms from the viewer clock if available, otherwise Date.now(). */
-function currentViewerMs(viewer?: Cesium.Viewer): number | undefined {
-    try {
-        const jd = viewer?.clock?.currentTime;
-        return jd ? Cesium.JulianDate.toDate(jd).getTime() : undefined;
-    } catch {
-        return undefined;
-    }
-}
-
 /** Resolve the effective SIDC at the viewer’s current time (or now), with extra fallbacks. */
 function effectiveSidc(u: UnitRenderable, viewer?: Cesium.Viewer): string | undefined {
     const src = (u as any).__sourceUnit ?? u;
@@ -1343,7 +1274,7 @@ function effectiveSidc(u: UnitRenderable, viewer?: Cesium.Viewer): string | unde
     try {
         const snap = computeSnapshot(u, tMs);
         // Default: no lift unless underbar/pedestal logic sets it this tick
-        (u as any).__iconLiftPx = 0;
+        if ((u as any).__iconLiftPx == null) (u as any).__iconLiftPx = 0;
         if (typeof snap?.sidc === "string" && snap.sidc.trim()) return snap.sidc;
     } catch { /* ignore */ }
 
@@ -1395,8 +1326,8 @@ function applyBillboardGraphics(ent: Cesium.Entity, u: UnitRenderable, viewer?: 
             distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0.0, 10_000_000.0),
         });
     } else {
-        // No image → make sure we don't leave a broken/undefined graphics object around
-        ent.billboard = undefined as any;
+        // IMPORTANT: do NOT clear an existing billboard on a transient icon-build failure.
+        // (buildIconUrlSync returns undefined specifically to allow keeping the existing image.)
     }
 
     // Label
@@ -1461,7 +1392,7 @@ function hasAnyNonNullLocationEvent(uSrc: any): boolean {
 
 function lastSidcAtOrBefore(uSrc: any, tMs: number): string | undefined {
     const evts: any[] = Array.isArray(uSrc?.state) ? uSrc.state : [];
-    let bestSidc: string | undefined = uSrc?.sidc;
+    let bestSidc: string | undefined = (uSrc as any)?.__baseSidc ?? uSrc?.sidc;
     let bestT = -Infinity;
     for (const e of evts) {
         const te = evtTime(e); if (te == null) continue;
@@ -1520,9 +1451,35 @@ function computeSnapshot(u: UnitRenderable, tMs: number): SnapshotAtTime {
     const onMap = !explicitlyOff && !!pos;
 
     // SIDC in effect: last sidc ≤ t (fallback to unit-level)
-    const sidc = lastSidcAtOrBefore(src, tMs) ?? u.sidc;
+    const sidc = lastSidcAtOrBefore(src, tMs) ?? (u as any)?.__baseSidc ?? u.sidc;
 
     return { onMap, lon: pos?.lon, lat: pos?.lat, sidc };
+}
+
+function sanitizeIconUrlForImageLoad(url: string): string {
+    // data:/blob: URIs must NOT contain a query string.
+    // Also: callers sometimes pass whitespace-padded strings; normalize early.
+    if (!url) return url;
+    url = String(url).trim();
+    if (!url) return url;
+
+    if (url.startsWith("data:") || url.startsWith("blob:")) {
+        const q = url.indexOf("?");
+        return q >= 0 ? url.slice(0, q) : url;
+    }
+    return url;
+}
+
+function shouldAppendCacheBuster(url: string): boolean {
+    if (!url) return false;
+    url = String(url).trim();
+    if (!url) return false;
+
+    // Never cache-bust data:/blob: URIs; adding `?cb=...` makes them invalid in Chromium.
+    if (url.startsWith("data:") || url.startsWith("blob:")) return false;
+
+    // Avoid cache-busting URLs that are already cache-busted.
+    return url.indexOf("cb=") < 0;
 }
 
 /** Apply a SIDC change in-place to an existing entity+renderable. */
@@ -1565,72 +1522,84 @@ function applySidcChange(
     viewer?: Cesium.Viewer,
     tMs?: number
 ) {
-    if (!sidc || u.sidc === sidc) return;
-    u.sidc = sidc;
+    if (!sidc) return;
 
-    // Prefer an app-provided builder; else a generic patcher.
-    let baseUrl =
-        tryGlobalUnitIconBuilder(u, sidc) ??
-        buildIconUrlForSidc(u, sidc);
+    const toeWins = Boolean((u as any).__toeWinsUnderbar);
+
+    // 1) Persist RAW SIDC (truth)
+    u.sidc = sidc;
+    try {
+        const src: any = (u as any).__sourceUnit;
+        if (src && typeof src === "object") {
+            // IMPORTANT: do NOT mutate src.sidc during time-scrubs. That field is treated as the
+            // "baseline" SIDC before any events, and changing it will break historical playback.
+            // We only annotate a non-semantic field for debugging/inspection.
+            (src as any).__lastRenderedSidc = sidc;
+        }
+    } catch { /* ignore */ }
 
     const hex = normalizeHex(extractGroupFill(u));
 
-    // --- NEW: avoid grey data URLs when we have a color ---
-    // If we don't have a usable URL, or we only have a data URL (non-tintable),
-    // try to construct a *URL* from a global base so we can append ?fill&fc.
+    // 2) Presentation SIDC used ONLY for icon generation
+    const sidcForIcon = toeWins ? stripSidcMenuUnderbarEncoding(sidc) : sidc;
+
+    // Prefer an app-provided builder when TOE is NOT winning.
+    let baseUrl =
+        (!toeWins ? (tryGlobalUnitIconBuilder(u, sidcForIcon) ?? undefined) : undefined) ??
+        buildIconUrlForSidc(u, sidcForIcon);
+
+    // If we don’t have a usable URL, try to construct a recolorable URL or use sync cache
     if (!baseUrl || baseUrl.startsWith("data:")) {
         const base = getGlobalSymbolBase?.();
-
-        // If we have a color and a base endpoint, prefer a recolorable URL.
         if (hex && base) {
-            const rebuilt = urlFromBaseAndSidc(base, sidc!, ICON_PX);
+            const rebuilt = urlFromBaseAndSidc(base, sidcForIcon, ICON_PX);
             baseUrl = withSymbolColor(rebuilt, hex) ?? rebuilt;
         } else {
-            // Otherwise, try sync cache; if still nothing, keep whatever we had.
-            const cached = getSidcIconSync(sidc, ICON_PX, { fillColor: hex });
-            if (typeof cached === "string") {
-                baseUrl = cached; // (may be data:, acceptable only when we can’t tint)
-            }
+            // NOTE: correct arg order
+            const cached = getSidcIconSync(sidcForIcon, { fillColor: hex }, ICON_PX);
+            if (typeof cached === "string") baseUrl = cached;
         }
     }
 
-    // Persist for future rebuilds.
-    if (baseUrl) u.iconUrl = baseUrl;
+    if (!baseUrl) {
+        ent.billboard = undefined as any;
+        applyBillboardGraphics(ent, u, viewer as any);
+        return;
+    }
 
-    // Cache-buster
+    (u as any).iconUrl = baseUrl;
+
+    // Cache-buster (network URLs only).
+    // Appending query params to data: (and blob:) URLs produces invalid URLs and will spam the console.
     let url = baseUrl;
-    if (url) {
+    if (!url.startsWith("data:") && !url.startsWith("blob:")) {
         const sep = url.includes("?") ? "&" : "?";
         url = `${url}${sep}cb=${(tMs ?? Date.now()) & 0xffff}`;
     }
 
     // Ensure color is on the URL (no-op for data: URLs).
-    if (url) url = withSymbolColor(url, hex) ?? url;
+    url = withSymbolColor(url, hex) ?? url;
 
-    // Billboard image update (and ensure no tint property is fighting us).
-    if (url) {
-        if (ent.billboard) {
-            (ent.billboard as any).image = url;
-        } else {
-            ent.point = undefined as any;
-            ent.billboard = new Cesium.BillboardGraphics({
-                image: url,
-                verticalOrigin: VerticalOrigin.BOTTOM,
-                horizontalOrigin: HorizontalOrigin.CENTER,
-                heightReference:
-                    (u.clampToGround !== false && (u.alt == null || u.alt === 0))
-                        ? HeightReference.CLAMP_TO_GROUND
-                        : HeightReference.RELATIVE_TO_GROUND,
-                disableDepthTestDistance: 50_000,
-                scaleByDistance: new Cesium.NearFarScalar(800, 1.0, 2_000_000, 0.4),
-                distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0.0, 10_000_000.0),
-            });
-        }
-        try { (ent.billboard as any).color = undefined; } catch { /* ignore */ }
+    // Billboard update
+    if (ent.billboard) {
+        (ent.billboard as any).image = url;
     } else {
-        ent.billboard = undefined as any;
-        applyBillboardGraphics(ent, u, viewer as any);
+        ent.point = undefined as any;
+        ent.billboard = new Cesium.BillboardGraphics({
+            image: url,
+            verticalOrigin: VerticalOrigin.BOTTOM,
+            horizontalOrigin: HorizontalOrigin.CENTER,
+            heightReference:
+                (u.clampToGround !== false && (u.alt == null || u.alt === 0))
+                    ? HeightReference.CLAMP_TO_GROUND
+                    : HeightReference.RELATIVE_TO_GROUND,
+            disableDepthTestDistance: 50_000,
+            scaleByDistance: new Cesium.NearFarScalar(800, 1.0, 2_000_000, 0.4),
+            distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0.0, 10_000_000.0),
+        });
     }
+    try { (ent.billboard as any).color = undefined; } catch { /* ignore */ }
+
     if (ent.label && viewer) {
         alignLabelToIconLeftEdge(viewer, ent, u, /*padPx=*/ 2);
     }
@@ -1699,20 +1668,55 @@ function providerFromTemplate(
     })();
 
     const origRequestImage = provider.requestImage?.bind(provider);
-    provider.requestImage = async (x: number, y: number, level: number, request?: any) => {
-        try {
-            // Hard clamp at runtime too (defensive)
-            const minL = (provider as any).minimumLevel ?? minLevel;
-            const maxL = (provider as any).maximumLevel ?? maxLevel;
-            if (typeof minL === "number" && level < minL) return blankCanvas;
-            if (typeof maxL === "number" && level > maxL) return blankCanvas;
 
-            const img = await origRequestImage?.(x, y, level, request);
-            return (img as any) || blankCanvas;
+    const isCancelledRequest = (request?: any) => {
+        try {
+            const RS = (Cesium as any).RequestState;
+            return (
+                request?.cancelled === true ||
+                (RS && request?.state === RS.CANCELLED)
+            );
         } catch {
+            return false;
+        }
+    };
+
+    const is404Like = (err: any) => {
+        const sc =
+            err?.statusCode ??
+            err?.response?.status ??
+            err?.response?.statusCode;
+
+        if (sc === 404 || sc === 410) return true;
+        const msg = String(err?.message ?? "");
+        return msg.includes("404") || msg.includes("410");
+    };
+
+    provider.requestImage = async (x: number, y: number, level: number, request?: any) => {
+        // Hard clamp at runtime too (defensive)
+        const minL = (provider as any).minimumLevel ?? minLevel;
+        const maxL = (provider as any).maximumLevel ?? maxLevel;
+        if (typeof minL === "number" && level < minL) return blankCanvas;
+        if (typeof maxL === "number" && level > maxL) return blankCanvas;
+
+        // IMPORTANT: preserve Cesium throttling behavior
+        const maybe = origRequestImage?.(x, y, level, request);
+        if (!maybe) return undefined; // don't convert "throttled" into "blank-loaded"
+
+        try {
+            const img = await maybe;
+            // If Cesium gives us nothing (rare), treat it as "try again later"
+            return (img as any) ?? undefined;
+        } catch (err) {
+            // Preserve cancellation so Cesium can retry properly
+            if (isCancelledRequest(request)) return undefined;
+
+            // For overlays: ANY failure becomes transparent instead of fatal.
+            // This suppresses TileProviderError spam and keeps the globe rendering.
             return blankCanvas;
         }
     };
+
 
     return provider;
 }
@@ -1794,6 +1798,18 @@ export function createGlobeAdapter(): GlobePort {
             entities.set(u.id, ent);
             unitMeta.set(u.id, u);
 
+            // Preserve an immutable "baseline" SIDC for time playback.
+            // We MUST NOT mutate src.sidc during scrubs; instead, keep the original here.
+            try {
+                const src: any = (u as any).__sourceUnit ?? u;
+                if ((src as any).__baseSidc == null && typeof src?.sidc === "string" && src.sidc.trim()) {
+                    (src as any).__baseSidc = src.sidc;
+                }
+                if ((u as any).__baseSidc == null) {
+                    (u as any).__baseSidc = (src as any).__baseSidc ?? src?.sidc ?? u.sidc;
+                }
+            } catch { /* ignore */ }
+
             // Make the entity reliably pickable by external click-selection bridges.
             // (Some Cesium pick results hand back primitives, but Entities are always reachable
             // through picked.id; giving them a unitId property makes the bridge more robust.)
@@ -1806,11 +1822,19 @@ export function createGlobeAdapter(): GlobePort {
                 }
             } catch { /* ignore */ }
 
-            // Resolve the event SIDC *now* so initial billboard uses it
+            // Resolve the event SIDC using scenario time; if not available yet, fall back to the unit's earliest known state time.
+            // DO NOT use Date.now() here (it will force "always after" for historical scenarios).
             const tNow = currentViewerMs(viewer);
-            const sidcNow = tNow != null ? lastSidcAtOrBefore((u as any).__sourceUnit ?? u, tNow) : undefined;
-            // Do NOT force-persist here; let the rolling clock drive changes
-            lastSidc.set(u.id, sidcNow);
+            const tFallback = Number((u as any)?._state?.t ?? (u as any)?.state?.[0]?.t ?? 0);
+            const tEff = (typeof tNow === "number" && Number.isFinite(tNow)) ? tNow : tFallback;
+
+            const sidcNow =
+                (typeof tEff === "number" && Number.isFinite(tEff) && tEff > 0)
+                    ? lastSidcAtOrBefore((u as any).__sourceUnit ?? u, tEff)
+                    : undefined;
+
+            // Only store if we actually resolved something
+            if (sidcNow !== undefined) lastSidc.set(u.id, sidcNow);
 
             if (isInstallationBySidc(u)) {
                 applyInstallationGraphics(ent as any, u as any, {
@@ -1819,13 +1843,33 @@ export function createGlobeAdapter(): GlobePort {
                     style: "footprint",
                 });
                 applyAvailability(ent, u);
-                const tNow = currentViewerMs(viewer) ?? Date.now();
-                updateToeUnderbarForUnit(viewer, ent as any, u, tNow);
-            } else if (u.render === "block") {
-                applyBlockGraphics(ent, u);
+                const tNow = currentViewerMs(viewer);
+                const tFallback = Number((u as any)?._state?.t ?? (u as any)?.state?.[0]?.t ?? 0);
+                const tEff = (typeof tNow === "number" && Number.isFinite(tNow)) ? tNow : tFallback;
+
+                updateToeUnderbarForUnit(viewer, ent as any, u, tEff);
+
             } else {
+                const tNow = currentViewerMs(viewer);
+                const tFallback = Number((u as any)?._state?.t ?? (u as any)?.state?.[0]?.t ?? 0);
+                const tEff = (typeof tNow === "number" && Number.isFinite(tNow)) ? tNow : tFallback;
+
+                // Pre-seed TOE-wins policy BEFORE first billboard build so SIDC underbar gets stripped on first render.
+                if (Boolean((effectiveToeUnderbarEnabled as any)?.value ?? toeMapUnderbarEnabled.value)) {
+                    try {
+                        const baseUnit = getScenarioUnitById(u.id) ?? (u as any).__sourceUnit ?? u;
+                        const includeSubs = readPersonnelIncludeSubs();
+                        const pct = computeToePctForUnit(baseUnit, tEff, includeSubs, getScenarioUnitById);
+                        const toeDataAvailableForUnit = pct != null && Number.isFinite(pct);
+                        setToeWinsUnderbarPolicy(u, toeDataAvailableForUnit);
+                    } catch {
+                        setToeWinsUnderbarPolicy(u, false);
+                    }
+                } else {
+                    setToeWinsUnderbarPolicy(u, false);
+                }
+
                 applyBillboardGraphics(ent, u, api.viewer);
-                const tNow = currentViewerMs(viewer) ?? Date.now();
                 updateToeUnderbarForUnit(viewer, ent as any, u, tNow);
             }
 
@@ -2429,6 +2473,18 @@ function updateAllUnitsAtTime(tMs: number) {
         // Decide per events
         const snap = computeSnapshot(u, tMs);
 
+        // IMPORTANT: update TOE-vs-SIDC underbar policy BEFORE we (re)build the icon
+        // for this timestamp. Otherwise a SIDC change at t can bake an underbar into
+        // the icon using the *previous* policy (which then appears “cached”).
+        if (snap.onMap) {
+            updateToeUnderbarForUnit(viewer, ent as any, u, tMs);
+        } else {
+            hideToeUnderbar(viewer, id);
+        }
+
+        // Apply show/hide based on onMap
+        ent.show = snap.onMap;
+
         // Visibility toggle (location=null ⇒ off map)
         const prevOn = lastOnMap.get(id);
         if (prevOn !== snap.onMap || prevOn == null) {
@@ -2494,11 +2550,6 @@ function updateAllUnitsAtTime(tMs: number) {
             }
 
             lastFillHex.set(id, curHex);
-        }
-        if (snap.onMap) {
-            updateToeUnderbarForUnit(viewer, ent as any, u, tMs);
-        } else {
-            hideToeUnderbar(viewer, id);
         }
         // 🔹 NEW: range rings around this unit
         applyRangeRingsForSnapshot(
@@ -2625,6 +2676,18 @@ setSurfaceHeightSampler(sampleSurfaceHeightMeters);
             const ent = entExisting ?? api.viewer.entities.add({ id: u.id });
             entities.set(u.id, ent);
             unitMeta.set(u.id, u);
+
+            // Preserve an immutable "baseline" SIDC for time playback.
+            // We MUST NOT mutate src.sidc during scrubs; instead, keep the original here.
+            try {
+                const src: any = (u as any).__sourceUnit ?? u;
+                if ((src as any).__baseSidc == null && typeof src?.sidc === "string" && src.sidc.trim()) {
+                    (src as any).__baseSidc = src.sidc;
+                }
+                if ((u as any).__baseSidc == null) {
+                    (u as any).__baseSidc = (src as any).__baseSidc ?? src?.sidc ?? u.sidc;
+                }
+            } catch { /* ignore */ }
 
             if (isInstallationBySidc(u)) {
                 applyInstallationGraphics(ent as any, u as any, {
@@ -2880,7 +2943,13 @@ setSurfaceHeightSampler(sampleSurfaceHeightMeters);
 
                 const provider = providerFromTemplate(url, opts);
                 const layer = api.viewer.imageryLayers.addImageryProvider(provider);
+
+                if (typeof opts?.alpha === "number") layer.alpha = opts.alpha;
+                layer.show = true;
+
                 api.viewer.imageryLayers.raiseToTop(layer);
+                overlayLayers.set(id, layer);
+                api.viewer.scene.requestRender();
             } catch (e) {
                 console.error("[GlobeAdapter] addOverlayTemplate failed:", e);
             }
