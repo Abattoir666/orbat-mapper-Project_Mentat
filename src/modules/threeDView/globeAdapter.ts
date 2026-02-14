@@ -1,4 +1,4 @@
-﻿﻿// src/modules/threeDView/globeAdapter.ts
+﻿// src/modules/threeDView/globeAdapter.ts
 import proj4 from "proj4";
 import {
     Cartesian3,
@@ -38,14 +38,48 @@ import { getSidcIconSync } from "@/symbology/iconCache";
 import { WeatherSkyController } from "./weatherSkyController";
 import type { GibsCloudOptions } from "./weatherSkyController";
 import {
-    isInstallationBySidc,
     applyInstallationGraphics,
 } from "@/modules/threeDView/graphics/installations";
+import {
+    isLandEquipmentSidc,
+    resolveLandEquipmentCategoryFromSidc,
+    resolveLandEquipmentSubcategoryFromSidc,
+    resolveSidcShapeOverride,
+    resolveSymbol3DRenderMode,
+} from "@/modules/threeDView/symbols";
 import {
     buildIndexFromScenarioStore,
     applyGroupFillColors,
     applyGroupFillColorToUnit,
 } from "@/modules/threeDView/graphics/unitparser";
+import {
+    compileRecipeToInstances,
+    findBestOverrideRow,
+    type CompiledInstance,
+} from "@/modules/threeDView/symbols/landEquipment/landEquipmentRecipeEngine";
+import {
+    LAND_EQUIP_SHAPE_OVERRIDES,
+    SHAPE_GRAMMAR_TOKENS,
+    findLandEquipShapeOverrideForSidc,
+    hasLandEquipRecipeOverrideForSidc,
+} from "@/modules/threeDView/symbols/landEquipment/shapeOverrideMapping";
+import {
+    expectedVehicleMobilityPartCount,
+    resolveLandEquipmentMobilityProfileFromSidc,
+} from "@/modules/threeDView/symbols/landEquipment/mobilityModifiers";
+import {
+    buildVehicleHullAddonSpecs,
+    parseSidcCoreParts,
+    resolveVehicleBaseBodyHeightForSidc,
+    resolveVehicleHullSizeForSidc,
+    type VehicleHullSize,
+} from "@/modules/threeDView/symbols/landEquipment/vehicleSizingController";
+import {
+    computeGroundConformPose,
+    createProductAggregator,
+    type ProductDescriptor,
+    type ProductFootprint,
+} from "@/modules/threeDView/symbols/Products";
 import { convertToMetric } from "@/utils/convert";
 import { buildSphericalShellPrimitive } from "./geo/sphericalShellPrimitive";
 import { setSurfaceHeightSampler } from "@/geo/surfaceHeightRegistry";
@@ -110,7 +144,7 @@ function isHidden2D(u: any): boolean {
         const groupHidden = !!group.isHidden;
         const sideHidden = !!parentSide?.isHidden;
 
-        // 3D-hidden ⇔ side/group is hidden. Location is dealt with per-time-tick.
+        // 3D-hidden ? side/group is hidden. Location is dealt with per-time-tick.
         return groupHidden || sideHidden;
     } catch {
         return false;
@@ -201,7 +235,7 @@ function urlFromBaseAndSidc(base: string, sidc: string, size = 48): string {
     return url;
 }
 
-/** Optional, synchronous milsymbol fallback → dataURL. */
+/** Optional, synchronous milsymbol fallback ? dataURL. */
 function tryMilsymbolDataUrlSync(sidc: string, size = 48, fillHex?: string): string | undefined {
     try {
         // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -217,6 +251,245 @@ function tryMilsymbolDataUrlSync(sidc: string, size = 48, fillHex?: string): str
 }
 
 const lastToeUnderbarSig = new Map<string, string>();
+// Cesium box axes are ENU-aligned by default:
+// x=east/west (width), y=north/south (length), z=up (height).
+const VEHICLE_BLOCK_SIZE_METERS = { x: 3.5, y: 6.5, z: 3.0 } as const;
+const TANK_TURRET_SIZE_METERS = { x: 2.2, y: 2.4, z: 1.0 } as const;
+const TANK_BARREL_LENGTH_M = 3.6;
+const TANK_BARREL_RADIUS_M = 0.2;
+const TANK_BARREL_UP_FROM_TURRET_M = 0.05;
+const ARMORED_TURRET_SIZE_METERS = { x: 1.8, y: 2.0, z: 0.8 } as const;
+const ARMORED_BARREL_LENGTH_M = 2.2;
+const ARMORED_BARREL_RADIUS_M = 0.16;
+const ARMORED_BARREL_UP_FROM_TURRET_M = 0.05;
+const ARMORED_BARREL_FORWARD_FROM_TURRET_M =
+    (ARMORED_TURRET_SIZE_METERS.y / 2) + (ARMORED_BARREL_LENGTH_M / 2) - 0.08;
+const IFV_TURRET_SIZE_METERS = { x: 1.45, y: 1.55, z: 0.62 } as const;
+const IFV_BARREL_LENGTH_M = 1.65;
+const IFV_BARREL_RADIUS_M = 0.12;
+const IFV_BARREL_UP_FROM_TURRET_M = 0.04;
+const IFV_BARREL_FORWARD_FROM_TURRET_M =
+    (IFV_TURRET_SIZE_METERS.y / 2) + (IFV_BARREL_LENGTH_M / 2) - 0.05;
+const RECOVERY_BOOM_LENGTH_M = 3.2;
+const RECOVERY_BOOM_RADIUS_M = 0.22;
+const RECOVERY_BOOM_UP_OFFSET_M = (VEHICLE_BLOCK_SIZE_METERS.z / 2) + 0.6;
+const RECOVERY_BOOM_NORTH_OFFSET_M = -0.7;
+const APC_MODULE_SIZE_METERS = { x: 2.0, y: 2.4, z: 1.1 } as const;
+const APC_MODULE_UP_OFFSET_M =
+    (VEHICLE_BLOCK_SIZE_METERS.z / 2) + (APC_MODULE_SIZE_METERS.z / 2) + 0.05;
+const APC_MODULE_NORTH_OFFSET_M = -1.1;
+const APC_MED_POD_SIZE_METERS = { x: 1.2, y: 1.8, z: 0.55 } as const;
+const APC_MED_MODULE_UP_OFFSET_M =
+    (VEHICLE_BLOCK_SIZE_METERS.z / 2) + (APC_MODULE_SIZE_METERS.z / 2) + 0.08;
+const APC_MED_POD_UP_FROM_MODULE_M =
+    (APC_MODULE_SIZE_METERS.z / 2) + (APC_MED_POD_SIZE_METERS.z / 2) + 0.03;
+const RECON_MAST_LENGTH_M = 1.9;
+const RECON_MAST_RADIUS_M = 0.12;
+const RECON_MAST_BASE_UP_OFFSET_M = (VEHICLE_BLOCK_SIZE_METERS.z / 2) + (RECON_MAST_LENGTH_M / 2) + 0.05;
+const RECON_MAST_NORTH_OFFSET_M = 0.85;
+const CARGO_MODULE_SIZE_METERS = { x: 2.45, y: 3.0, z: 1.35 } as const;
+const CARGO_MODULE_UP_OFFSET_M =
+    (VEHICLE_BLOCK_SIZE_METERS.z / 2) + (CARGO_MODULE_SIZE_METERS.z / 2) + 0.05;
+const CARGO_MODULE_NORTH_OFFSET_M = -0.95;
+const COMMAND_MODULE_SIZE_METERS = { x: 2.2, y: 2.6, z: 1.0 } as const;
+const COMMAND_MODULE_UP_OFFSET_M =
+    (VEHICLE_BLOCK_SIZE_METERS.z / 2) + (COMMAND_MODULE_SIZE_METERS.z / 2) + 0.08;
+const COMMAND_MODULE_NORTH_OFFSET_M = -0.4;
+const COMMAND_MAST_LENGTH_M = 1.55;
+const COMMAND_MAST_RADIUS_M = 0.1;
+const COMMAND_MAST_UP_FROM_MODULE_M = (COMMAND_MODULE_SIZE_METERS.z / 2) + (COMMAND_MAST_LENGTH_M / 2) + 0.05;
+const COMMAND_HEAD_SIZE_METERS = { x: 0.95, y: 1.15, z: 0.32 } as const;
+const COMMAND_HEAD_UP_FROM_MAST_M = (COMMAND_MAST_LENGTH_M / 2) + (COMMAND_HEAD_SIZE_METERS.z / 2) + 0.04;
+const RECOVERY_RIG_BOOM_LENGTH_M = 3.0;
+const RECOVERY_RIG_BOOM_RADIUS_M = 0.2;
+const RECOVERY_RIG_BOOM_UP_OFFSET_M = (VEHICLE_BLOCK_SIZE_METERS.z / 2) + 0.62;
+const RECOVERY_RIG_BOOM_NORTH_OFFSET_M = -0.8;
+const RECOVERY_RIG_HOOK_SIZE_METERS = { x: 0.52, y: 0.72, z: 0.42 } as const;
+const RECOVERY_RIG_HOOK_FORWARD_FROM_BOOM_M = (RECOVERY_RIG_BOOM_LENGTH_M / 2) - 0.25;
+const RECOVERY_RIG_HOOK_UP_FROM_BOOM_M = -0.18;
+const ARMORED_UPPER_HULL_WIDTH_SCALE = 0.75;
+const ARMORED_UPPER_HULL_LENGTH_SCALE = 0.75;
+const ARMORED_LOWER_HULL_VOLUME_SHARE = 0.6;
+const ARMORED_UPPER_HULL_VOLUME_SHARE = 0.4;
+const ARMORED_UPPER_HULL_HEIGHT_SCALE = 0.5;
+const GROUND_PRIMITIVE_CLEARANCE_M = 0.08;
+const TERRAIN_CACHE_DECIMALS = 5;
+const terrainHeightCacheMeters = new Map<string, number>();
+const terrainHeightRequestsInFlight = new Set<string>();
+type VehicleProductBlueprint = ProductDescriptor & {
+    baseBodyHeight: number;
+    useArmoredSplitHull: boolean;
+};
+const vehicleProductCache = createProductAggregator<VehicleProductBlueprint>();
+
+function terrainCacheKey(lonDeg: number, latDeg: number): string {
+    return `${lonDeg.toFixed(TERRAIN_CACHE_DECIMALS)},${latDeg.toFixed(TERRAIN_CACHE_DECIMALS)}`;
+}
+
+function requestTerrainHeightSample(
+    viewer: Cesium.Viewer | undefined,
+    lonDeg: number,
+    latDeg: number,
+) {
+    if (!viewer) return;
+    const key = terrainCacheKey(lonDeg, latDeg);
+    if (terrainHeightCacheMeters.has(key) || terrainHeightRequestsInFlight.has(key)) return;
+    terrainHeightRequestsInFlight.add(key);
+    sampleHeight(viewer, lonDeg, latDeg)
+        .then((h) => {
+            if (typeof h === "number" && Number.isFinite(h)) {
+                terrainHeightCacheMeters.set(key, h);
+            }
+        })
+        .catch(() => { /* ignore */ })
+        .finally(() => {
+            terrainHeightRequestsInFlight.delete(key);
+        });
+}
+
+function isFixedVehicleBlockSidc(sidc?: string): boolean {
+    return resolveSidcShapeOverride(sidc) === "vehicleBox";
+}
+
+function isVehicleTankTurretSidc(sidc?: string): boolean {
+    return resolveSidcShapeOverride(sidc) === "vehicleTankTurret";
+}
+
+function isVehicleIfvTurretSidc(sidc?: string): boolean {
+    return resolveSidcShapeOverride(sidc) === "vehicleIfvTurret";
+}
+
+function isVehicleArmoredTurretSidc(sidc?: string): boolean {
+    return resolveSidcShapeOverride(sidc) === "vehicleArmoredTurret";
+}
+
+function isVehicleRecoveryBoomSidc(sidc?: string): boolean {
+    return resolveSidcShapeOverride(sidc) === "vehicleRecoveryBoom";
+}
+
+function isVehicleApcModuleSidc(sidc?: string): boolean {
+    return resolveSidcShapeOverride(sidc) === "vehicleApcModule";
+}
+
+function isVehicleApcAmbulanceSidc(sidc?: string): boolean {
+    return resolveSidcShapeOverride(sidc) === "vehicleApcAmbulance";
+}
+
+function isVehicleReconMastSidc(sidc?: string): boolean {
+    return resolveSidcShapeOverride(sidc) === "vehicleReconMast";
+}
+
+function isVehicleCargoModuleSidc(sidc?: string): boolean {
+    return resolveSidcShapeOverride(sidc) === "vehicleCargoModule";
+}
+
+function isVehicleCommandMastSidc(sidc?: string): boolean {
+    return resolveSidcShapeOverride(sidc) === "vehicleCommandMast";
+}
+
+function isVehicleRecoveryRigSidc(sidc?: string): boolean {
+    return resolveSidcShapeOverride(sidc) === "vehicleRecoveryRig";
+}
+
+function isLandEquipmentWeaponsSidc(sidc?: string): boolean {
+    const shape = resolveSidcShapeOverride(sidc);
+    return (
+        shape === "weaponCylinder"
+        || shape === "weaponTriangle"
+        || shape === "weaponDualTubeLauncher"
+        || shape === "weaponSixTubeLauncher"
+        || shape === "weaponSingleLargeTubeLauncher"
+    );
+}
+
+function isGroundPrimitiveSidc(sidc?: string): boolean {
+    return isLandEquipmentWeaponsSidc(sidc)
+        || isFixedVehicleBlockSidc(sidc)
+        || isVehicleTankTurretSidc(sidc)
+        || isVehicleIfvTurretSidc(sidc)
+        || isVehicleArmoredTurretSidc(sidc)
+        || isVehicleRecoveryBoomSidc(sidc)
+        || isVehicleApcModuleSidc(sidc)
+        || isVehicleApcAmbulanceSidc(sidc)
+        || isVehicleReconMastSidc(sidc)
+        || isVehicleCargoModuleSidc(sidc)
+        || isVehicleCommandMastSidc(sidc)
+        || isVehicleRecoveryRigSidc(sidc)
+        || hasLandEquipRecipeOverrideForSidc(sidc);
+}
+
+function groundPrimitiveCenterOffsetMeters(sidc?: string): number {
+    if (
+        isFixedVehicleBlockSidc(sidc)
+        || isVehicleTankTurretSidc(sidc)
+        || isVehicleIfvTurretSidc(sidc)
+        || isVehicleArmoredTurretSidc(sidc)
+        || isVehicleRecoveryBoomSidc(sidc)
+        || isVehicleApcModuleSidc(sidc)
+        || isVehicleApcAmbulanceSidc(sidc)
+        || isVehicleReconMastSidc(sidc)
+        || isVehicleCargoModuleSidc(sidc)
+        || isVehicleCommandMastSidc(sidc)
+        || isVehicleRecoveryRigSidc(sidc)
+    ) {
+        return vehicleCenterOffsetForSidc(sidc);
+    }
+    const row = findLandEquipShapeOverrideForSidc(sidc);
+    if (row?.primitiveRecipe) {
+        try {
+            return getCompiledLandEquipRecipe(row.primitiveRecipe).bodyHalfH;
+        } catch { /* ignore */ }
+    }
+    return getManPortableDimensions().height / 2;
+}
+
+function groundPrimitiveFootprintForSidc(sidc?: string): ProductFootprint | undefined {
+    const shape = resolveSidcShapeOverride(sidc);
+    if (
+        shape === "vehicleBox"
+        || shape === "vehicleTankTurret"
+        || shape === "vehicleIfvTurret"
+        || shape === "vehicleArmoredTurret"
+        || shape === "vehicleRecoveryBoom"
+        || shape === "vehicleApcModule"
+        || shape === "vehicleApcAmbulance"
+        || shape === "vehicleReconMast"
+        || shape === "vehicleCargoModule"
+        || shape === "vehicleCommandMast"
+        || shape === "vehicleRecoveryRig"
+    ) {
+        return getVehicleProductBlueprint(sidc).footprint;
+    }
+    if (shape === "weaponDualTubeLauncher" || shape === "weaponSixTubeLauncher" || shape === "weaponSingleLargeTubeLauncher") {
+        return {
+            halfWidthMeters: LAUNCHER_BASE_SIZE_M.x / 2,
+            halfLengthMeters: LAUNCHER_BASE_SIZE_M.y / 2,
+        };
+    }
+    if (shape === "weaponTriangle") {
+        const triHeight = (Math.sqrt(3) / 2) * WEAPON_TRIANGLE_SIDE_M;
+        return {
+            halfWidthMeters: WEAPON_TRIANGLE_SIDE_M / 2,
+            halfLengthMeters: (2 * triHeight) / 3,
+        };
+    }
+    if (shape === "weaponCylinder") {
+        const dims = getManPortableDimensions();
+        return {
+            halfWidthMeters: dims.radius,
+            halfLengthMeters: dims.radius,
+        };
+    }
+    const row = findLandEquipShapeOverrideForSidc(sidc);
+    if (row?.primitiveRecipe) {
+        try {
+            return getCompiledLandEquipRecipe(row.primitiveRecipe).footprint;
+        } catch {
+            return undefined;
+        }
+    }
+    return undefined;
+}
 
 function pedestalLinesIdForUnit(id: string) {
     return `${id}${PEDESTAL_LINES_SUFFIX}`;
@@ -519,13 +792,13 @@ function updateToeUnderbarForUnit(
     if (!enabled || !unitEnt?.show) {
         hideToeUnderbar(viewer, u.id); // hides pedestal + underbar + resets lift
         setToeWinsUnderbarPolicy(u, false);
-        applyBillboardGraphics(unitEnt as any, u as any, viewer);
+        applySymbolAwareBillboardGraphics(unitEnt as any, u as any, viewer);
         return;
     }
 
-    // ─────────────────────────────────────────────────────────────
+    // -------------------------------------------------------------
     // 1) Pedestal FIRST (so it shows even if pct cannot be computed)
-    // ─────────────────────────────────────────────────────────────
+    // -------------------------------------------------------------
     let pedestalH = 0;
 
     if (surfaceAnchored) {
@@ -537,9 +810,9 @@ function updateToeUnderbarForUnit(
             (unitEnt.polyline as any).show = false;
         }
     }
-    // ─────────────────────────────────────────────────────────────
+    // -------------------------------------------------------------
     // 2) Compute pct using the scenario unitMap (authoritative)
-    // ─────────────────────────────────────────────────────────────
+    // -------------------------------------------------------------
     const baseUnit = getScenarioUnitById(u.id) ?? (u as any).__sourceUnit ?? u;
     const includeSubs = readPersonnelIncludeSubs();
 
@@ -568,10 +841,10 @@ function updateToeUnderbarForUnit(
             if (typeof u.iconUrl === "string" && u.iconUrl.startsWith("data:")) {
                 u.iconUrl = undefined;
             }
-            applyBillboardGraphics(unitEnt as any, u as any, viewer);
+            applySymbolAwareBillboardGraphics(unitEnt as any, u as any, viewer);
         } else if (!toeDataAvailableForUnit) {
-            // TOE no longer winning → allow baked SIDC-menu underbar again.
-            applyBillboardGraphics(unitEnt as any, u as any, viewer);
+            // TOE no longer winning ? allow baked SIDC-menu underbar again.
+            applySymbolAwareBillboardGraphics(unitEnt as any, u as any, viewer);
         }
     }
 
@@ -589,9 +862,9 @@ function updateToeUnderbarForUnit(
         return;
     }
 
-    // ─────────────────────────────────────────────────────────────
+    // -------------------------------------------------------------
     // 3) Underbar render
-    // ─────────────────────────────────────────────────────────────
+    // -------------------------------------------------------------
     const { url: rawUrl, w, h, gapPx } = makeToeUnderbarSvgDataUrl(pct, iconPx);
     const url = sanitizeIconUrlForImageLoad(rawUrl);
 
@@ -811,7 +1084,7 @@ function buildIconUrlSync(u: UnitRenderable, viewer?: Cesium.Viewer): string | u
 
 
 
-/* ───────────────────── Motion helpers (time-dynamic) ───────────────────── */
+/* --------------------- Motion helpers (time-dynamic) --------------------- */
 
 function hasDynamicPosition(u: UnitRenderable, ent: Cesium.Entity): boolean {
     // If we gave Cesium a CallbackProperty or SampledPositionProperty, let Cesium drive position from clock time
@@ -844,6 +1117,20 @@ function firstFutureNonNullLocEvent(uSrc: any, tMs: number): any | undefined {
         if (te >= tMs && (!best || te < evtTime(best)!)) best = e;
     }
     return best;
+}
+
+function lastExplicitSidcEventAtOrBefore(uSrc: any, tMs: number): string | undefined {
+    const evts: any[] = Array.isArray(uSrc?.state) ? uSrc.state : [];
+    let bestSidc: string | undefined;
+    let bestT = -Infinity;
+    for (const e of evts) {
+        const te = evtTime(e); if (te == null) continue;
+        if (te <= tMs && typeof e?.sidc === "string" && e.sidc.trim() && te >= bestT) {
+            bestT = te;
+            bestSidc = e.sidc;
+        }
+    }
+    return bestSidc;
 }
 
 function buildPositionPropertyForUnit(u: UnitRenderable) {
@@ -899,11 +1186,11 @@ function applyPathGraphics(ent: Cesium.Entity, u: UnitRenderable) {
     };
 }
 
-/* ─────────────────────────────── Types ─────────────────────────────── */
+/* ------------------------------- Types ------------------------------- */
 
 export type { TrackPoint, UnitRenderable, GlobePort } from "./globeAdapter/types";
 
-/* ─────────────────────────────── CRS & terrain ─────────────────────────────── */
+/* ------------------------------- CRS & terrain ------------------------------- */
 
 const wgs84 = "EPSG:4326";
 const merc = "EPSG:3857";
@@ -920,7 +1207,7 @@ export async function sampleHeight(viewer: Viewer, lon: number, lat: number) {
     return result?.height ?? 0;
 }
 
-/* ───────────────────────────── Label helper ───────────────────────────── */
+/* ----------------------------- Label helper ----------------------------- */
 
 function makeSideLabel(
     text: string,
@@ -952,7 +1239,7 @@ function makeSideLabel(
     };
 }
 
-/* ───────────────────── Exaggeration-aware heights ───────────────────── */
+/* --------------------- Exaggeration-aware heights --------------------- */
 
 const entities = new Map<string, Cesium.Entity>();
 const unitMeta = new Map<string, UnitRenderable>();
@@ -1019,6 +1306,25 @@ function publishDebug(viewer?: Cesium.Viewer) {
             const sidcFromUnit = src?.sidc ?? u?.sidc;
             return { id: ent?.id, t, sidcFromEvents, sidcFromUnit, u, src };
         };
+
+        w.MentatDebugMobility = (id?: string) => {
+            const d = w.MentatGlobeAdapterDebug;
+            const v = d?.viewer;
+            let targetId = id;
+            if (!targetId) {
+                targetId = d?._entities ? Array.from(d._entities.keys())[0] : v?.entities?.values?.[0]?.id;
+            }
+            const ent = targetId ? (d?._entities?.get(targetId) ?? v?.entities?.getById?.(targetId)) : undefined;
+            const u = ent ? d?._unitMeta?.get(ent.id) : undefined;
+            const sidc = u ? mobilitySidcForUnit(u, v) : undefined;
+            return {
+                id: ent?.id,
+                sidc,
+                profile: resolveLandEquipmentMobilityProfileFromSidc(sidc),
+                mobilityPartIds: ent ? vehicleMobilityPartIdsForUnit(v, ent.id as string) : [],
+                cache: (w.__3dMobilityLastProfileByUnit ?? {})[ent?.id ?? ""],
+            };
+        };
     } catch { /* no-op */ }
 }
 
@@ -1034,7 +1340,7 @@ function applyAvailability(ent: Cesium.Entity, u: UnitRenderable) {
     ent.availability = undefined;
 }
 
-/* ───────────────────────────── Graphics appliers ───────────────────────────── */
+/* ----------------------------- Graphics appliers ----------------------------- */
 
 /** Place the label so its RIGHT edge sits at the icon's LEFT edge (minus pad),
  *  using the icon's *real* pixel width (naturalWidth/width * scale * scaleByDistance).
@@ -1243,6 +1549,11 @@ function applyBlockGraphics(ent: Cesium.Entity, u: UnitRenderable) {
             ent.label.style = Cesium.LabelStyle.FILL_AND_OUTLINE;
             ent.label.font = "bold 14px 'Segoe UI', sans-serif";
             ent.label.pixelOffset = new Cesium.Cartesian2(0, lift);
+            ent.label.eyeOffset = new Cesium.Cartesian3(
+                -GROUND_UNIT_LABEL_LEFT_OFFSET_M,
+                GROUND_UNIT_LABEL_UP_OFFSET_M,
+                0,
+            );
             ent.label.showBackground = false;
         }
     } else {
@@ -1250,6 +1561,1284 @@ function applyBlockGraphics(ent: Cesium.Entity, u: UnitRenderable) {
     }
 
     ent.billboard = undefined;
+    ent.cylinder = undefined;
+    applyAvailability(ent, u);
+}
+
+function applyVehicleBlockGraphics(ent: Cesium.Entity, u: UnitRenderable, viewer?: Cesium.Viewer) {
+    const sidcForProfile = mobilitySidcForUnit(u, viewer);
+    const useArmoredSplitHull = shouldUseArmoredSplitHullForSidc(sidcForProfile);
+    const vehicleProduct = getVehicleProductBlueprint(sidcForProfile);
+    const armoredHullPartIds = useArmoredSplitHull ? armoredHullPartIdsForUnit(u.id) : [];
+    const mobilityPartIds = vehicleMobilityPartIdsForSidc(u.id, sidcForProfile);
+    const hullAddonPartIds = vehicleHullAddonPartIdsForSidc(u.id, sidcForProfile);
+    clearGroundOverrideArtifacts(viewer, u, {
+        removeSidcCap: true,
+        preserveEntityIds: [...armoredHullPartIds, ...mobilityPartIds, ...hullAddonPartIds],
+    });
+    clearGroundOverrideEntityGraphics(ent);
+
+    const size = resolveVehicleHullSizeForSidc(sidcForProfile);
+    const baseBodyHeight = vehicleProduct.baseBodyHeight;
+    const fillCss = extractGroupFill(u) ?? u.symbolOptions?.fillColor;
+    const color = safeCssColor(fillCss).withAlpha(1.0);
+    const hullSplit = useArmoredSplitHull ? computeArmoredHullSplit(size) : undefined;
+
+    const centerOffset = hullSplit ? (hullSplit.lowerHeight / 2) : (baseBodyHeight / 2);
+    const pose = makeGroundPrimitivePoseProperties(viewer, u, centerOffset, vehicleProduct.footprint);
+    ent.position = pose.position as any;
+    ent.orientation = pose.orientation as any;
+    applyPathGraphics(ent, u);
+
+    ent.box = {
+        dimensions: new Cartesian3(size.x, size.y, hullSplit ? hullSplit.lowerHeight : baseBodyHeight),
+        material: color,
+        heightReference: HeightReference.NONE,
+        outline: true,
+        outlineColor: Color.BLACK,
+    };
+    if (hullSplit) {
+        ensureArmoredUpperHullPrismGraphics(ent, u, viewer, color, hullSplit);
+    }
+
+    if (u.name) {
+        const lift = u.labelOffsetPxY ?? -14;
+        ent.label = makeSideLabel(u.name, HeightReference.NONE, "left", lift);
+        if (ent.label) {
+            ent.label.fillColor = Cesium.Color.BLACK;
+            ent.label.outlineColor = Cesium.Color.WHITE;
+            ent.label.outlineWidth = 3;
+            ent.label.style = Cesium.LabelStyle.FILL_AND_OUTLINE;
+            ent.label.font = "bold 14px 'Segoe UI', sans-serif";
+            ent.label.pixelOffset = new Cesium.Cartesian2(0, lift);
+            applyGroundPrimitiveLabelOffset(ent.label);
+            ent.label.showBackground = false;
+        }
+    } else {
+        ent.label = undefined;
+    }
+
+    ent.point = undefined as any;
+    ent.billboard = undefined as any;
+    safelyDisableEntityCylinder(ent);
+    ent.polygon = undefined as any;
+    applyVehicleHullAddons(ent, u, viewer, color, sidcForProfile);
+    applyVehicleMobilityAddons(ent, u, viewer, color, sidcForProfile);
+    applyAvailability(ent, u);
+}
+
+function applyVehicleTankTurretGraphics(ent: Cesium.Entity, u: UnitRenderable, viewer?: Cesium.Viewer) {
+    const tankPartIds = tankPartIdsForUnit(u.id);
+    const sidcForProfile = mobilitySidcForUnit(u, viewer);
+    const useArmoredSplitHull = shouldUseArmoredSplitHullForSidc(sidcForProfile);
+    const armoredHullPartIds = useArmoredSplitHull ? armoredHullPartIdsForUnit(u.id) : [];
+    const tankProfile = tankVisualProfileForSidc(sidcForProfile);
+    const mobilityPartIds = vehicleMobilityPartIdsForSidc(u.id, sidcForProfile);
+    clearGroundOverrideArtifacts(viewer, u, {
+        removeSidcCap: true,
+        preserveEntityIds: [...tankPartIds, ...armoredHullPartIds, ...mobilityPartIds],
+    });
+    clearGroundOverrideEntityGraphics(ent);
+
+    const hullSize = tankProfile.hullSize;
+    const fillCss = extractGroupFill(u) ?? u.symbolOptions?.fillColor;
+    const color = safeCssColor(fillCss).withAlpha(1.0);
+    const hullSplit = useArmoredSplitHull ? computeArmoredHullSplit(hullSize) : undefined;
+    const turretNorthOffset = hullSplit
+        ? ((tankProfile.turretSize.y / 2) - (hullSplit.upperSize.y / 2))
+        : 0;
+    const turretUpOffset = hullSplit
+        ? (hullSplit.upperCenterUpFromLowerCenter + (hullSplit.upperSize.z / 2) + (tankProfile.turretSize.z / 2) + 0.06)
+        : tankProfile.turretUpOffset;
+    const centerOffset = hullSplit ? (hullSplit.lowerHeight / 2) : (hullSize.z / 2);
+
+    const pose = makeGroundPrimitivePoseProperties(viewer, u, centerOffset, {
+        halfWidthMeters: hullSize.x / 2,
+        halfLengthMeters: hullSize.y / 2,
+    });
+    ent.position = pose.position as any;
+    ent.orientation = pose.orientation as any;
+    applyPathGraphics(ent, u);
+
+    ent.box = {
+        dimensions: new Cartesian3(hullSize.x, hullSize.y, hullSplit ? hullSplit.lowerHeight : hullSize.z),
+        material: color,
+        heightReference: HeightReference.NONE,
+        outline: true,
+        outlineColor: Color.BLACK,
+    };
+    if (hullSplit) {
+        ensureArmoredUpperHullPrismGraphics(ent, u, viewer, color, hullSplit);
+    }
+
+    if (u.name) {
+        const lift = u.labelOffsetPxY ?? -14;
+        ent.label = makeSideLabel(u.name, HeightReference.NONE, "left", lift);
+        if (ent.label) {
+            ent.label.fillColor = Cesium.Color.BLACK;
+            ent.label.outlineColor = Cesium.Color.WHITE;
+            ent.label.outlineWidth = 3;
+            ent.label.style = Cesium.LabelStyle.FILL_AND_OUTLINE;
+            ent.label.font = "bold 14px 'Segoe UI', sans-serif";
+            ent.label.pixelOffset = new Cesium.Cartesian2(0, lift);
+            applyGroundPrimitiveLabelOffset(ent.label);
+            ent.label.showBackground = false;
+        }
+    } else {
+        ent.label = undefined;
+    }
+
+    ent.point = undefined as any;
+    ent.billboard = undefined as any;
+    safelyDisableEntityCylinder(ent);
+    ent.polygon = undefined as any;
+
+    if (viewer) {
+        const turretId = tankTurretEntityId(u.id);
+        const barrelId = tankBarrelEntityId(u.id);
+        const turret = viewer.entities.getById(turretId) ?? viewer.entities.add({ id: turretId });
+        const barrel = viewer.entities.getById(barrelId) ?? viewer.entities.add({ id: barrelId });
+
+        turret.position = new Cesium.CallbackProperty((time) => {
+            try {
+                return offsetFromEntityLocal(ent, time, 0, turretNorthOffset, turretUpOffset);
+            } catch {
+                return undefined;
+            }
+        }, false) as any;
+        turret.orientation = ent.orientation;
+        turret.box = new Cesium.BoxGraphics({
+            dimensions: new Cartesian3(
+                tankProfile.turretSize.x,
+                tankProfile.turretSize.y,
+                tankProfile.turretSize.z,
+            ),
+            material: color,
+            heightReference: HeightReference.NONE,
+            outline: true,
+            outlineColor: Color.BLACK.withAlpha(0.85),
+        });
+        turret.billboard = undefined as any;
+        turret.point = undefined as any;
+        safelyDisableEntityCylinder(turret);
+        safelyDisableEntityPolyline(turret);
+        turret.polygon = undefined as any;
+        turret.label = undefined as any;
+        tagEntityWithUnitId(turret as any, u.id);
+        turret.show = ent.show !== false;
+
+        barrel.position = new Cesium.CallbackProperty((time) => {
+            try {
+                return offsetFromEntityLocal(
+                    turret,
+                    time,
+                    0,
+                    tankProfile.barrelForwardFromTurret,
+                    tankProfile.barrelUpFromTurret,
+                );
+            } catch {
+                return undefined;
+            }
+        }, false) as any;
+        barrel.orientation = new Cesium.CallbackProperty((time) => {
+            try {
+                return orientationFromEntityLocalHpr(
+                    turret,
+                    time,
+                    Cesium.Math.toRadians(90),
+                    Cesium.Math.toRadians(90),
+                    0,
+                );
+            } catch {
+                return undefined;
+            }
+        }, false) as any;
+        safelyDisableEntityBox(barrel);
+        barrel.cylinder = new Cesium.CylinderGraphics({
+            length: tankProfile.barrelLength,
+            topRadius: tankProfile.barrelRadius,
+            bottomRadius: tankProfile.barrelRadius,
+            fill: true,
+            material: color,
+            outline: true,
+            outlineColor: Color.BLACK.withAlpha(0.8),
+            heightReference: HeightReference.NONE,
+        });
+        barrel.billboard = undefined as any;
+        barrel.point = undefined as any;
+        safelyDisableEntityPolyline(barrel);
+        barrel.polygon = undefined as any;
+        barrel.label = undefined as any;
+        tagEntityWithUnitId(barrel as any, u.id);
+        barrel.show = ent.show !== false;
+    }
+
+    applyVehicleMobilityAddons(ent, u, viewer, color, sidcForProfile);
+    applyAvailability(ent, u);
+}
+
+type ArmoredHullSplit = {
+    lowerHeight: number;
+    upperSize: { x: number; y: number; z: number };
+    upperCenterUpFromLowerCenter: number;
+};
+
+function computeArmoredHullSplit(baseSize: { x: number; y: number; z: number }): ArmoredHullSplit {
+    const lowerHeight = baseSize.z * ARMORED_LOWER_HULL_VOLUME_SHARE;
+    const upperX = baseSize.x * ARMORED_UPPER_HULL_WIDTH_SCALE;
+    const upperY = baseSize.y * ARMORED_UPPER_HULL_LENGTH_SCALE;
+    const baseUpperHeight =
+        (baseSize.x * baseSize.y * baseSize.z * ARMORED_UPPER_HULL_VOLUME_SHARE) / (upperX * upperY);
+    const upperHeight = baseUpperHeight * ARMORED_UPPER_HULL_HEIGHT_SCALE;
+    const upperCenterUpFromLowerCenter = (lowerHeight / 2) + (upperHeight / 2);
+    return {
+        lowerHeight,
+        upperSize: { x: upperX, y: upperY, z: upperHeight },
+        upperCenterUpFromLowerCenter,
+    };
+}
+
+type ArmoredUpperHullFace = "top" | "front" | "rear" | "left" | "right";
+
+function armoredUpperHullFaceEntityId(unitId: string, face: ArmoredUpperHullFace): string {
+    return `${unitId}__armored_upper_${face}`;
+}
+
+function armoredUpperHullPartIdsForUnit(unitId: string): string[] {
+    return [
+        armoredUpperHullFaceEntityId(unitId, "top"),
+        armoredUpperHullFaceEntityId(unitId, "front"),
+        armoredUpperHullFaceEntityId(unitId, "rear"),
+        armoredUpperHullFaceEntityId(unitId, "left"),
+        armoredUpperHullFaceEntityId(unitId, "right"),
+    ];
+}
+
+function ensureArmoredUpperHullPrismGraphics(
+    ent: Cesium.Entity,
+    u: UnitRenderable,
+    viewer: Cesium.Viewer | undefined,
+    color: Cesium.Color,
+    split: ArmoredHullSplit,
+) {
+    if (!viewer) return;
+    try { viewer.entities.removeById(`${u.id}__armored_upper_hull`); } catch { /* ignore legacy id */ }
+
+    const ids = armoredUpperHullPartIdsForUnit(u.id);
+    const topEnt = viewer.entities.getById(ids[0]) ?? viewer.entities.add({ id: ids[0] });
+    const frontEnt = viewer.entities.getById(ids[1]) ?? viewer.entities.add({ id: ids[1] });
+    const rearEnt = viewer.entities.getById(ids[2]) ?? viewer.entities.add({ id: ids[2] });
+    const leftEnt = viewer.entities.getById(ids[3]) ?? viewer.entities.add({ id: ids[3] });
+    const rightEnt = viewer.entities.getById(ids[4]) ?? viewer.entities.add({ id: ids[4] });
+    const all = [topEnt, frontEnt, rearEnt, leftEnt, rightEnt];
+
+    const halfBottomX = (split.upperSize.x / ARMORED_UPPER_HULL_WIDTH_SCALE) / 2;
+    const halfBottomY = (split.upperSize.y / ARMORED_UPPER_HULL_LENGTH_SCALE) / 2;
+    const halfTopX = split.upperSize.x / 2;
+    const halfTopY = split.upperSize.y / 2;
+    const zBottom = split.upperCenterUpFromLowerCenter - (split.upperSize.z / 2);
+    const zTop = split.upperCenterUpFromLowerCenter + (split.upperSize.z / 2);
+
+    const makeCorner = (
+        base: Cartesian3,
+        time: Cesium.JulianDate,
+        east: number,
+        north: number,
+        up: number,
+    ) => offsetFromCenterOriented(
+        base,
+        ent.orientation?.getValue?.(time) as Cesium.Quaternion | undefined,
+        east,
+        north,
+        up,
+    );
+
+    const makeFaces = (time: Cesium.JulianDate) => {
+        const base = ent.position?.getValue?.(time);
+        if (!base) return undefined;
+        const bFL = makeCorner(base, time, -halfBottomX, halfBottomY, zBottom);
+        const bFR = makeCorner(base, time, halfBottomX, halfBottomY, zBottom);
+        const bRR = makeCorner(base, time, halfBottomX, -halfBottomY, zBottom);
+        const bRL = makeCorner(base, time, -halfBottomX, -halfBottomY, zBottom);
+        const tFL = makeCorner(base, time, -halfTopX, halfTopY, zTop);
+        const tFR = makeCorner(base, time, halfTopX, halfTopY, zTop);
+        const tRR = makeCorner(base, time, halfTopX, -halfTopY, zTop);
+        const tRL = makeCorner(base, time, -halfTopX, -halfTopY, zTop);
+        return {
+            top: [tFL, tFR, tRR, tRL],
+            front: [bFL, bFR, tFR, tFL],
+            rear: [bRL, bRR, tRR, tRL],
+            left: [bRL, bFL, tFL, tRL],
+            right: [bFR, bRR, tRR, tFR],
+        };
+    };
+
+    const makeHierarchy = (face: ArmoredUpperHullFace) => new Cesium.CallbackProperty((time) => {
+        try {
+            const faces = makeFaces(time);
+            const points = faces?.[face];
+            if (!points || points.length < 3) return undefined;
+            return new Cesium.PolygonHierarchy(points);
+        } catch {
+            return undefined;
+        }
+    }, false) as any;
+
+    const makePoly = (face: ArmoredUpperHullFace) => new Cesium.PolygonGraphics({
+        hierarchy: makeHierarchy(face),
+        perPositionHeight: true,
+        material: color,
+        outline: true,
+        outlineColor: Color.BLACK.withAlpha(0.82),
+        arcType: Cesium.ArcType.NONE,
+    });
+
+    topEnt.polygon = makePoly("top");
+    frontEnt.polygon = makePoly("front");
+    rearEnt.polygon = makePoly("rear");
+    leftEnt.polygon = makePoly("left");
+    rightEnt.polygon = makePoly("right");
+
+    for (const faceEnt of all) {
+        faceEnt.orientation = undefined;
+        faceEnt.billboard = undefined as any;
+        faceEnt.point = undefined as any;
+        safelyDisableEntityBox(faceEnt);
+        safelyDisableEntityCylinder(faceEnt);
+        safelyDisableEntityPolyline(faceEnt);
+        faceEnt.label = undefined as any;
+        tagEntityWithUnitId(faceEnt as any, u.id);
+        faceEnt.show = ent.show !== false;
+    }
+}
+
+function applyVehicleArmoredTurretGraphics(ent: Cesium.Entity, u: UnitRenderable, viewer?: Cesium.Viewer) {
+    const armoredPartIds = armoredPartIdsForUnit(u.id);
+    const armoredHullPartIds = armoredHullPartIdsForUnit(u.id);
+    const mobilityPartIds = vehicleMobilityPartIdsForSidc(u.id, mobilitySidcForUnit(u, viewer));
+    clearGroundOverrideArtifacts(viewer, u, {
+        removeSidcCap: true,
+        preserveEntityIds: [...armoredPartIds, ...armoredHullPartIds, ...mobilityPartIds],
+    });
+    clearGroundOverrideEntityGraphics(ent);
+
+    const hullSize = resolveVehicleHullSizeForSidc(mobilitySidcForUnit(u, viewer));
+    const fillCss = extractGroupFill(u) ?? u.symbolOptions?.fillColor;
+    const color = safeCssColor(fillCss).withAlpha(1.0);
+    const hullSplit = computeArmoredHullSplit(hullSize);
+    const turretUpOffset =
+        hullSplit.upperCenterUpFromLowerCenter + (hullSplit.upperSize.z / 2) + (ARMORED_TURRET_SIZE_METERS.z / 2) + 0.06;
+    const centerOffset = hullSplit.lowerHeight / 2;
+    const pose = makeGroundPrimitivePoseProperties(viewer, u, centerOffset, {
+        halfWidthMeters: hullSize.x / 2,
+        halfLengthMeters: hullSize.y / 2,
+    });
+    ent.position = pose.position as any;
+    ent.orientation = pose.orientation as any;
+    applyPathGraphics(ent, u);
+
+    ent.box = {
+        dimensions: new Cartesian3(hullSize.x, hullSize.y, hullSplit.lowerHeight),
+        material: color,
+        heightReference: HeightReference.NONE,
+        outline: true,
+        outlineColor: Color.BLACK,
+    };
+
+    ent.label = u.name ? makeSideLabel(u.name, HeightReference.NONE, "left", u.labelOffsetPxY ?? -12) : undefined;
+    applyGroundPrimitiveLabelOffset(ent.label);
+    ent.point = undefined as any;
+    ent.billboard = undefined as any;
+    safelyDisableEntityCylinder(ent);
+    ent.polygon = undefined as any;
+    ensureArmoredUpperHullPrismGraphics(ent, u, viewer, color, hullSplit);
+
+    if (viewer) {
+        const turretId = armoredTurretEntityId(u.id);
+        const barrelId = armoredBarrelEntityId(u.id);
+        const turret = viewer.entities.getById(turretId) ?? viewer.entities.add({ id: turretId });
+        const barrel = viewer.entities.getById(barrelId) ?? viewer.entities.add({ id: barrelId });
+
+        turret.position = new Cesium.CallbackProperty((time) => {
+            try {
+                return offsetFromEntityLocal(ent, time, 0, 0, turretUpOffset);
+            } catch {
+                return undefined;
+            }
+        }, false) as any;
+        turret.orientation = ent.orientation;
+        turret.box = new Cesium.BoxGraphics({
+            dimensions: new Cartesian3(
+                ARMORED_TURRET_SIZE_METERS.x,
+                ARMORED_TURRET_SIZE_METERS.y,
+                ARMORED_TURRET_SIZE_METERS.z,
+            ),
+            material: color,
+            heightReference: HeightReference.NONE,
+            outline: true,
+            outlineColor: Color.BLACK.withAlpha(0.85),
+        });
+        turret.billboard = undefined as any;
+        turret.point = undefined as any;
+        safelyDisableEntityCylinder(turret);
+        safelyDisableEntityPolyline(turret);
+        turret.polygon = undefined as any;
+        turret.label = undefined as any;
+        tagEntityWithUnitId(turret as any, u.id);
+        turret.show = ent.show !== false;
+
+        barrel.position = new Cesium.CallbackProperty((time) => {
+            try {
+                return offsetFromEntityLocal(
+                    turret,
+                    time,
+                    0,
+                    ARMORED_BARREL_FORWARD_FROM_TURRET_M,
+                    ARMORED_BARREL_UP_FROM_TURRET_M,
+                );
+            } catch {
+                return undefined;
+            }
+        }, false) as any;
+        barrel.orientation = new Cesium.CallbackProperty((time) => {
+            try {
+                return orientationFromEntityLocalHpr(
+                    turret,
+                    time,
+                    Cesium.Math.toRadians(90),
+                    Cesium.Math.toRadians(90),
+                    0,
+                );
+            } catch {
+                return undefined;
+            }
+        }, false) as any;
+        safelyDisableEntityBox(barrel);
+        barrel.cylinder = new Cesium.CylinderGraphics({
+            length: ARMORED_BARREL_LENGTH_M,
+            topRadius: ARMORED_BARREL_RADIUS_M,
+            bottomRadius: ARMORED_BARREL_RADIUS_M,
+            fill: true,
+            material: color,
+            outline: true,
+            outlineColor: Color.BLACK.withAlpha(0.8),
+            heightReference: HeightReference.NONE,
+        });
+        barrel.billboard = undefined as any;
+        barrel.point = undefined as any;
+        safelyDisableEntityPolyline(barrel);
+        barrel.polygon = undefined as any;
+        barrel.label = undefined as any;
+        tagEntityWithUnitId(barrel as any, u.id);
+        barrel.show = ent.show !== false;
+    }
+
+    applyVehicleMobilityAddons(ent, u, viewer, color);
+    applyAvailability(ent, u);
+}
+
+function applyVehicleIfvTurretGraphics(ent: Cesium.Entity, u: UnitRenderable, viewer?: Cesium.Viewer) {
+    const ifvPartIds = ifvPartIdsForUnit(u.id);
+    const armoredHullPartIds = armoredHullPartIdsForUnit(u.id);
+    const mobilityPartIds = vehicleMobilityPartIdsForSidc(u.id, mobilitySidcForUnit(u, viewer));
+    clearGroundOverrideArtifacts(viewer, u, {
+        removeSidcCap: true,
+        preserveEntityIds: [...ifvPartIds, ...armoredHullPartIds, ...mobilityPartIds],
+    });
+    clearGroundOverrideEntityGraphics(ent);
+
+    const hullSize = resolveVehicleHullSizeForSidc(mobilitySidcForUnit(u, viewer));
+    const fillCss = extractGroupFill(u) ?? u.symbolOptions?.fillColor;
+    const color = safeCssColor(fillCss).withAlpha(1.0);
+    const hullSplit = computeArmoredHullSplit(hullSize);
+    const turretUpOffset =
+        hullSplit.upperCenterUpFromLowerCenter + (hullSplit.upperSize.z / 2) + (IFV_TURRET_SIZE_METERS.z / 2) + 0.05;
+    const centerOffset = hullSplit.lowerHeight / 2;
+    const pose = makeGroundPrimitivePoseProperties(viewer, u, centerOffset, {
+        halfWidthMeters: hullSize.x / 2,
+        halfLengthMeters: hullSize.y / 2,
+    });
+    ent.position = pose.position as any;
+    ent.orientation = pose.orientation as any;
+    applyPathGraphics(ent, u);
+
+    ent.box = {
+        dimensions: new Cartesian3(hullSize.x, hullSize.y, hullSplit.lowerHeight),
+        material: color,
+        heightReference: HeightReference.NONE,
+        outline: true,
+        outlineColor: Color.BLACK,
+    };
+
+    ent.label = u.name ? makeSideLabel(u.name, HeightReference.NONE, "left", u.labelOffsetPxY ?? -12) : undefined;
+    applyGroundPrimitiveLabelOffset(ent.label);
+    ent.point = undefined as any;
+    ent.billboard = undefined as any;
+    safelyDisableEntityCylinder(ent);
+    ent.polygon = undefined as any;
+    ensureArmoredUpperHullPrismGraphics(ent, u, viewer, color, hullSplit);
+
+    if (viewer) {
+        const turretId = ifvTurretEntityId(u.id);
+        const barrelId = ifvBarrelEntityId(u.id);
+        const turret = viewer.entities.getById(turretId) ?? viewer.entities.add({ id: turretId });
+        const barrel = viewer.entities.getById(barrelId) ?? viewer.entities.add({ id: barrelId });
+
+        turret.position = new Cesium.CallbackProperty((time) => {
+            try {
+                return offsetFromEntityLocal(ent, time, 0, 0, turretUpOffset);
+            } catch {
+                return undefined;
+            }
+        }, false) as any;
+        turret.orientation = ent.orientation;
+        turret.box = new Cesium.BoxGraphics({
+            dimensions: new Cartesian3(
+                IFV_TURRET_SIZE_METERS.x,
+                IFV_TURRET_SIZE_METERS.y,
+                IFV_TURRET_SIZE_METERS.z,
+            ),
+            material: color,
+            heightReference: HeightReference.NONE,
+            outline: true,
+            outlineColor: Color.BLACK.withAlpha(0.85),
+        });
+        turret.billboard = undefined as any;
+        turret.point = undefined as any;
+        safelyDisableEntityCylinder(turret);
+        safelyDisableEntityPolyline(turret);
+        turret.polygon = undefined as any;
+        turret.label = undefined as any;
+        tagEntityWithUnitId(turret as any, u.id);
+        turret.show = ent.show !== false;
+
+        barrel.position = new Cesium.CallbackProperty((time) => {
+            try {
+                return offsetFromEntityLocal(
+                    turret,
+                    time,
+                    0,
+                    IFV_BARREL_FORWARD_FROM_TURRET_M,
+                    IFV_BARREL_UP_FROM_TURRET_M,
+                );
+            } catch {
+                return undefined;
+            }
+        }, false) as any;
+        barrel.orientation = new Cesium.CallbackProperty((time) => {
+            try {
+                return orientationFromEntityLocalHpr(
+                    turret,
+                    time,
+                    Cesium.Math.toRadians(90),
+                    Cesium.Math.toRadians(90),
+                    0,
+                );
+            } catch {
+                return undefined;
+            }
+        }, false) as any;
+        safelyDisableEntityBox(barrel);
+        barrel.cylinder = new Cesium.CylinderGraphics({
+            length: IFV_BARREL_LENGTH_M,
+            topRadius: IFV_BARREL_RADIUS_M,
+            bottomRadius: IFV_BARREL_RADIUS_M,
+            fill: true,
+            material: color,
+            outline: true,
+            outlineColor: Color.BLACK.withAlpha(0.8),
+            heightReference: HeightReference.NONE,
+        });
+        barrel.billboard = undefined as any;
+        barrel.point = undefined as any;
+        safelyDisableEntityPolyline(barrel);
+        barrel.polygon = undefined as any;
+        barrel.label = undefined as any;
+        tagEntityWithUnitId(barrel as any, u.id);
+        barrel.show = ent.show !== false;
+    }
+
+    applyVehicleMobilityAddons(ent, u, viewer, color);
+    applyAvailability(ent, u);
+}
+
+function applyVehicleRecoveryBoomGraphics(ent: Cesium.Entity, u: UnitRenderable, viewer?: Cesium.Viewer) {
+    const recoveryPartIds = recoveryPartIdsForUnit(u.id);
+    const sidcForProfile = mobilitySidcForUnit(u, viewer);
+    const useArmoredSplitHull = shouldUseArmoredSplitHullForSidc(sidcForProfile);
+    const armoredHullPartIds = useArmoredSplitHull ? armoredHullPartIdsForUnit(u.id) : [];
+    const mobilityPartIds = vehicleMobilityPartIdsForSidc(u.id, sidcForProfile);
+    clearGroundOverrideArtifacts(viewer, u, {
+        removeSidcCap: true,
+        preserveEntityIds: [...recoveryPartIds, ...armoredHullPartIds, ...mobilityPartIds],
+    });
+    clearGroundOverrideEntityGraphics(ent);
+
+    const hullSize = resolveVehicleHullSizeForSidc(sidcForProfile);
+    const fillCss = extractGroupFill(u) ?? u.symbolOptions?.fillColor;
+    const color = safeCssColor(fillCss).withAlpha(1.0);
+    const hullSplit = useArmoredSplitHull ? computeArmoredHullSplit(hullSize) : undefined;
+    const hullTopUp = hullTopUpOffsetFromCenter(hullSize, hullSplit);
+    const recoveryBoomUpOffset = RECOVERY_BOOM_UP_OFFSET_M + (hullTopUp - (VEHICLE_BLOCK_SIZE_METERS.z / 2));
+    const centerOffset = hullSplit ? (hullSplit.lowerHeight / 2) : (hullSize.z / 2);
+    const pose = makeGroundPrimitivePoseProperties(viewer, u, centerOffset, {
+        halfWidthMeters: hullSize.x / 2,
+        halfLengthMeters: hullSize.y / 2,
+    });
+    ent.position = pose.position as any;
+    ent.orientation = pose.orientation as any;
+    applyPathGraphics(ent, u);
+
+    ent.box = {
+        dimensions: new Cartesian3(hullSize.x, hullSize.y, hullSplit ? hullSplit.lowerHeight : hullSize.z),
+        material: color,
+        heightReference: HeightReference.NONE,
+        outline: true,
+        outlineColor: Color.BLACK,
+    };
+    if (hullSplit) {
+        ensureArmoredUpperHullPrismGraphics(ent, u, viewer, color, hullSplit);
+    }
+    ent.label = u.name ? makeSideLabel(u.name, HeightReference.NONE, "left", u.labelOffsetPxY ?? -12) : undefined;
+    applyGroundPrimitiveLabelOffset(ent.label);
+
+    ent.point = undefined as any;
+    ent.billboard = undefined as any;
+    safelyDisableEntityCylinder(ent);
+    ent.polygon = undefined as any;
+
+    if (viewer) {
+        const boomId = recoveryBoomEntityId(u.id);
+        const boom = viewer.entities.getById(boomId) ?? viewer.entities.add({ id: boomId });
+        boom.position = new Cesium.CallbackProperty((time) => {
+            try {
+                return offsetFromEntityLocal(ent, time, 0, RECOVERY_BOOM_NORTH_OFFSET_M, recoveryBoomUpOffset);
+            } catch {
+                return undefined;
+            }
+        }, false) as any;
+        boom.orientation = new Cesium.CallbackProperty((time) => {
+            try {
+                const p = boom.position?.getValue?.(time);
+                if (!p) return undefined;
+                // Forward and upward angled recovery boom.
+                return Cesium.Transforms.headingPitchRollQuaternion(
+                    p,
+                    new Cesium.HeadingPitchRoll(
+                        Cesium.Math.toRadians(90),
+                        Cesium.Math.toRadians(55),
+                        0,
+                    ),
+                );
+            } catch {
+                return undefined;
+            }
+        }, false) as any;
+        safelyDisableEntityBox(boom);
+        boom.cylinder = new Cesium.CylinderGraphics({
+            length: RECOVERY_BOOM_LENGTH_M,
+            topRadius: RECOVERY_BOOM_RADIUS_M,
+            bottomRadius: RECOVERY_BOOM_RADIUS_M,
+            fill: true,
+            material: color,
+            outline: true,
+            outlineColor: Color.BLACK.withAlpha(0.8),
+            heightReference: HeightReference.NONE,
+        });
+        boom.billboard = undefined as any;
+        boom.point = undefined as any;
+        safelyDisableEntityPolyline(boom);
+        boom.polygon = undefined as any;
+        boom.label = undefined as any;
+        tagEntityWithUnitId(boom as any, u.id);
+        boom.show = ent.show !== false;
+    }
+
+    applyVehicleMobilityAddons(ent, u, viewer, color, sidcForProfile);
+    applyAvailability(ent, u);
+}
+
+function applyVehicleApcModuleGraphics(ent: Cesium.Entity, u: UnitRenderable, viewer?: Cesium.Viewer) {
+    const apcPartIds = apcPartIdsForUnit(u.id);
+    const armoredHullPartIds = armoredHullPartIdsForUnit(u.id);
+    const mobilityPartIds = vehicleMobilityPartIdsForSidc(u.id, mobilitySidcForUnit(u, viewer));
+    clearGroundOverrideArtifacts(viewer, u, {
+        removeSidcCap: true,
+        preserveEntityIds: [...apcPartIds, ...armoredHullPartIds, ...mobilityPartIds],
+    });
+    clearGroundOverrideEntityGraphics(ent);
+
+    const hullSize = resolveVehicleHullSizeForSidc(mobilitySidcForUnit(u, viewer));
+    const fillCss = extractGroupFill(u) ?? u.symbolOptions?.fillColor;
+    const color = safeCssColor(fillCss).withAlpha(1.0);
+    const hullSplit = computeArmoredHullSplit(hullSize);
+    const hullTopUp = hullTopUpOffsetFromCenter(hullSize, hullSplit);
+    const apcModuleUpOffset = APC_MODULE_UP_OFFSET_M + (hullTopUp - (VEHICLE_BLOCK_SIZE_METERS.z / 2));
+    const centerOffset = hullSplit.lowerHeight / 2;
+    const pose = makeGroundPrimitivePoseProperties(viewer, u, centerOffset, {
+        halfWidthMeters: hullSize.x / 2,
+        halfLengthMeters: hullSize.y / 2,
+    });
+    ent.position = pose.position as any;
+    ent.orientation = pose.orientation as any;
+    applyPathGraphics(ent, u);
+
+    ent.box = {
+        dimensions: new Cartesian3(hullSize.x, hullSize.y, hullSplit.lowerHeight),
+        material: color,
+        heightReference: HeightReference.NONE,
+        outline: true,
+        outlineColor: Color.BLACK,
+    };
+    ent.label = u.name ? makeSideLabel(u.name, HeightReference.NONE, "left", u.labelOffsetPxY ?? -12) : undefined;
+    applyGroundPrimitiveLabelOffset(ent.label);
+
+    ent.point = undefined as any;
+    ent.billboard = undefined as any;
+    safelyDisableEntityCylinder(ent);
+    ent.polygon = undefined as any;
+    ensureArmoredUpperHullPrismGraphics(ent, u, viewer, color, hullSplit);
+
+    if (viewer) {
+        const moduleId = apcModuleEntityId(u.id);
+        const moduleEnt = viewer.entities.getById(moduleId) ?? viewer.entities.add({ id: moduleId });
+
+        moduleEnt.position = new Cesium.CallbackProperty((time) => {
+            try {
+                return offsetFromEntityLocal(ent, time, 0, APC_MODULE_NORTH_OFFSET_M, apcModuleUpOffset);
+            } catch {
+                return undefined;
+            }
+        }, false) as any;
+        moduleEnt.orientation = ent.orientation;
+        moduleEnt.box = new Cesium.BoxGraphics({
+            dimensions: new Cartesian3(
+                APC_MODULE_SIZE_METERS.x,
+                APC_MODULE_SIZE_METERS.y,
+                APC_MODULE_SIZE_METERS.z,
+            ),
+            material: color,
+            heightReference: HeightReference.NONE,
+            outline: true,
+            outlineColor: Color.BLACK.withAlpha(0.85),
+        });
+        moduleEnt.billboard = undefined as any;
+        moduleEnt.point = undefined as any;
+        safelyDisableEntityCylinder(moduleEnt);
+        safelyDisableEntityPolyline(moduleEnt);
+        moduleEnt.polygon = undefined as any;
+        moduleEnt.label = undefined as any;
+        tagEntityWithUnitId(moduleEnt as any, u.id);
+        moduleEnt.show = ent.show !== false;
+    }
+
+    applyVehicleMobilityAddons(ent, u, viewer, color);
+    applyAvailability(ent, u);
+}
+
+function applyVehicleApcAmbulanceGraphics(ent: Cesium.Entity, u: UnitRenderable, viewer?: Cesium.Viewer) {
+    const parts = apcAmbulancePartIdsForUnit(u.id);
+    const armoredHullPartIds = armoredHullPartIdsForUnit(u.id);
+    const mobilityPartIds = vehicleMobilityPartIdsForSidc(u.id, mobilitySidcForUnit(u, viewer));
+    clearGroundOverrideArtifacts(viewer, u, {
+        removeSidcCap: true,
+        preserveEntityIds: [...parts, ...armoredHullPartIds, ...mobilityPartIds],
+    });
+    clearGroundOverrideEntityGraphics(ent);
+
+    const hullSize = resolveVehicleHullSizeForSidc(mobilitySidcForUnit(u, viewer));
+    const fillCss = extractGroupFill(u) ?? u.symbolOptions?.fillColor;
+    const color = safeCssColor(fillCss).withAlpha(1.0);
+    const hullSplit = computeArmoredHullSplit(hullSize);
+    const hullTopUp = hullTopUpOffsetFromCenter(hullSize, hullSplit);
+    const apcMedModuleUpOffset = APC_MED_MODULE_UP_OFFSET_M + (hullTopUp - (VEHICLE_BLOCK_SIZE_METERS.z / 2));
+    const centerOffset = hullSplit.lowerHeight / 2;
+    const pose = makeGroundPrimitivePoseProperties(viewer, u, centerOffset, {
+        halfWidthMeters: hullSize.x / 2,
+        halfLengthMeters: hullSize.y / 2,
+    });
+    ent.position = pose.position as any;
+    ent.orientation = pose.orientation as any;
+    applyPathGraphics(ent, u);
+    ent.box = {
+        dimensions: new Cartesian3(hullSize.x, hullSize.y, hullSplit.lowerHeight),
+        material: color,
+        heightReference: HeightReference.NONE,
+        outline: true,
+        outlineColor: Color.BLACK,
+    };
+    ent.label = u.name ? makeSideLabel(u.name, HeightReference.NONE, "left", u.labelOffsetPxY ?? -12) : undefined;
+    applyGroundPrimitiveLabelOffset(ent.label);
+    ent.point = undefined as any;
+    ent.billboard = undefined as any;
+    safelyDisableEntityCylinder(ent);
+    ent.polygon = undefined as any;
+    ensureArmoredUpperHullPrismGraphics(ent, u, viewer, color, hullSplit);
+
+    if (viewer) {
+        const moduleId = apcAmbulanceModuleEntityId(u.id);
+        const podId = apcAmbulancePodEntityId(u.id);
+        const moduleEnt = viewer.entities.getById(moduleId) ?? viewer.entities.add({ id: moduleId });
+        const podEnt = viewer.entities.getById(podId) ?? viewer.entities.add({ id: podId });
+
+        moduleEnt.position = new Cesium.CallbackProperty((time) => {
+            try {
+                return offsetFromEntityLocal(ent, time, 0, APC_MODULE_NORTH_OFFSET_M, apcMedModuleUpOffset);
+            } catch {
+                return undefined;
+            }
+        }, false) as any;
+        moduleEnt.orientation = ent.orientation;
+        moduleEnt.box = new Cesium.BoxGraphics({
+            dimensions: new Cartesian3(
+                APC_MODULE_SIZE_METERS.x,
+                APC_MODULE_SIZE_METERS.y,
+                APC_MODULE_SIZE_METERS.z,
+            ),
+            material: color,
+            heightReference: HeightReference.NONE,
+            outline: true,
+            outlineColor: Color.BLACK.withAlpha(0.85),
+        });
+        moduleEnt.billboard = undefined as any;
+        moduleEnt.point = undefined as any;
+        safelyDisableEntityCylinder(moduleEnt);
+        safelyDisableEntityPolyline(moduleEnt);
+        moduleEnt.polygon = undefined as any;
+        moduleEnt.label = undefined as any;
+        tagEntityWithUnitId(moduleEnt as any, u.id);
+        moduleEnt.show = ent.show !== false;
+
+        podEnt.position = new Cesium.CallbackProperty((time) => {
+            try {
+                return offsetFromEntityLocal(moduleEnt, time, 0, 0, APC_MED_POD_UP_FROM_MODULE_M);
+            } catch {
+                return undefined;
+            }
+        }, false) as any;
+        podEnt.orientation = moduleEnt.orientation;
+        podEnt.box = new Cesium.BoxGraphics({
+            dimensions: new Cartesian3(
+                APC_MED_POD_SIZE_METERS.x,
+                APC_MED_POD_SIZE_METERS.y,
+                APC_MED_POD_SIZE_METERS.z,
+            ),
+            material: color.withAlpha(0.94),
+            heightReference: HeightReference.NONE,
+            outline: true,
+            outlineColor: Color.BLACK.withAlpha(0.8),
+        });
+        podEnt.billboard = undefined as any;
+        podEnt.point = undefined as any;
+        safelyDisableEntityCylinder(podEnt);
+        safelyDisableEntityPolyline(podEnt);
+        podEnt.polygon = undefined as any;
+        podEnt.label = undefined as any;
+        tagEntityWithUnitId(podEnt as any, u.id);
+        podEnt.show = ent.show !== false;
+    }
+
+    applyVehicleMobilityAddons(ent, u, viewer, color);
+    applyAvailability(ent, u);
+}
+
+function applyVehicleReconMastGraphics(ent: Cesium.Entity, u: UnitRenderable, viewer?: Cesium.Viewer) {
+    const parts = reconPartIdsForUnit(u.id);
+    const armoredHullPartIds = armoredHullPartIdsForUnit(u.id);
+    const mobilityPartIds = vehicleMobilityPartIdsForSidc(u.id, mobilitySidcForUnit(u, viewer));
+    clearGroundOverrideArtifacts(viewer, u, {
+        removeSidcCap: true,
+        preserveEntityIds: [...parts, ...armoredHullPartIds, ...mobilityPartIds],
+    });
+    clearGroundOverrideEntityGraphics(ent);
+
+    const hullSize = resolveVehicleHullSizeForSidc(mobilitySidcForUnit(u, viewer));
+    const fillCss = extractGroupFill(u) ?? u.symbolOptions?.fillColor;
+    const color = safeCssColor(fillCss).withAlpha(1.0);
+    const hullSplit = computeArmoredHullSplit(hullSize);
+    const hullTopUp = hullTopUpOffsetFromCenter(hullSize, hullSplit);
+    const reconMastBaseUpOffset = RECON_MAST_BASE_UP_OFFSET_M + (hullTopUp - (VEHICLE_BLOCK_SIZE_METERS.z / 2));
+    const centerOffset = hullSplit.lowerHeight / 2;
+    const pose = makeGroundPrimitivePoseProperties(viewer, u, centerOffset, {
+        halfWidthMeters: hullSize.x / 2,
+        halfLengthMeters: hullSize.y / 2,
+    });
+    ent.position = pose.position as any;
+    ent.orientation = pose.orientation as any;
+    applyPathGraphics(ent, u);
+    ent.box = {
+        dimensions: new Cartesian3(hullSize.x, hullSize.y, hullSplit.lowerHeight),
+        material: color,
+        heightReference: HeightReference.NONE,
+        outline: true,
+        outlineColor: Color.BLACK,
+    };
+    ent.label = u.name ? makeSideLabel(u.name, HeightReference.NONE, "left", u.labelOffsetPxY ?? -12) : undefined;
+    applyGroundPrimitiveLabelOffset(ent.label);
+    ent.point = undefined as any;
+    ent.billboard = undefined as any;
+    safelyDisableEntityCylinder(ent);
+    ent.polygon = undefined as any;
+    ensureArmoredUpperHullPrismGraphics(ent, u, viewer, color, hullSplit);
+
+    if (viewer) {
+        const mastId = reconMastEntityId(u.id);
+        const mast = viewer.entities.getById(mastId) ?? viewer.entities.add({ id: mastId });
+        mast.position = new Cesium.CallbackProperty((time) => {
+            try {
+                return offsetFromEntityLocal(ent, time, 0, RECON_MAST_NORTH_OFFSET_M, reconMastBaseUpOffset);
+            } catch {
+                return undefined;
+            }
+        }, false) as any;
+        mast.orientation = ent.orientation;
+        safelyDisableEntityBox(mast);
+        mast.cylinder = new Cesium.CylinderGraphics({
+            length: RECON_MAST_LENGTH_M,
+            topRadius: RECON_MAST_RADIUS_M,
+            bottomRadius: RECON_MAST_RADIUS_M,
+            fill: true,
+            material: color,
+            outline: true,
+            outlineColor: Color.BLACK.withAlpha(0.82),
+            heightReference: HeightReference.NONE,
+        });
+        mast.billboard = undefined as any;
+        mast.point = undefined as any;
+        safelyDisableEntityPolyline(mast);
+        mast.polygon = undefined as any;
+        mast.label = undefined as any;
+        tagEntityWithUnitId(mast as any, u.id);
+        mast.show = ent.show !== false;
+    }
+
+    applyVehicleMobilityAddons(ent, u, viewer, color);
+    applyAvailability(ent, u);
+}
+
+function applyVehicleCargoModuleGraphics(ent: Cesium.Entity, u: UnitRenderable, viewer?: Cesium.Viewer) {
+    const parts = cargoPartIdsForUnit(u.id);
+    const armoredHullPartIds = armoredHullPartIdsForUnit(u.id);
+    const mobilityPartIds = vehicleMobilityPartIdsForSidc(u.id, mobilitySidcForUnit(u, viewer));
+    clearGroundOverrideArtifacts(viewer, u, {
+        removeSidcCap: true,
+        preserveEntityIds: [...parts, ...armoredHullPartIds, ...mobilityPartIds],
+    });
+    clearGroundOverrideEntityGraphics(ent);
+
+    const hullSize = resolveVehicleHullSizeForSidc(mobilitySidcForUnit(u, viewer));
+    const fillCss = extractGroupFill(u) ?? u.symbolOptions?.fillColor;
+    const color = safeCssColor(fillCss).withAlpha(1.0);
+    const hullSplit = computeArmoredHullSplit(hullSize);
+    const hullTopUp = hullTopUpOffsetFromCenter(hullSize, hullSplit);
+    const cargoModuleUpOffset = CARGO_MODULE_UP_OFFSET_M + (hullTopUp - (VEHICLE_BLOCK_SIZE_METERS.z / 2));
+    const centerOffset = hullSplit.lowerHeight / 2;
+    const pose = makeGroundPrimitivePoseProperties(viewer, u, centerOffset, {
+        halfWidthMeters: hullSize.x / 2,
+        halfLengthMeters: hullSize.y / 2,
+    });
+    ent.position = pose.position as any;
+    ent.orientation = pose.orientation as any;
+    applyPathGraphics(ent, u);
+    ent.box = {
+        dimensions: new Cartesian3(hullSize.x, hullSize.y, hullSplit.lowerHeight),
+        material: color,
+        heightReference: HeightReference.NONE,
+        outline: true,
+        outlineColor: Color.BLACK,
+    };
+    ent.label = u.name ? makeSideLabel(u.name, HeightReference.NONE, "left", u.labelOffsetPxY ?? -12) : undefined;
+    applyGroundPrimitiveLabelOffset(ent.label);
+    ent.point = undefined as any;
+    ent.billboard = undefined as any;
+    safelyDisableEntityCylinder(ent);
+    ent.polygon = undefined as any;
+    ensureArmoredUpperHullPrismGraphics(ent, u, viewer, color, hullSplit);
+
+    if (viewer) {
+        const moduleId = cargoModuleEntityId(u.id);
+        const moduleEnt = viewer.entities.getById(moduleId) ?? viewer.entities.add({ id: moduleId });
+        moduleEnt.position = new Cesium.CallbackProperty((time) => {
+            try {
+                return offsetFromEntityLocal(ent, time, 0, CARGO_MODULE_NORTH_OFFSET_M, cargoModuleUpOffset);
+            } catch {
+                return undefined;
+            }
+        }, false) as any;
+        moduleEnt.orientation = ent.orientation;
+        moduleEnt.box = new Cesium.BoxGraphics({
+            dimensions: new Cartesian3(
+                CARGO_MODULE_SIZE_METERS.x,
+                CARGO_MODULE_SIZE_METERS.y,
+                CARGO_MODULE_SIZE_METERS.z,
+            ),
+            material: color.withAlpha(0.96),
+            heightReference: HeightReference.NONE,
+            outline: true,
+            outlineColor: Color.BLACK.withAlpha(0.84),
+        });
+        moduleEnt.billboard = undefined as any;
+        moduleEnt.point = undefined as any;
+        safelyDisableEntityCylinder(moduleEnt);
+        safelyDisableEntityPolyline(moduleEnt);
+        moduleEnt.polygon = undefined as any;
+        moduleEnt.label = undefined as any;
+        tagEntityWithUnitId(moduleEnt as any, u.id);
+        moduleEnt.show = ent.show !== false;
+    }
+
+    applyVehicleMobilityAddons(ent, u, viewer, color);
+    applyAvailability(ent, u);
+}
+
+function applyVehicleCommandMastGraphics(ent: Cesium.Entity, u: UnitRenderable, viewer?: Cesium.Viewer) {
+    const parts = commandPartIdsForUnit(u.id);
+    const armoredHullPartIds = armoredHullPartIdsForUnit(u.id);
+    const mobilityPartIds = vehicleMobilityPartIdsForSidc(u.id, mobilitySidcForUnit(u, viewer));
+    clearGroundOverrideArtifacts(viewer, u, {
+        removeSidcCap: true,
+        preserveEntityIds: [...parts, ...armoredHullPartIds, ...mobilityPartIds],
+    });
+    clearGroundOverrideEntityGraphics(ent);
+
+    const hullSize = resolveVehicleHullSizeForSidc(mobilitySidcForUnit(u, viewer));
+    const fillCss = extractGroupFill(u) ?? u.symbolOptions?.fillColor;
+    const color = safeCssColor(fillCss).withAlpha(1.0);
+    const hullSplit = computeArmoredHullSplit(hullSize);
+    const hullTopUp = hullTopUpOffsetFromCenter(hullSize, hullSplit);
+    const commandModuleUpOffset = COMMAND_MODULE_UP_OFFSET_M + (hullTopUp - (VEHICLE_BLOCK_SIZE_METERS.z / 2));
+    const centerOffset = hullSplit.lowerHeight / 2;
+    const pose = makeGroundPrimitivePoseProperties(viewer, u, centerOffset, {
+        halfWidthMeters: hullSize.x / 2,
+        halfLengthMeters: hullSize.y / 2,
+    });
+    ent.position = pose.position as any;
+    ent.orientation = pose.orientation as any;
+    applyPathGraphics(ent, u);
+    ent.box = {
+        dimensions: new Cartesian3(hullSize.x, hullSize.y, hullSplit.lowerHeight),
+        material: color,
+        heightReference: HeightReference.NONE,
+        outline: true,
+        outlineColor: Color.BLACK,
+    };
+    ent.label = u.name ? makeSideLabel(u.name, HeightReference.NONE, "left", u.labelOffsetPxY ?? -12) : undefined;
+    applyGroundPrimitiveLabelOffset(ent.label);
+    ent.point = undefined as any;
+    ent.billboard = undefined as any;
+    safelyDisableEntityCylinder(ent);
+    ent.polygon = undefined as any;
+    ensureArmoredUpperHullPrismGraphics(ent, u, viewer, color, hullSplit);
+
+    if (viewer) {
+        const moduleId = commandModuleEntityId(u.id);
+        const mastId = commandMastEntityId(u.id);
+        const headId = commandHeadEntityId(u.id);
+        const moduleEnt = viewer.entities.getById(moduleId) ?? viewer.entities.add({ id: moduleId });
+        const mastEnt = viewer.entities.getById(mastId) ?? viewer.entities.add({ id: mastId });
+        const headEnt = viewer.entities.getById(headId) ?? viewer.entities.add({ id: headId });
+
+        moduleEnt.position = new Cesium.CallbackProperty((time) => {
+            try {
+                return offsetFromEntityLocal(ent, time, 0, COMMAND_MODULE_NORTH_OFFSET_M, commandModuleUpOffset);
+            } catch {
+                return undefined;
+            }
+        }, false) as any;
+        moduleEnt.orientation = ent.orientation;
+        moduleEnt.box = new Cesium.BoxGraphics({
+            dimensions: new Cartesian3(
+                COMMAND_MODULE_SIZE_METERS.x,
+                COMMAND_MODULE_SIZE_METERS.y,
+                COMMAND_MODULE_SIZE_METERS.z,
+            ),
+            material: color,
+            heightReference: HeightReference.NONE,
+            outline: true,
+            outlineColor: Color.BLACK.withAlpha(0.85),
+        });
+        moduleEnt.billboard = undefined as any;
+        moduleEnt.point = undefined as any;
+        safelyDisableEntityCylinder(moduleEnt);
+        safelyDisableEntityPolyline(moduleEnt);
+        moduleEnt.polygon = undefined as any;
+        moduleEnt.label = undefined as any;
+        tagEntityWithUnitId(moduleEnt as any, u.id);
+        moduleEnt.show = ent.show !== false;
+
+        mastEnt.position = new Cesium.CallbackProperty((time) => {
+            try {
+                return offsetFromEntityLocal(moduleEnt, time, 0, 0, COMMAND_MAST_UP_FROM_MODULE_M);
+            } catch {
+                return undefined;
+            }
+        }, false) as any;
+        mastEnt.orientation = moduleEnt.orientation;
+        safelyDisableEntityBox(mastEnt);
+        mastEnt.cylinder = new Cesium.CylinderGraphics({
+            length: COMMAND_MAST_LENGTH_M,
+            topRadius: COMMAND_MAST_RADIUS_M,
+            bottomRadius: COMMAND_MAST_RADIUS_M,
+            fill: true,
+            material: color,
+            outline: true,
+            outlineColor: Color.BLACK.withAlpha(0.82),
+            heightReference: HeightReference.NONE,
+        });
+        mastEnt.billboard = undefined as any;
+        mastEnt.point = undefined as any;
+        safelyDisableEntityPolyline(mastEnt);
+        mastEnt.polygon = undefined as any;
+        mastEnt.label = undefined as any;
+        tagEntityWithUnitId(mastEnt as any, u.id);
+        mastEnt.show = ent.show !== false;
+
+        headEnt.position = new Cesium.CallbackProperty((time) => {
+            try {
+                return offsetFromEntityLocal(mastEnt, time, 0, 0, COMMAND_HEAD_UP_FROM_MAST_M);
+            } catch {
+                return undefined;
+            }
+        }, false) as any;
+        headEnt.orientation = mastEnt.orientation;
+        headEnt.box = new Cesium.BoxGraphics({
+            dimensions: new Cartesian3(
+                COMMAND_HEAD_SIZE_METERS.x,
+                COMMAND_HEAD_SIZE_METERS.y,
+                COMMAND_HEAD_SIZE_METERS.z,
+            ),
+            material: color.withAlpha(0.95),
+            heightReference: HeightReference.NONE,
+            outline: true,
+            outlineColor: Color.BLACK.withAlpha(0.82),
+        });
+        headEnt.billboard = undefined as any;
+        headEnt.point = undefined as any;
+        safelyDisableEntityCylinder(headEnt);
+        safelyDisableEntityPolyline(headEnt);
+        headEnt.polygon = undefined as any;
+        headEnt.label = undefined as any;
+        tagEntityWithUnitId(headEnt as any, u.id);
+        headEnt.show = ent.show !== false;
+    }
+
+    applyVehicleMobilityAddons(ent, u, viewer, color);
+    applyAvailability(ent, u);
+}
+
+function applyVehicleRecoveryRigGraphics(ent: Cesium.Entity, u: UnitRenderable, viewer?: Cesium.Viewer) {
+    const parts = recoveryRigPartIdsForUnit(u.id);
+    const armoredHullPartIds = armoredHullPartIdsForUnit(u.id);
+    const mobilityPartIds = vehicleMobilityPartIdsForSidc(u.id, mobilitySidcForUnit(u, viewer));
+    clearGroundOverrideArtifacts(viewer, u, {
+        removeSidcCap: true,
+        preserveEntityIds: [...parts, ...armoredHullPartIds, ...mobilityPartIds],
+    });
+    clearGroundOverrideEntityGraphics(ent);
+
+    const hullSize = resolveVehicleHullSizeForSidc(mobilitySidcForUnit(u, viewer));
+    const fillCss = extractGroupFill(u) ?? u.symbolOptions?.fillColor;
+    const color = safeCssColor(fillCss).withAlpha(1.0);
+    const hullSplit = computeArmoredHullSplit(hullSize);
+    const hullTopUp = hullTopUpOffsetFromCenter(hullSize, hullSplit);
+    const recoveryRigBoomUpOffset = RECOVERY_RIG_BOOM_UP_OFFSET_M + (hullTopUp - (VEHICLE_BLOCK_SIZE_METERS.z / 2));
+    const centerOffset = hullSplit.lowerHeight / 2;
+    const pose = makeGroundPrimitivePoseProperties(viewer, u, centerOffset, {
+        halfWidthMeters: hullSize.x / 2,
+        halfLengthMeters: hullSize.y / 2,
+    });
+    ent.position = pose.position as any;
+    ent.orientation = pose.orientation as any;
+    applyPathGraphics(ent, u);
+    ent.box = {
+        dimensions: new Cartesian3(hullSize.x, hullSize.y, hullSplit.lowerHeight),
+        material: color,
+        heightReference: HeightReference.NONE,
+        outline: true,
+        outlineColor: Color.BLACK,
+    };
+    ent.label = u.name ? makeSideLabel(u.name, HeightReference.NONE, "left", u.labelOffsetPxY ?? -12) : undefined;
+    applyGroundPrimitiveLabelOffset(ent.label);
+    ent.point = undefined as any;
+    ent.billboard = undefined as any;
+    safelyDisableEntityCylinder(ent);
+    ent.polygon = undefined as any;
+    ensureArmoredUpperHullPrismGraphics(ent, u, viewer, color, hullSplit);
+
+    if (viewer) {
+        const boomId = recoveryRigBoomEntityId(u.id);
+        const hookId = recoveryRigHookEntityId(u.id);
+        const boomEnt = viewer.entities.getById(boomId) ?? viewer.entities.add({ id: boomId });
+        const hookEnt = viewer.entities.getById(hookId) ?? viewer.entities.add({ id: hookId });
+
+        boomEnt.position = new Cesium.CallbackProperty((time) => {
+            try {
+                return offsetFromEntityLocal(ent, time, 0, RECOVERY_RIG_BOOM_NORTH_OFFSET_M, recoveryRigBoomUpOffset);
+            } catch {
+                return undefined;
+            }
+        }, false) as any;
+        boomEnt.orientation = new Cesium.CallbackProperty((time) => {
+            const p = boomEnt.position?.getValue?.(time);
+            if (!p) return undefined;
+            const pitch = Cesium.Math.toRadians(-18);
+            return Transforms.headingPitchRollQuaternion(p, new HeadingPitchRoll(0, pitch, 0));
+        }, false) as any;
+        safelyDisableEntityBox(boomEnt);
+        boomEnt.cylinder = new Cesium.CylinderGraphics({
+            length: RECOVERY_RIG_BOOM_LENGTH_M,
+            topRadius: RECOVERY_RIG_BOOM_RADIUS_M,
+            bottomRadius: RECOVERY_RIG_BOOM_RADIUS_M,
+            fill: true,
+            material: color,
+            outline: true,
+            outlineColor: Color.BLACK.withAlpha(0.82),
+            heightReference: HeightReference.NONE,
+        });
+        boomEnt.billboard = undefined as any;
+        boomEnt.point = undefined as any;
+        safelyDisableEntityPolyline(boomEnt);
+        boomEnt.polygon = undefined as any;
+        boomEnt.label = undefined as any;
+        tagEntityWithUnitId(boomEnt as any, u.id);
+        boomEnt.show = ent.show !== false;
+
+        hookEnt.position = new Cesium.CallbackProperty((time) => {
+            try {
+                return offsetFromEntityLocal(
+                    boomEnt,
+                    time,
+                    0,
+                    RECOVERY_RIG_HOOK_FORWARD_FROM_BOOM_M,
+                    RECOVERY_RIG_HOOK_UP_FROM_BOOM_M,
+                );
+            } catch {
+                return undefined;
+            }
+        }, false) as any;
+        hookEnt.orientation = boomEnt.orientation;
+        hookEnt.box = new Cesium.BoxGraphics({
+            dimensions: new Cartesian3(
+                RECOVERY_RIG_HOOK_SIZE_METERS.x,
+                RECOVERY_RIG_HOOK_SIZE_METERS.y,
+                RECOVERY_RIG_HOOK_SIZE_METERS.z,
+            ),
+            material: color.withAlpha(0.95),
+            heightReference: HeightReference.NONE,
+            outline: true,
+            outlineColor: Color.BLACK.withAlpha(0.82),
+        });
+        hookEnt.billboard = undefined as any;
+        hookEnt.point = undefined as any;
+        safelyDisableEntityCylinder(hookEnt);
+        safelyDisableEntityPolyline(hookEnt);
+        hookEnt.polygon = undefined as any;
+        hookEnt.label = undefined as any;
+        tagEntityWithUnitId(hookEnt as any, u.id);
+        hookEnt.show = ent.show !== false;
+    }
+
+    applyVehicleMobilityAddons(ent, u, viewer, color);
     applyAvailability(ent, u);
 }
 
@@ -1266,11 +2855,15 @@ function effectiveSidc(u: UnitRenderable, viewer?: Cesium.Viewer): string | unde
     const src = (u as any).__sourceUnit ?? u;
     const tMs = currentViewerMs(viewer);
 
-    // 1) From events at/≤ t
-    const fromEvents = lastSidcAtOrBefore(src, tMs);
+    // 1) From explicit SIDC events at/= t
+    const fromEvents = lastExplicitSidcEventAtOrBefore(src, tMs);
     if (typeof fromEvents === "string" && fromEvents.trim()) return fromEvents;
 
-    // 2) From computeSnapshot (some pipelines keep current sidc only in events logic)
+    // 2) Prefer unit SIDC when there is no explicit SIDC event.
+    const fromUnit = preferredUnitSidc(u);
+    if (typeof fromUnit === "string" && fromUnit.trim()) return fromUnit;
+
+    // 3) From computeSnapshot (some pipelines keep current sidc only in events logic)
     try {
         const snap = computeSnapshot(u, tMs);
         // Default: no lift unless underbar/pedestal logic sets it this tick
@@ -1278,7 +2871,7 @@ function effectiveSidc(u: UnitRenderable, viewer?: Cesium.Viewer): string | unde
         if (typeof snap?.sidc === "string" && snap.sidc.trim()) return snap.sidc;
     } catch { /* ignore */ }
 
-    // 3) From various base locations (both source and renderable)
+    // 4) From various base locations (both source and renderable)
     const candidates = [
         (src as any)?.sidc,
         (src as any)?._state?.sidc,
@@ -1290,8 +2883,56 @@ function effectiveSidc(u: UnitRenderable, viewer?: Cesium.Viewer): string | unde
         if (typeof c === "string" && c.trim()) return c;
     }
 
-    // 4) Nothing resolvable
+    // 5) Nothing resolvable
     return undefined;
+}
+
+function preferredUnitSidc(u: UnitRenderable): string | undefined {
+    const src = (u as any).__sourceUnit ?? u;
+    const candidates = [
+        (u as any)?.sidc,
+        (src as any)?.sidc,
+        (u as any)?._state?.sidc,
+        (src as any)?._state?.sidc,
+        (u as any)?.__baseSidc,
+        (src as any)?.__baseSidc,
+    ];
+
+    for (const c of candidates) {
+        if (typeof c === "string" && c.trim()) return c;
+    }
+    return undefined;
+}
+
+function shouldDebugSidc(unitId?: string): boolean {
+    try {
+        const w: any = window as any;
+        if (!w.__3dSidcDebug) return false;
+        const filter = typeof w.__3dSidcDebugUnitId === "string" ? w.__3dSidcDebugUnitId.trim() : "";
+        if (!filter) return true;
+        return typeof unitId === "string" && unitId === filter;
+    } catch {
+        return false;
+    }
+}
+
+function shouldDebugMobility(unitId?: string): boolean {
+    try {
+        const w: any = window as any;
+        if (!w.__3dMobilityDebug) return false;
+        const filter = typeof w.__3dMobilityDebugUnitId === "string" ? w.__3dMobilityDebugUnitId.trim() : "";
+        if (!filter) return true;
+        return typeof unitId === "string" && unitId === filter;
+    } catch {
+        return false;
+    }
+}
+
+function logSidcDebug(stage: string, payload: Record<string, unknown>) {
+    try {
+        // eslint-disable-next-line no-console
+        console.log(`[3D SIDC] ${stage}`, payload);
+    } catch { /* ignore */ }
 }
 
 function applyBillboardGraphics(ent: Cesium.Entity, u: UnitRenderable, viewer?: Cesium.Viewer) {
@@ -1313,6 +2954,7 @@ function applyBillboardGraphics(ent: Cesium.Entity, u: UnitRenderable, viewer?: 
     // Build icon synchronously; do not create a billboard if nothing is available
     const url = buildIconUrlSync(u, viewer);
     ent.point = undefined as any;
+    safelyDisableEntityCylinder(ent);
 
     if (typeof url === "string" && url.length > 0) {
         ent.billboard = new Cesium.BillboardGraphics({
@@ -1340,8 +2982,2211 @@ function applyBillboardGraphics(ent: Cesium.Entity, u: UnitRenderable, viewer?: 
     applyIconLift(ent, u);
 }
 
+const MAN_PORTABLE_BASE_HEIGHT_M = 2;
+const MAN_PORTABLE_BASE_DIAMETER_M = 1;
+const MAN_PORTABLE_ICON_CAP_DIAMETER_M = 1;
+const MAN_PORTABLE_ICON_PX = 28;
+const MAN_PORTABLE_ICON_TOP_OFFSET_PX = -16;
+const MAN_PORTABLE_ICON_CAP_SUFFIX = "__mpw_icon_cap";
+const MAN_PORTABLE_ICON_DECAL_SUFFIX = "__mpw_icon_decal";
+const MAN_PORTABLE_ICON_CAP_RAISE_M = 0.08;
+const MAN_PORTABLE_ICON_DECAL_RAISE_M = 0.12;
+const GROUND_UNIT_LABEL_LEFT_OFFSET_M = 3;
+const GROUND_UNIT_LABEL_UP_OFFSET_M = 3;
+const LAUNCHER_BASE_SIZE_M = { x: 3.5, y: 6.5, z: 3.0 } as const;
+const LAUNCHER_TUBE_RADIUS_M = 0.35;
+const LAUNCHER_TUBE_LENGTH_M = 5.0;
+const LAUNCHER_TUBE_GRID_SPACING_M = 1.2;
+const LAUNCHER_TUBE_GRID_HALF_SPACING_M = LAUNCHER_TUBE_GRID_SPACING_M / 2;
+// North is treated as "front"; grid center is biased toward rear.
+const LAUNCHER_TUBE_GRID_CENTER_NORTH_M = -2.25;
+const LAUNCHER_TUBE_UP_OFFSET_M = 2.0;
+const LAUNCHER_SIX_TUBE_GRID_SPACING_M = 1.4;
+const LAUNCHER_SIX_TUBE_GRID_HALF_SPACING_M = LAUNCHER_SIX_TUBE_GRID_SPACING_M / 2;
+const LAUNCHER_SIX_TUBE_GRID_CENTER_NORTH_M = -2.2;
+const LAUNCHER_SIX_TUBE_HEADING_DEG = 90;
+const LAUNCHER_SIX_TUBE_PITCH_DEG = 45;
+const LAUNCHER_SINGLE_TUBE_RADIUS_M = 0.6;
+const LAUNCHER_SINGLE_TUBE_LENGTH_M = 5.0;
+const LAUNCHER_SINGLE_TUBE_NORTH_M = -2.25;
+const LAUNCHER_SINGLE_TUBE_UP_M = 2.0;
+const WEAPON_TRIANGLE_SIDE_M = 2;
+const WEAPON_TRIANGLE_HEIGHT_M = 2;
+const LAND_EQUIP_PART_SUFFIX = "__le_part_";
+const VEHICLE_MOBILITY_PART_SUFFIX = "__mob_part_";
+const VEHICLE_HULL_ADDON_PART_SUFFIX = "__hull_addon_";
+const WEAPON_TRIANGLE_SUBCATEGORY_IDS = new Set<string>([
+    "weapon-air-defense-gun",
+    "weapon-antitank-gun",
+    "weapon-direct-fire-gun",
+    "weapon-recoilless-gun",
+    "weapon-howitzer",
+    "weapon-mortar",
+]);
 
-/* ──────────────────────── Event-time helpers (NEW) ──────────────────────── */
+function applyGroundPrimitiveLabelOffset(label: Cesium.LabelGraphics | undefined) {
+    if (!label) return;
+    label.eyeOffset = new Cesium.Cartesian3(
+        -GROUND_UNIT_LABEL_LEFT_OFFSET_M,
+        GROUND_UNIT_LABEL_UP_OFFSET_M,
+        0,
+    );
+    // Keep labels visible when terrain/geometry depth test would otherwise hide them.
+    (label as any).disableDepthTestDistance = Number.POSITIVE_INFINITY;
+}
+// Temporary visibility aid while validating in-scene rendering.
+const MAN_PORTABLE_DEBUG_VISUALS = false;
+const MAN_PORTABLE_DEBUG_HEIGHT_M = 4;
+const MAN_PORTABLE_DEBUG_DIAMETER_M = 3;
+
+function getManPortableDimensions() {
+    const height = MAN_PORTABLE_DEBUG_VISUALS ? MAN_PORTABLE_DEBUG_HEIGHT_M : MAN_PORTABLE_BASE_HEIGHT_M;
+    const diameter = MAN_PORTABLE_DEBUG_VISUALS ? MAN_PORTABLE_DEBUG_DIAMETER_M : MAN_PORTABLE_BASE_DIAMETER_M;
+    return { height, radius: diameter / 2 };
+}
+
+function terrainHeightMetersAtLonLatDeg(viewer: Cesium.Viewer | undefined, lonDeg: number, latDeg: number): number {
+    const key = terrainCacheKey(lonDeg, latDeg);
+    try {
+        if (!viewer) return 0;
+        const carto = Cartographic.fromDegrees(lonDeg, latDeg, 0);
+        const h = viewer.scene?.globe?.getHeight?.(carto);
+        if (typeof h === "number" && Number.isFinite(h)) {
+            terrainHeightCacheMeters.set(key, h);
+            return h;
+        }
+    } catch { /* ignore */ }
+    const cached = terrainHeightCacheMeters.get(key);
+    if (typeof cached === "number" && Number.isFinite(cached)) return cached;
+    requestTerrainHeightSample(viewer, lonDeg, latDeg);
+    return 0;
+}
+
+function terrainAwareProductCenterFromDegrees(
+    viewer: Cesium.Viewer | undefined,
+    lonDeg: number,
+    latDeg: number,
+    centerOffsetMeters: number,
+    footprint?: ProductFootprint,
+): Cartesian3 {
+    const pose = computeGroundConformPose(
+        (lon, lat) => terrainHeightMetersAtLonLatDeg(viewer, lon, lat),
+        {
+            lonDeg,
+            latDeg,
+            footprint,
+            clearanceMeters: GROUND_PRIMITIVE_CLEARANCE_M,
+            includeCenterSample: true,
+        },
+    );
+    return Cartesian3.fromDegrees(lonDeg, latDeg, pose.anchorHeightMeters + centerOffsetMeters);
+}
+
+function makeCirclePolygonHierarchy(
+    center: Cesium.Cartesian3,
+    radiusMeters: number,
+    segments = 40,
+): Cesium.PolygonHierarchy {
+    const enu = Cesium.Transforms.eastNorthUpToFixedFrame(center);
+    const pts: Cesium.Cartesian3[] = [];
+    for (let i = 0; i < segments; i += 1) {
+        const a = (i / segments) * Math.PI * 2;
+        const local = new Cesium.Cartesian3(Math.cos(a) * radiusMeters, Math.sin(a) * radiusMeters, 0);
+        pts.push(Cesium.Matrix4.multiplyByPoint(enu, local, new Cesium.Cartesian3()));
+    }
+    return new Cesium.PolygonHierarchy(pts);
+}
+
+function makeOrientedCirclePolygonHierarchy(
+    center: Cesium.Cartesian3,
+    orientation: Cesium.Quaternion | undefined,
+    radiusMeters: number,
+    segments = 40,
+): Cesium.PolygonHierarchy {
+    if (!orientation) return makeCirclePolygonHierarchy(center, radiusMeters, segments);
+    const rot = Cesium.Matrix3.fromQuaternion(orientation, new Cesium.Matrix3());
+    const pts: Cesium.Cartesian3[] = [];
+    for (let i = 0; i < segments; i += 1) {
+        const a = (i / segments) * Math.PI * 2;
+        const local = new Cesium.Cartesian3(Math.cos(a) * radiusMeters, Math.sin(a) * radiusMeters, 0);
+        const world = Cesium.Matrix3.multiplyByVector(rot, local, new Cesium.Cartesian3());
+        pts.push(Cesium.Cartesian3.add(center, world, new Cesium.Cartesian3()));
+    }
+    return new Cesium.PolygonHierarchy(pts);
+}
+
+function makeEquilateralTrianglePolygonHierarchy(
+    center: Cesium.Cartesian3,
+    sideMeters: number,
+): Cesium.PolygonHierarchy {
+    const triHeight = (Math.sqrt(3) / 2) * sideMeters;
+    const yBase = -(triHeight / 3);
+    const yApex = (2 * triHeight) / 3;
+    const halfSide = sideMeters / 2;
+
+    const enu = Cesium.Transforms.eastNorthUpToFixedFrame(center);
+    const p1 = Cesium.Matrix4.multiplyByPoint(
+        enu,
+        new Cesium.Cartesian3(-halfSide, yBase, 0),
+        new Cesium.Cartesian3(),
+    );
+    const p2 = Cesium.Matrix4.multiplyByPoint(
+        enu,
+        new Cesium.Cartesian3(halfSide, yBase, 0),
+        new Cesium.Cartesian3(),
+    );
+    const p3 = Cesium.Matrix4.multiplyByPoint(
+        enu,
+        new Cesium.Cartesian3(0, yApex, 0),
+        new Cesium.Cartesian3(),
+    );
+
+    return new Cesium.PolygonHierarchy([p1, p2, p3]);
+}
+
+function offsetFromCenterENU(
+    center: Cesium.Cartesian3,
+    eastMeters: number,
+    northMeters: number,
+    upMeters = 0,
+): Cesium.Cartesian3 {
+    const enu = Cesium.Transforms.eastNorthUpToFixedFrame(center);
+    return Cesium.Matrix4.multiplyByPoint(
+        enu,
+        new Cesium.Cartesian3(eastMeters, northMeters, upMeters),
+        new Cesium.Cartesian3(),
+    );
+}
+
+function offsetFromCenterOriented(
+    center: Cesium.Cartesian3,
+    orientation: Cesium.Quaternion | undefined,
+    eastMeters: number,
+    northMeters: number,
+    upMeters = 0,
+): Cesium.Cartesian3 {
+    if (!orientation) {
+        return offsetFromCenterENU(center, eastMeters, northMeters, upMeters);
+    }
+    const rot = Cesium.Matrix3.fromQuaternion(orientation, new Cesium.Matrix3());
+    const local = new Cesium.Cartesian3(eastMeters, northMeters, upMeters);
+    const world = Cesium.Matrix3.multiplyByVector(rot, local, new Cesium.Cartesian3());
+    return Cesium.Cartesian3.add(center, world, new Cesium.Cartesian3());
+}
+
+function offsetFromEntityLocal(
+    ent: Cesium.Entity,
+    time: Cesium.JulianDate,
+    eastMeters: number,
+    northMeters: number,
+    upMeters = 0,
+): Cesium.Cartesian3 | undefined {
+    const base = ent.position?.getValue?.(time);
+    if (!base) return undefined;
+    const q = ent.orientation?.getValue?.(time) as Cesium.Quaternion | undefined;
+    return offsetFromCenterOriented(base, q, eastMeters, northMeters, upMeters);
+}
+
+function orientationFromEntityLocalHpr(
+    ent: Cesium.Entity,
+    time: Cesium.JulianDate,
+    headingRad: number,
+    pitchRad: number,
+    rollRad: number,
+): Cesium.Quaternion | undefined {
+    const base = ent.position?.getValue?.(time);
+    if (!base) return undefined;
+    const parent = ent.orientation?.getValue?.(time) as Cesium.Quaternion | undefined;
+    const local = Cesium.Quaternion.fromHeadingPitchRoll(
+        new Cesium.HeadingPitchRoll(headingRad, pitchRad, rollRad),
+        new Cesium.Quaternion(),
+    );
+    if (parent) {
+        return Cesium.Quaternion.multiply(parent, local, new Cesium.Quaternion());
+    }
+    return Cesium.Transforms.headingPitchRollQuaternion(
+        base,
+        new Cesium.HeadingPitchRoll(headingRad, pitchRad, rollRad),
+    );
+}
+
+function orientationFromGroundPose(
+    pos: Cesium.Cartesian3,
+    pose: {
+        headingRad: number;
+        upEast: number;
+        upNorth: number;
+        upUp: number;
+    },
+): Cesium.Quaternion {
+    const upEnu = Cesium.Cartesian3.normalize(
+        new Cesium.Cartesian3(pose.upEast, pose.upNorth, pose.upUp),
+        new Cesium.Cartesian3(),
+    );
+    const f0 = new Cesium.Cartesian3(Math.sin(pose.headingRad), Math.cos(pose.headingRad), 0);
+    const upDotF0 = Cesium.Cartesian3.dot(upEnu, f0);
+    const fProj = Cesium.Cartesian3.subtract(
+        f0,
+        Cesium.Cartesian3.multiplyByScalar(upEnu, upDotF0, new Cesium.Cartesian3()),
+        new Cesium.Cartesian3(),
+    );
+    let forwardEnu = Cesium.Cartesian3.normalize(fProj, new Cesium.Cartesian3());
+    if (!Number.isFinite(forwardEnu.x) || Cesium.Cartesian3.magnitude(forwardEnu) < 1e-6) {
+        forwardEnu = new Cesium.Cartesian3(0, 1, 0);
+    }
+    let rightEnu = Cesium.Cartesian3.normalize(
+        Cesium.Cartesian3.cross(forwardEnu, upEnu, new Cesium.Cartesian3()),
+        new Cesium.Cartesian3(),
+    );
+    if (!Number.isFinite(rightEnu.x) || Cesium.Cartesian3.magnitude(rightEnu) < 1e-6) {
+        rightEnu = new Cesium.Cartesian3(1, 0, 0);
+    }
+    forwardEnu = Cesium.Cartesian3.normalize(
+        Cesium.Cartesian3.cross(upEnu, rightEnu, new Cesium.Cartesian3()),
+        new Cesium.Cartesian3(),
+    );
+
+    const enuFrame = Cesium.Transforms.eastNorthUpToFixedFrame(pos);
+    const enuToFixed = Cesium.Matrix4.getMatrix3(enuFrame, new Cesium.Matrix3());
+    const rightFixed = Cesium.Matrix3.multiplyByVector(enuToFixed, rightEnu, new Cesium.Cartesian3());
+    const forwardFixed = Cesium.Matrix3.multiplyByVector(enuToFixed, forwardEnu, new Cesium.Cartesian3());
+    const upFixed = Cesium.Matrix3.multiplyByVector(enuToFixed, upEnu, new Cesium.Cartesian3());
+
+    const rot = new Cesium.Matrix3();
+    Cesium.Matrix3.setColumn(rot, 0, rightFixed, rot);
+    Cesium.Matrix3.setColumn(rot, 1, forwardFixed, rot);
+    Cesium.Matrix3.setColumn(rot, 2, upFixed, rot);
+    return Cesium.Quaternion.fromRotationMatrix(rot, new Cesium.Quaternion());
+}
+
+function makeGroundPrimitivePoseProperties(
+    viewer: Cesium.Viewer | undefined,
+    u: UnitRenderable,
+    centerOffsetMeters: number,
+    footprint?: ProductFootprint,
+): { position: Cesium.CallbackProperty; orientation: Cesium.CallbackProperty } {
+    const poseForLonLat = (lonDeg: number, latDeg: number) =>
+        computeGroundConformPose(
+            (lon, lat) => terrainHeightMetersAtLonLatDeg(viewer, lon, lat),
+            {
+                lonDeg,
+                latDeg,
+                footprint,
+                clearanceMeters: GROUND_PRIMITIVE_CLEARANCE_M,
+                includeCenterSample: true,
+            },
+        );
+
+    const motion = buildPositionPropertyForUnit(u);
+    if (motion) {
+        const position = new CallbackProperty((time) => {
+            const p = motion.getValue(time);
+            if (!p) return undefined;
+            const carto = Cartographic.fromCartesian(p);
+            const lonDeg = Cesium.Math.toDegrees(carto.longitude);
+            const latDeg = Cesium.Math.toDegrees(carto.latitude);
+            const pose = poseForLonLat(lonDeg, latDeg);
+            return Cartesian3.fromDegrees(lonDeg, latDeg, pose.anchorHeightMeters + centerOffsetMeters);
+        }, false) as any;
+        const orientation = new CallbackProperty((time) => {
+            const p = motion.getValue(time);
+            if (!p) return undefined;
+            const carto = Cartographic.fromCartesian(p);
+            const lonDeg = Cesium.Math.toDegrees(carto.longitude);
+            const latDeg = Cesium.Math.toDegrees(carto.latitude);
+            const pose = poseForLonLat(lonDeg, latDeg);
+            const pos = Cartesian3.fromDegrees(lonDeg, latDeg, pose.anchorHeightMeters + centerOffsetMeters);
+            return orientationFromGroundPose(pos, pose);
+        }, false) as any;
+        return { position, orientation };
+    }
+    const position = new CallbackProperty(() => {
+        const pose = poseForLonLat(u.lon, u.lat);
+        return Cartesian3.fromDegrees(u.lon, u.lat, pose.anchorHeightMeters + centerOffsetMeters);
+    }, false) as any;
+    const orientation = new CallbackProperty(() => {
+        const pose = poseForLonLat(u.lon, u.lat);
+        const pos = Cartesian3.fromDegrees(u.lon, u.lat, pose.anchorHeightMeters + centerOffsetMeters);
+        return orientationFromGroundPose(pos, pose);
+    }, false) as any;
+    return { position, orientation };
+}
+
+function launcherTubeEntityId(unitId: string, index: 0 | 1 | 2 | 3 | 4 | 5 | 6): string {
+    return `${unitId}__launcher_tube_${index}`;
+}
+
+function tankTurretEntityId(unitId: string): string {
+    return `${unitId}__tank_turret`;
+}
+
+function tankBarrelEntityId(unitId: string): string {
+    return `${unitId}__tank_barrel`;
+}
+
+function tankPartIdsForUnit(unitId: string): string[] {
+    return [tankTurretEntityId(unitId), tankBarrelEntityId(unitId)];
+}
+
+function ifvTurretEntityId(unitId: string): string {
+    return `${unitId}__ifv_turret`;
+}
+
+function ifvBarrelEntityId(unitId: string): string {
+    return `${unitId}__ifv_barrel`;
+}
+
+function ifvPartIdsForUnit(unitId: string): string[] {
+    return [ifvTurretEntityId(unitId), ifvBarrelEntityId(unitId)];
+}
+
+function armoredHullPartIdsForUnit(unitId: string): string[] {
+    return armoredUpperHullPartIdsForUnit(unitId);
+}
+
+function armoredTurretEntityId(unitId: string): string {
+    return `${unitId}__armored_turret`;
+}
+
+function armoredBarrelEntityId(unitId: string): string {
+    return `${unitId}__armored_barrel`;
+}
+
+function armoredPartIdsForUnit(unitId: string): string[] {
+    return [armoredTurretEntityId(unitId), armoredBarrelEntityId(unitId)];
+}
+
+function recoveryBoomEntityId(unitId: string): string {
+    return `${unitId}__recovery_boom`;
+}
+
+function recoveryPartIdsForUnit(unitId: string): string[] {
+    return [recoveryBoomEntityId(unitId)];
+}
+
+function apcModuleEntityId(unitId: string): string {
+    return `${unitId}__apc_module`;
+}
+
+function apcPartIdsForUnit(unitId: string): string[] {
+    return [apcModuleEntityId(unitId)];
+}
+
+function apcAmbulanceModuleEntityId(unitId: string): string {
+    return `${unitId}__apc_ambulance_module`;
+}
+
+function apcAmbulancePodEntityId(unitId: string): string {
+    return `${unitId}__apc_ambulance_pod`;
+}
+
+function apcAmbulancePartIdsForUnit(unitId: string): string[] {
+    return [apcAmbulanceModuleEntityId(unitId), apcAmbulancePodEntityId(unitId)];
+}
+
+function reconMastEntityId(unitId: string): string {
+    return `${unitId}__recon_mast`;
+}
+
+function reconPartIdsForUnit(unitId: string): string[] {
+    return [reconMastEntityId(unitId)];
+}
+
+function cargoModuleEntityId(unitId: string): string {
+    return `${unitId}__cargo_module`;
+}
+
+function cargoPartIdsForUnit(unitId: string): string[] {
+    return [cargoModuleEntityId(unitId)];
+}
+
+function commandModuleEntityId(unitId: string): string {
+    return `${unitId}__command_module`;
+}
+
+function commandMastEntityId(unitId: string): string {
+    return `${unitId}__command_mast`;
+}
+
+function commandHeadEntityId(unitId: string): string {
+    return `${unitId}__command_head`;
+}
+
+function commandPartIdsForUnit(unitId: string): string[] {
+    return [commandModuleEntityId(unitId), commandMastEntityId(unitId), commandHeadEntityId(unitId)];
+}
+
+function recoveryRigBoomEntityId(unitId: string): string {
+    return `${unitId}__recovery_rig_boom`;
+}
+
+function recoveryRigHookEntityId(unitId: string): string {
+    return `${unitId}__recovery_rig_hook`;
+}
+
+function recoveryRigPartIdsForUnit(unitId: string): string[] {
+    return [recoveryRigBoomEntityId(unitId), recoveryRigHookEntityId(unitId)];
+}
+
+function landEquipPartId(unitId: string, index: number): string {
+    return `${unitId}${LAND_EQUIP_PART_SUFFIX}${index}`;
+}
+
+function vehicleMobilityPartId(unitId: string, index: number): string {
+    return `${unitId}${VEHICLE_MOBILITY_PART_SUFFIX}${index}`;
+}
+
+function vehicleHullAddonPartId(unitId: string, index: number): string {
+    return `${unitId}${VEHICLE_HULL_ADDON_PART_SUFFIX}${index}`;
+}
+
+function vehicleMobilityPartIdsForSidc(unitId: string, sidc?: string): string[] {
+    const profile = resolveLandEquipmentMobilityProfileFromSidc(sidc);
+    const count = expectedVehicleMobilityPartCount(profile);
+    if (!count) return [];
+    return Array.from({ length: count }, (_, i) => vehicleMobilityPartId(unitId, i));
+}
+
+function vehicleProductCacheKey(sidc: string | undefined, useArmoredSplitHull: boolean): string {
+    return `${sidc ?? "unknown"}::armored=${useArmoredSplitHull ? 1 : 0}`;
+}
+
+function getVehicleProductBlueprint(sidc?: string): VehicleProductBlueprint {
+    const useArmoredSplitHull = shouldUseArmoredSplitHullForSidc(sidc);
+    const key = vehicleProductCacheKey(sidc, useArmoredSplitHull);
+    return vehicleProductCache.getOrCreate(key, () => {
+        const hullSize = resolveVehicleHullSizeForSidc(sidc);
+        const hullSplit = useArmoredSplitHull ? computeArmoredHullSplit(hullSize) : undefined;
+        const baseBodyHeight = hullSplit ? hullSplit.lowerHeight : resolveVehicleBaseBodyHeightForSidc(sidc, hullSize);
+        const addonSpecs = buildVehicleHullAddonSpecs(sidc, hullSize, baseBodyHeight);
+        const footprint: ProductFootprint = {
+            halfWidthMeters: hullSize.x / 2,
+            halfLengthMeters: hullSize.y / 2,
+        };
+        return {
+            cacheKey: key,
+            baseSize: { x: hullSize.x, y: hullSize.y, z: baseBodyHeight },
+            baseBodyHeight,
+            useArmoredSplitHull,
+            parts: addonSpecs.map((s, i) => ({
+                kind: "box" as const,
+                id: `addon:${i}`,
+                size: { x: s.size.x, y: s.size.y, z: s.size.z },
+                offset: { east: s.east, north: s.north, up: s.up },
+                alpha: s.alpha,
+            })),
+            footprint,
+        };
+    });
+}
+
+function vehicleHullAddonPartIdsForSidc(unitId: string, sidc?: string): string[] {
+    const count = getVehicleProductBlueprint(sidc).parts.length;
+    if (!count) return [];
+    return Array.from({ length: count }, (_, i) => vehicleHullAddonPartId(unitId, i));
+}
+
+function isLauncherTubeId(id: string): boolean {
+    return /__launcher_tube_\d+$/.test(id);
+}
+
+function isLandEquipPartId(id: string): boolean {
+    return /__le_part_\d+$/.test(id);
+}
+
+function isVehicleMobilityPartId(id: string): boolean {
+    return /__mob_part_\d+$/.test(id);
+}
+
+function isVehicleHullAddonPartId(id: string): boolean {
+    return /__hull_addon_\d+$/.test(id);
+}
+
+function isTankPartId(id: string): boolean {
+    return /__tank_(turret|barrel)$/.test(id);
+}
+
+function isIfvPartId(id: string): boolean {
+    return /__ifv_(turret|barrel)$/.test(id);
+}
+
+function isArmoredHullPartId(id: string): boolean {
+    return /__armored_upper_(top|front|rear|left|right)$/.test(id);
+}
+
+function isArmoredPartId(id: string): boolean {
+    return /__armored_(turret|barrel)$/.test(id);
+}
+
+function isRecoveryPartId(id: string): boolean {
+    return /__recovery_boom$/.test(id);
+}
+
+function isApcPartId(id: string): boolean {
+    return /__apc_module$/.test(id);
+}
+
+function isApcAmbulancePartId(id: string): boolean {
+    return /__apc_ambulance_(module|pod)$/.test(id);
+}
+
+function isReconPartId(id: string): boolean {
+    return /__recon_mast$/.test(id);
+}
+
+function isCargoPartId(id: string): boolean {
+    return /__cargo_module$/.test(id);
+}
+
+function isCommandPartId(id: string): boolean {
+    return /__command_(module|mast|head)$/.test(id);
+}
+
+function isRecoveryRigPartId(id: string): boolean {
+    return /__recovery_rig_(boom|hook)$/.test(id);
+}
+
+function baseIdFromLauncherTubeId(id: string): string {
+    return id.replace(/__launcher_tube_\d+$/, "");
+}
+
+function baseIdFromTankPartId(id: string): string {
+    return id.replace(/__tank_(turret|barrel)$/, "");
+}
+
+function baseIdFromIfvPartId(id: string): string {
+    return id.replace(/__ifv_(turret|barrel)$/, "");
+}
+
+function baseIdFromArmoredHullPartId(id: string): string {
+    return id.replace(/__armored_upper_(top|front|rear|left|right)$/, "");
+}
+
+function baseIdFromArmoredPartId(id: string): string {
+    return id.replace(/__armored_(turret|barrel)$/, "");
+}
+
+function baseIdFromRecoveryPartId(id: string): string {
+    return id.replace(/__recovery_boom$/, "");
+}
+
+function baseIdFromApcPartId(id: string): string {
+    return id.replace(/__apc_module$/, "");
+}
+
+function baseIdFromApcAmbulancePartId(id: string): string {
+    return id.replace(/__apc_ambulance_(module|pod)$/, "");
+}
+
+function baseIdFromReconPartId(id: string): string {
+    return id.replace(/__recon_mast$/, "");
+}
+
+function baseIdFromCargoPartId(id: string): string {
+    return id.replace(/__cargo_module$/, "");
+}
+
+function baseIdFromCommandPartId(id: string): string {
+    return id.replace(/__command_(module|mast|head)$/, "");
+}
+
+function baseIdFromRecoveryRigPartId(id: string): string {
+    return id.replace(/__recovery_rig_(boom|hook)$/, "");
+}
+
+function baseIdFromLandEquipPartId(id: string): string {
+    return id.replace(/__le_part_\d+$/, "");
+}
+
+function baseIdFromVehicleMobilityPartId(id: string): string {
+    return id.replace(/__mob_part_\d+$/, "");
+}
+
+function baseIdFromVehicleHullAddonPartId(id: string): string {
+    return id.replace(/__hull_addon_\d+$/, "");
+}
+
+function launcherTubeIdsForShape(
+    unitId: string,
+    shape: "weaponDualTubeLauncher" | "weaponSixTubeLauncher" | "weaponSingleLargeTubeLauncher",
+): string[] {
+    if (shape === "weaponSingleLargeTubeLauncher") {
+        return [launcherTubeEntityId(unitId, 6)];
+    }
+    if (shape === "weaponSixTubeLauncher") {
+        return [
+            launcherTubeEntityId(unitId, 0),
+            launcherTubeEntityId(unitId, 1),
+            launcherTubeEntityId(unitId, 2),
+            launcherTubeEntityId(unitId, 3),
+            launcherTubeEntityId(unitId, 4),
+            launcherTubeEntityId(unitId, 5),
+        ];
+    }
+    return [
+        launcherTubeEntityId(unitId, 0),
+        launcherTubeEntityId(unitId, 1),
+        launcherTubeEntityId(unitId, 2),
+        launcherTubeEntityId(unitId, 3),
+    ];
+}
+
+type MobilityPartSpec = {
+    east: number;
+    north: number;
+    up: number;
+    kind: "wheel" | "track" | "runner" | "pontoon" | "rail" | "towArm" | "towArray";
+    box?: { x: number; y: number; z: number };
+    cylinder?: { length: number; radius: number };
+};
+
+type MobilityVisualTuning = {
+    halfW: number;
+    halfL: number;
+    halfH: number;
+    wheelRadius: number;
+    wheelThickness: number;
+    wheelInsetOutboard: number;
+    trackThickness: number;
+    trackHeight: number;
+};
+
+type TankVisualProfile = {
+    hullSize: { x: number; y: number; z: number };
+    turretSize: { x: number; y: number; z: number };
+    turretUpOffset: number;
+    barrelLength: number;
+    barrelRadius: number;
+    barrelUpFromTurret: number;
+    barrelForwardFromTurret: number;
+};
+
+function vehicleCenterOffsetForSidc(sidc?: string): number {
+    return getVehicleProductBlueprint(sidc).baseBodyHeight / 2;
+}
+
+function hullTopUpOffsetFromCenter(hullSize: VehicleHullSize, hullSplit?: ArmoredHullSplit): number {
+    if (hullSplit) {
+        return hullSplit.upperCenterUpFromLowerCenter + (hullSplit.upperSize.z / 2);
+    }
+    return hullSize.z / 2;
+}
+
+function shouldUseArmoredSplitHullForSidc(sidc?: string): boolean {
+    const p = parseSidcCoreParts(sidc);
+    return p.entityCode === "12";
+}
+
+function tankVisualProfileForSidc(sidc?: string): TankVisualProfile {
+    const p = parseSidcCoreParts(sidc);
+    let hull = resolveVehicleHullSizeForSidc(sidc);
+    let turret = {
+        x: hull.x * 0.62,
+        y: hull.y * 0.27,
+        z: hull.z * 0.42,
+    };
+    let barrelLength = Math.max(TANK_BARREL_LENGTH_M, hull.y * 0.47);
+    let barrelRadius = Math.max(TANK_BARREL_RADIUS_M, turret.x * 0.095);
+    let barrelUpFromTurret = TANK_BARREL_UP_FROM_TURRET_M;
+
+    if (p.entityCode === "12" && p.entityTypeCode === "02") {
+        if (p.entitySubtypeCode === "01") {
+            turret = { x: hull.x * 0.6, y: hull.y * 0.25, z: hull.z * 0.4 };
+            barrelLength = Math.max(3.0, hull.y * 0.45);
+            barrelRadius = Math.max(0.17, turret.x * 0.09);
+        } else if (p.entitySubtypeCode === "03") {
+            turret = { x: hull.x * 0.65, y: hull.y * 0.29, z: hull.z * 0.44 };
+            barrelLength = Math.max(4.1, hull.y * 0.49);
+            barrelRadius = Math.max(0.23, turret.x * 0.1);
+            barrelUpFromTurret = 0.06;
+        }
+    }
+
+    const turretUpOffset = (hull.z / 2) + (turret.z / 2) + 0.12;
+    const barrelForwardFromTurret = (turret.y / 2) + (barrelLength / 2) - 0.1;
+    return {
+        hullSize: hull,
+        turretSize: turret,
+        turretUpOffset,
+        barrelLength,
+        barrelRadius,
+        barrelUpFromTurret,
+        barrelForwardFromTurret,
+    };
+}
+
+function mobilitySidcForUnit(u: UnitRenderable, viewer?: Cesium.Viewer): string | undefined {
+    return resolvedSidcForRendering(u, viewer) ?? effectiveSidc(u, viewer) ?? preferredUnitSidc(u);
+}
+
+function mobilityVisualTuningForSidc(sidc?: string): MobilityVisualTuning {
+    const hullSize = resolveVehicleHullSizeForSidc(sidc);
+    const armoredLowerHalfH = (hullSize.z * ARMORED_LOWER_HULL_VOLUME_SHARE) / 2;
+    const base: MobilityVisualTuning = {
+        halfW: hullSize.x / 2,
+        halfL: hullSize.y / 2,
+        halfH: hullSize.z / 2,
+        wheelRadius: Math.max(0.34, hullSize.z * 0.16),
+        wheelThickness: Math.max(0.24, hullSize.x * 0.09),
+        wheelInsetOutboard: Math.max(0.2, hullSize.x * 0.07),
+        trackThickness: Math.max(0.28, hullSize.x * 0.1),
+        trackHeight: Math.max(0.56, hullSize.z * 0.24),
+    };
+    const p = parseSidcCoreParts(sidc);
+    if (!p.entityCode) return base;
+
+    if (p.entityCode === "12") {
+        if (p.entityTypeCode === "02") {
+            if (p.entitySubtypeCode === "01") {
+                return { ...base, halfH: 1.4, wheelRadius: 0.43, trackThickness: 0.33, trackHeight: 0.72 };
+            }
+            if (p.entitySubtypeCode === "03") {
+                return { ...base, halfH: 1.6, wheelRadius: 0.52, trackThickness: 0.39, trackHeight: 0.84 };
+            }
+            return { ...base, halfH: 1.5, wheelRadius: 0.48, trackThickness: 0.36, trackHeight: 0.78 };
+        }
+        if (p.entityTypeCode === "01" && p.entitySubtypeCode === "01") {
+            return { ...base, halfL: 3.1, halfH: armoredLowerHalfH, wheelRadius: 0.38, trackHeight: 0.62 };
+        }
+        if (p.entityTypeCode === "01") {
+            return { ...base, halfH: armoredLowerHalfH };
+        }
+        return base;
+    }
+    if (p.entityCode === "14" || p.entityCode === "23") {
+        return { ...base, halfW: 1.65, halfL: 3.8, wheelRadius: 0.4 };
+    }
+    if (p.entityCode === "16") {
+        return base;
+    }
+    if (p.entityCode === "19") {
+        return { ...base, halfW: 1.75, halfL: 4.4, wheelRadius: 0.44 };
+    }
+    if (p.entityCode === "13") {
+        return { ...base, halfW: 1.7, halfL: 3.9, wheelRadius: 0.42 };
+    }
+    if (p.entityCode === "17") {
+        return { ...base, halfW: 1.45, halfL: 2.9, wheelRadius: 0.34, trackHeight: 0.56 };
+    }
+    if (p.entityCode === "15") {
+        return { ...base, halfW: 1.6, halfL: 6.7, wheelRadius: 0.46 };
+    }
+    return base;
+}
+
+function shouldApplyMobilityToCategory(categoryId?: string): boolean {
+    return categoryId === "vehicles"
+        || categoryId === "engineer-vehicles-and-equipment"
+        || categoryId === "utility-vehicles"
+        || categoryId === "law-enforcement"
+        || categoryId === "missile-support"
+        || categoryId === "emergency-operation"
+        || categoryId === "trains";
+}
+
+function vehicleMobilityPartIdsForUnit(viewer: Cesium.Viewer | undefined, unitId: string): string[] {
+    if (!viewer) return [];
+    const prefix = `${unitId}${VEHICLE_MOBILITY_PART_SUFFIX}`;
+    return (viewer.entities.values ?? [])
+        .map((e: any) => e?.id)
+        .filter((id: any) => typeof id === "string" && id.startsWith(prefix)) as string[];
+}
+
+function buildVehicleMobilitySpecs(sidc?: string): MobilityPartSpec[] {
+    const profile = resolveLandEquipmentMobilityProfileFromSidc(sidc);
+    if (!profile) return [];
+    const specs: MobilityPartSpec[] = [];
+    const t = mobilityVisualTuningForSidc(sidc);
+    const halfW = t.halfW;
+    const halfL = t.halfL;
+    const halfH = t.halfH;
+    const wheelSide = halfW + t.wheelInsetOutboard;
+    const wheelUp = -halfH + (t.wheelRadius + 0.03);
+
+    const pushWheels = (norths: number[]) => {
+        for (const n of norths) {
+            specs.push({
+                kind: "wheel",
+                east: -wheelSide,
+                north: n,
+                up: wheelUp,
+                cylinder: { length: t.wheelThickness, radius: t.wheelRadius },
+            });
+            specs.push({
+                kind: "wheel",
+                east: wheelSide,
+                north: n,
+                up: wheelUp,
+                cylinder: { length: t.wheelThickness, radius: t.wheelRadius },
+            });
+        }
+    };
+
+    if (profile.kind === "wheeled") {
+        if (profile.wheelCount >= 6) pushWheels([-2.3, 0, 2.3]);
+        else pushWheels([-2.0, 2.0]);
+    } else if (profile.kind === "tracked") {
+        specs.push({
+            kind: "track",
+            east: -(halfW + (t.trackThickness / 2)),
+            north: 0,
+            up: -halfH + (t.trackHeight / 2),
+            box: { x: t.trackThickness, y: halfL * 2 * 0.88, z: t.trackHeight },
+        });
+        specs.push({
+            kind: "track",
+            east: halfW + (t.trackThickness / 2),
+            north: 0,
+            up: -halfH + (t.trackHeight / 2),
+            box: { x: t.trackThickness, y: halfL * 2 * 0.88, z: t.trackHeight },
+        });
+    } else if (profile.kind === "wheeledTracked") {
+        specs.push({
+            kind: "track",
+            east: -(halfW + (t.trackThickness / 2)),
+            north: -0.6,
+            up: -halfH + (t.trackHeight / 2) - 0.05,
+            box: { x: t.trackThickness, y: halfL * 2 * 0.62, z: t.trackHeight * 0.92 },
+        });
+        specs.push({
+            kind: "track",
+            east: halfW + (t.trackThickness / 2),
+            north: -0.6,
+            up: -halfH + (t.trackHeight / 2) - 0.05,
+            box: { x: t.trackThickness, y: halfL * 2 * 0.62, z: t.trackHeight * 0.92 },
+        });
+        pushWheels([1.7]);
+    } else if (profile.kind === "towed") {
+        pushWheels([-1.4]);
+        specs.push({
+            kind: "towArm",
+            east: 0,
+            north: halfL + 0.95,
+            up: -halfH + 0.5,
+            box: { x: 0.22, y: 1.9, z: 0.22 },
+        });
+    } else if (profile.kind === "rail") {
+        specs.push({
+            kind: "rail",
+            east: -(halfW + 0.38),
+            north: 0,
+            up: -halfH + 0.24,
+            box: { x: 0.24, y: halfL * 2 * 1.02, z: 0.2 },
+        });
+        specs.push({
+            kind: "rail",
+            east: halfW + 0.38,
+            north: 0,
+            up: -halfH + 0.24,
+            box: { x: 0.24, y: halfL * 2 * 1.02, z: 0.2 },
+        });
+        pushWheels([-2.1, 2.1]);
+    } else if (profile.kind === "snow" || profile.kind === "sled") {
+        specs.push({
+            kind: "runner",
+            east: -(halfW - 0.35),
+            north: 0,
+            up: -halfH + 0.16,
+            box: { x: 0.16, y: halfL * 2 * 0.9, z: 0.14 },
+        });
+        specs.push({
+            kind: "runner",
+            east: halfW - 0.35,
+            north: 0,
+            up: -halfH + 0.16,
+            box: { x: 0.16, y: halfL * 2 * 0.9, z: 0.14 },
+        });
+    } else if (profile.kind === "amphibious") {
+        specs.push({
+            kind: "pontoon",
+            east: -(halfW + 0.5),
+            north: 0,
+            up: -0.15,
+            box: { x: 0.44, y: halfL * 2 * 0.88, z: 0.5 },
+        });
+        specs.push({
+            kind: "pontoon",
+            east: halfW + 0.5,
+            north: 0,
+            up: -0.15,
+            box: { x: 0.44, y: halfL * 2 * 0.88, z: 0.5 },
+        });
+    }
+
+    if (profile.towedArray !== "none") {
+        const len = profile.towedArray === "long" ? 2.6 : 1.4;
+        specs.push({
+            kind: "towArray",
+            east: 0,
+            north: -(halfL + (len / 2) + 0.15),
+            up: -halfH + 0.34,
+            box: { x: 0.12, y: len, z: 0.12 },
+        });
+    }
+
+    return specs;
+}
+
+function applyVehicleHullAddons(
+    ent: Cesium.Entity,
+    u: UnitRenderable,
+    viewer: Cesium.Viewer | undefined,
+    color: Cesium.Color,
+    sidcHint?: string,
+) {
+    if (!viewer) return;
+    const sidc = sidcHint ?? mobilitySidcForUnit(u, viewer);
+    if (shouldUseArmoredSplitHullForSidc(sidc)) return;
+    const product = getVehicleProductBlueprint(sidc);
+    const specs = product.parts.map((p) => ({
+        east: p.offset.east,
+        north: p.offset.north,
+        up: p.offset.up,
+        size: p.size,
+        alpha: p.alpha,
+    }));
+    const expectedIds = specs.map((_, i) => vehicleHullAddonPartId(u.id, i));
+    const expectedSet = new Set(expectedIds);
+    const prefix = `${u.id}${VEHICLE_HULL_ADDON_PART_SUFFIX}`;
+
+    for (const existingId of (viewer.entities.values ?? [])
+        .map((e: any) => e?.id)
+        .filter((id: any) => typeof id === "string" && id.startsWith(prefix)) as string[]) {
+        if (!expectedSet.has(existingId)) {
+            try { viewer.entities.removeById(existingId); } catch { /* ignore */ }
+        }
+    }
+
+    for (let i = 0; i < specs.length; i += 1) {
+        const spec = specs[i];
+        const id = expectedIds[i];
+        const partEnt = viewer.entities.getById(id) ?? viewer.entities.add({ id });
+        partEnt.position = new Cesium.CallbackProperty((time) => {
+            try {
+                return offsetFromEntityLocal(ent, time, spec.east, spec.north, spec.up);
+            } catch {
+                return undefined;
+            }
+        }, false) as any;
+        partEnt.orientation = ent.orientation;
+        partEnt.box = new Cesium.BoxGraphics({
+            dimensions: new Cartesian3(spec.size.x, spec.size.y, spec.size.z),
+            material: color.withAlpha(spec.alpha ?? 0.97),
+            outline: true,
+            outlineColor: Color.BLACK.withAlpha(0.82),
+            heightReference: HeightReference.NONE,
+        });
+        partEnt.billboard = undefined as any;
+        partEnt.point = undefined as any;
+        safelyDisableEntityCylinder(partEnt);
+        safelyDisableEntityPolyline(partEnt);
+        partEnt.polygon = undefined as any;
+        partEnt.label = undefined as any;
+        tagEntityWithUnitId(partEnt as any, u.id);
+        partEnt.show = ent.show !== false;
+    }
+}
+
+function applyVehicleMobilityAddons(
+    ent: Cesium.Entity,
+    u: UnitRenderable,
+    viewer: Cesium.Viewer | undefined,
+    color: Cesium.Color,
+    sidcHint?: string,
+) {
+    if (!viewer) return;
+    const sidc = sidcHint ?? mobilitySidcForUnit(u, viewer);
+    const sidcCore = parseSidcCoreParts(sidc);
+    if (sidcCore.entityCode === "16") {
+        // Civilian vehicle hulls intentionally omit mobility geometry
+        // (wheels/tracks/etc are not rendered for this family).
+        for (const id of vehicleMobilityPartIdsForUnit(viewer, u.id)) {
+            try { viewer.entities.removeById(id); } catch { /* ignore */ }
+        }
+        return;
+    }
+    const profile = resolveLandEquipmentMobilityProfileFromSidc(sidc);
+    const specs = buildVehicleMobilitySpecs(sidc);
+    try {
+        const w: any = window as any;
+        if (!w.__3dMobilityLastProfileByUnit) w.__3dMobilityLastProfileByUnit = {};
+        w.__3dMobilityLastProfileByUnit[u.id] = { sidc, profile, specCount: specs.length };
+    } catch { /* ignore */ }
+    if (shouldDebugMobility(u.id)) {
+        // eslint-disable-next-line no-console
+        console.log("[3D MOBILITY] addons", {
+            unitId: u.id,
+            sidc,
+            profile,
+            specCount: specs.length,
+        });
+    }
+    const expectedIds = specs.map((_, i) => vehicleMobilityPartId(u.id, i));
+    const expectedSet = new Set(expectedIds);
+
+    for (const existingId of vehicleMobilityPartIdsForUnit(viewer, u.id)) {
+        if (!expectedSet.has(existingId)) {
+            try { viewer.entities.removeById(existingId); } catch { /* ignore */ }
+        }
+    }
+
+    for (let i = 0; i < specs.length; i += 1) {
+        const spec = specs[i];
+        const id = expectedIds[i];
+        const partEnt = viewer.entities.getById(id) ?? viewer.entities.add({ id });
+        partEnt.position = new Cesium.CallbackProperty((time) => {
+            try {
+                return offsetFromEntityLocal(ent, time, spec.east, spec.north, spec.up);
+            } catch {
+                return undefined;
+            }
+        }, false) as any;
+        partEnt.orientation = ent.orientation;
+        partEnt.billboard = undefined as any;
+        partEnt.point = undefined as any;
+        safelyDisableEntityPolyline(partEnt);
+        partEnt.polygon = undefined as any;
+        partEnt.label = undefined as any;
+
+        if (spec.box) {
+            partEnt.box = new Cesium.BoxGraphics({
+                dimensions: new Cartesian3(spec.box.x, spec.box.y, spec.box.z),
+                material: color.withAlpha(0.94),
+                outline: true,
+                outlineColor: Color.BLACK.withAlpha(0.8),
+                heightReference: HeightReference.NONE,
+            });
+            safelyDisableEntityCylinder(partEnt);
+        } else if (spec.cylinder) {
+            safelyDisableEntityBox(partEnt);
+            partEnt.cylinder = new Cesium.CylinderGraphics({
+                length: spec.cylinder.length,
+                topRadius: spec.cylinder.radius,
+                bottomRadius: spec.cylinder.radius,
+                material: color.withAlpha(0.94),
+                outline: true,
+                outlineColor: Color.BLACK.withAlpha(0.8),
+                heightReference: HeightReference.NONE,
+            });
+        }
+        tagEntityWithUnitId(partEnt as any, u.id);
+        partEnt.show = ent.show !== false;
+    }
+}
+
+const landEquipRecipeCache = new Map<string, {
+    instances: CompiledInstance[];
+    bodyHalfH: number;
+    footprint: ProductFootprint;
+}>();
+
+function getCompiledLandEquipRecipe(recipe: string) {
+    const cached = landEquipRecipeCache.get(recipe);
+    if (cached) return cached;
+    const { instances, bodyBounds } = compileRecipeToInstances(recipe, SHAPE_GRAMMAR_TOKENS);
+    const compiled = {
+        instances,
+        bodyHalfH: bodyBounds.halfH,
+        footprint: {
+            halfWidthMeters: bodyBounds.halfW,
+            halfLengthMeters: bodyBounds.halfL,
+        },
+    };
+    landEquipRecipeCache.set(recipe, compiled);
+    return compiled;
+}
+
+function landEquipPartIdsForUnit(viewer: Cesium.Viewer | undefined, unitId: string): string[] {
+    if (!viewer) return [];
+    const prefix = `${unitId}${LAND_EQUIP_PART_SUFFIX}`;
+    return (viewer.entities.values ?? [])
+        .map((e: any) => e?.id)
+        .filter((id: any) => typeof id === "string" && id.startsWith(prefix)) as string[];
+}
+
+function applyLandEquipPrimitiveGraphics(
+    ent: Cesium.Entity,
+    inst: CompiledInstance,
+    color: Cesium.Color,
+    outlineColor: Cesium.Color,
+) {
+    safelyDisableEntityBox(ent);
+    safelyDisableEntityCylinder(ent);
+    ent.ellipsoid = undefined as any;
+    ent.polygon = undefined as any;
+
+    if (inst.kind === "box" || inst.kind === "triangularPrism") {
+        const L = inst.L ?? 4;
+        const W = inst.W ?? 2;
+        const H = inst.H ?? 2;
+        ent.box = new Cesium.BoxGraphics({
+            dimensions: new Cesium.Cartesian3(W, L, H),
+            material: color,
+            outline: true,
+            outlineColor,
+            heightReference: HeightReference.NONE,
+        });
+        return;
+    }
+
+    if (inst.kind === "sphere") {
+        const rr = inst.radius ?? inst.r ?? 0.6;
+        ent.ellipsoid = new Cesium.EllipsoidGraphics({
+            radii: new Cesium.Cartesian3(rr, rr, rr),
+            material: color,
+            outline: true,
+            outlineColor,
+        } as any);
+        return;
+    }
+
+    const r = inst.r ?? 0.4;
+    const h = inst.h ?? 1.0;
+    const isCone = inst.kind === "cone";
+    ent.cylinder = new Cesium.CylinderGraphics({
+        length: h,
+        topRadius: isCone ? 0.0 : r,
+        bottomRadius: r,
+        material: color,
+        outline: true,
+        outlineColor,
+        heightReference: HeightReference.NONE,
+    });
+}
+
+function landEquipOrientationForInstance(
+    inst: CompiledInstance,
+    position: Cesium.Cartesian3,
+): Cesium.Quaternion | undefined {
+    const tiltDeg = Number(inst.tiltDeg ?? 0) || 0;
+    if (inst.axis === "longitudinal") {
+        const pitch = Cesium.Math.toRadians(90 - tiltDeg);
+        return Cesium.Transforms.headingPitchRollQuaternion(
+            position,
+            new Cesium.HeadingPitchRoll(0, pitch, 0),
+        );
+    }
+    if (tiltDeg !== 0) {
+        return Cesium.Transforms.headingPitchRollQuaternion(
+            position,
+            new Cesium.HeadingPitchRoll(0, Cesium.Math.toRadians(-tiltDeg), 0),
+        );
+    }
+    return undefined;
+}
+
+function applyLandEquipmentRecipeOverride(
+    ent: Cesium.Entity,
+    u: UnitRenderable,
+    viewer: Cesium.Viewer,
+    category: any,
+    subcategory: any,
+): boolean {
+    const entityCode = subcategory?.entityCode ?? category?.entityCode;
+    const entityTypeCode = subcategory?.entityTypeCode;
+    const entitySubtypeCode = subcategory?.entitySubtypeCode;
+
+    if (!entityCode || !entityTypeCode) return false;
+
+    const row = findBestOverrideRow(
+        LAND_EQUIP_SHAPE_OVERRIDES,
+        String(entityCode),
+        String(entityTypeCode),
+        entitySubtypeCode != null ? String(entitySubtypeCode) : "*",
+    );
+    if (!row || !row.primitiveRecipe) return false;
+
+    const { instances, bodyHalfH, footprint } = getCompiledLandEquipRecipe(row.primitiveRecipe);
+    const insts = instances.slice(0, 24);
+    if (insts.length === 0) return false;
+    const sidcForMobility = mobilitySidcForUnit(u, viewer);
+    const shouldApplyVehicleFamilyAddons = shouldApplyMobilityToCategory(category?.id);
+    const mobilityIds = shouldApplyVehicleFamilyAddons
+        ? vehicleMobilityPartIdsForSidc(u.id, sidcForMobility)
+        : [];
+    const hullAddonIds = shouldApplyVehicleFamilyAddons
+        ? vehicleHullAddonPartIdsForSidc(u.id, sidcForMobility)
+        : [];
+
+    const existingHelperIds = landEquipPartIdsForUnit(viewer, u.id);
+    clearGroundOverrideArtifacts(viewer, u, {
+        removeSidcCap: true,
+        preserveEntityIds: [u.id, ...existingHelperIds, ...mobilityIds, ...hullAddonIds],
+    });
+    clearGroundOverrideEntityGraphics(ent);
+    removeManPortableIconCap(viewer, u.id);
+
+    const pose = makeGroundPrimitivePoseProperties(viewer, u, bodyHalfH, footprint);
+    ent.position = pose.position as any;
+    ent.orientation = pose.orientation as any;
+    applyPathGraphics(ent, u);
+
+    const fillCss = extractGroupFill(u);
+    const baseColor = safeCssColor(fillCss).withAlpha(1.0);
+    const outlineColor = Cesium.Color.BLACK.withAlpha(0.75);
+
+    applyLandEquipPrimitiveGraphics(ent, insts[0], baseColor, outlineColor);
+    ent.billboard = undefined as any;
+    ent.point = undefined as any;
+    ent.label = u.name ? makeSideLabel(u.name, HeightReference.NONE, "left", u.labelOffsetPxY ?? -12) : undefined;
+    applyGroundPrimitiveLabelOffset(ent.label);
+    if (ent.label && Array.isArray((row as any).labelOffset) && (row as any).labelOffset.length === 3) {
+        const [x = -GROUND_UNIT_LABEL_LEFT_OFFSET_M, y = 0, z = GROUND_UNIT_LABEL_UP_OFFSET_M] = (row as any).labelOffset;
+        // Recipe labelOffset is treated as local [x,y,z]; for label eyeOffset we use [x,z,y].
+        ent.label.eyeOffset = new Cesium.Cartesian3(
+            Number.isFinite(x) ? x : -GROUND_UNIT_LABEL_LEFT_OFFSET_M,
+            Number.isFinite(z) ? z : GROUND_UNIT_LABEL_UP_OFFSET_M,
+            Number.isFinite(y) ? y : 0,
+        );
+    }
+
+    const preserveIds: string[] = [u.id];
+    for (let i = 1; i < insts.length; i += 1) {
+        const inst = insts[i];
+        const id = landEquipPartId(u.id, i);
+        preserveIds.push(id);
+
+        const partEnt = viewer.entities.getById(id) ?? viewer.entities.add({ id });
+        (partEnt as any).__landEquipHelper = true;
+        tagEntityWithUnitId(partEnt as any, u.id);
+
+        partEnt.label = undefined as any;
+        partEnt.billboard = undefined as any;
+        partEnt.point = undefined as any;
+        safelyDisableEntityPolyline(partEnt);
+
+        partEnt.position = new CallbackProperty((time) => {
+            return offsetFromEntityLocal(ent, time, inst.east, inst.north, inst.up);
+        }, false) as any;
+
+        partEnt.orientation = new CallbackProperty((time) => {
+            const p = (partEnt.position as any)?.getValue?.(time);
+            if (!p) return undefined;
+            return landEquipOrientationForInstance(inst, p);
+        }, false) as any;
+
+        applyLandEquipPrimitiveGraphics(partEnt, inst, baseColor, outlineColor);
+        partEnt.show = true;
+    }
+
+    clearGroundOverrideArtifacts(viewer, u, {
+        removeSidcCap: false,
+        preserveEntityIds: [...preserveIds, ...mobilityIds, ...hullAddonIds],
+    });
+
+    if (shouldApplyVehicleFamilyAddons) {
+        applyVehicleHullAddons(ent, u, viewer, baseColor, sidcForMobility);
+        applyVehicleMobilityAddons(ent, u, viewer, baseColor, sidcForMobility);
+    }
+
+    applyAvailability(ent, u);
+    return true;
+}
+
+function applyWeaponDualTubeLauncherGraphics(
+    ent: Cesium.Entity,
+    u: UnitRenderable,
+    viewer?: Cesium.Viewer,
+) {
+    const tubeIds = [
+        launcherTubeEntityId(u.id, 0),
+        launcherTubeEntityId(u.id, 1),
+        launcherTubeEntityId(u.id, 2),
+        launcherTubeEntityId(u.id, 3),
+    ] as const;
+    clearGroundOverrideArtifacts(viewer, u, {
+        removeSidcCap: true,
+        preserveEntityIds: [...tubeIds],
+    });
+    clearGroundOverrideEntityGraphics(ent);
+
+    const size = LAUNCHER_BASE_SIZE_M;
+    const centerOffset = size.z / 2;
+    const pose = makeGroundPrimitivePoseProperties(viewer, u, centerOffset, {
+        halfWidthMeters: size.x / 2,
+        halfLengthMeters: size.y / 2,
+    });
+    ent.position = pose.position as any;
+    ent.orientation = pose.orientation as any;
+    applyPathGraphics(ent, u);
+
+    const fillCss = extractGroupFill(u);
+    const color = safeCssColor(fillCss).withAlpha(1.0);
+
+    ent.box = new Cesium.BoxGraphics({
+        dimensions: new Cartesian3(size.x, size.y, size.z),
+        material: color,
+        heightReference: HeightReference.NONE,
+        outline: true,
+        outlineColor: Color.BLACK,
+    });
+    safelyDisableEntityCylinder(ent);
+    ent.polygon = undefined as any;
+    ent.billboard = undefined as any;
+    ent.point = undefined as any;
+    safelyDisableEntityPolyline(ent);
+
+    ent.label = u.name ? makeSideLabel(u.name, HeightReference.NONE, "left", u.labelOffsetPxY ?? -12) : undefined;
+    applyGroundPrimitiveLabelOffset(ent.label);
+
+    if (viewer) {
+        const tubes = tubeIds.map((id) => viewer.entities.getById(id) ?? viewer.entities.add({ id }));
+
+        const makeTubePosition = (east: number, north: number) =>
+            new Cesium.CallbackProperty((time) => {
+                try {
+                    const base = ent.position?.getValue?.(time);
+                    if (!base) return undefined;
+                    return offsetFromEntityLocal(
+                        ent,
+                        time,
+                        east,
+                        north,
+                        LAUNCHER_TUBE_UP_OFFSET_M,
+                    );
+                } catch {
+                    return undefined;
+                }
+            }, false) as any;
+
+        const tubeGraphics = () => new Cesium.CylinderGraphics({
+            length: LAUNCHER_TUBE_LENGTH_M,
+            topRadius: LAUNCHER_TUBE_RADIUS_M,
+            bottomRadius: LAUNCHER_TUBE_RADIUS_M,
+            fill: true,
+            material: color,
+            outline: true,
+            outlineColor: Color.BLACK.withAlpha(0.75),
+            heightReference: HeightReference.NONE,
+        });
+
+        const offsets: Array<{ east: number; north: number }> = [
+            { east: -LAUNCHER_TUBE_GRID_HALF_SPACING_M, north: LAUNCHER_TUBE_GRID_CENTER_NORTH_M + LAUNCHER_TUBE_GRID_HALF_SPACING_M },
+            { east: LAUNCHER_TUBE_GRID_HALF_SPACING_M, north: LAUNCHER_TUBE_GRID_CENTER_NORTH_M + LAUNCHER_TUBE_GRID_HALF_SPACING_M },
+            { east: -LAUNCHER_TUBE_GRID_HALF_SPACING_M, north: LAUNCHER_TUBE_GRID_CENTER_NORTH_M - LAUNCHER_TUBE_GRID_HALF_SPACING_M },
+            { east: LAUNCHER_TUBE_GRID_HALF_SPACING_M, north: LAUNCHER_TUBE_GRID_CENTER_NORTH_M - LAUNCHER_TUBE_GRID_HALF_SPACING_M },
+        ];
+
+        tubes.forEach((tube, i) => {
+            const o = offsets[i];
+            tube.position = makeTubePosition(o.east, o.north);
+            tube.orientation = ent.orientation;
+            tube.cylinder = tubeGraphics();
+            tube.billboard = undefined as any;
+            safelyDisableEntityBox(tube);
+            tube.polygon = undefined as any;
+            tube.point = undefined as any;
+            safelyDisableEntityPolyline(tube);
+            tube.label = undefined as any;
+            tube.show = ent.show !== false;
+        });
+    }
+
+    applyAvailability(ent, u);
+}
+
+function applyWeaponSixTubeLauncherGraphics(
+    ent: Cesium.Entity,
+    u: UnitRenderable,
+    viewer?: Cesium.Viewer,
+) {
+    const tubeIds = launcherTubeIdsForShape(u.id, "weaponSixTubeLauncher");
+    clearGroundOverrideArtifacts(viewer, u, {
+        removeSidcCap: true,
+        preserveEntityIds: [...tubeIds],
+    });
+    clearGroundOverrideEntityGraphics(ent);
+
+    const size = LAUNCHER_BASE_SIZE_M;
+    const centerOffset = size.z / 2;
+    const pose = makeGroundPrimitivePoseProperties(viewer, u, centerOffset, {
+        halfWidthMeters: size.x / 2,
+        halfLengthMeters: size.y / 2,
+    });
+    ent.position = pose.position as any;
+    ent.orientation = pose.orientation as any;
+    applyPathGraphics(ent, u);
+
+    const fillCss = extractGroupFill(u);
+    const color = safeCssColor(fillCss).withAlpha(1.0);
+
+    ent.box = new Cesium.BoxGraphics({
+        dimensions: new Cartesian3(size.x, size.y, size.z),
+        material: color,
+        heightReference: HeightReference.NONE,
+        outline: true,
+        outlineColor: Color.BLACK,
+    });
+    safelyDisableEntityCylinder(ent);
+    ent.polygon = undefined as any;
+    ent.billboard = undefined as any;
+    ent.point = undefined as any;
+    safelyDisableEntityPolyline(ent);
+
+    ent.label = u.name ? makeSideLabel(u.name, HeightReference.NONE, "left", u.labelOffsetPxY ?? -12) : undefined;
+    applyGroundPrimitiveLabelOffset(ent.label);
+
+    if (viewer) {
+        const tubes = tubeIds.map((id) => viewer.entities.getById(id) ?? viewer.entities.add({ id }));
+
+        const makeTubePosition = (east: number, north: number) =>
+            new Cesium.CallbackProperty((time) => {
+                try {
+                    const base = ent.position?.getValue?.(time);
+                    if (!base) return undefined;
+                    return offsetFromEntityLocal(
+                        ent,
+                        time,
+                        east,
+                        north,
+                        LAUNCHER_TUBE_UP_OFFSET_M,
+                    );
+                } catch {
+                    return undefined;
+                }
+            }, false) as any;
+
+        const makeTubeOrientation = (tube: Cesium.Entity) =>
+            new Cesium.CallbackProperty((time) => {
+                try {
+                    const p = tube.position?.getValue?.(time);
+                    if (!p) return undefined;
+                    const hpr = new Cesium.HeadingPitchRoll(
+                        Cesium.Math.toRadians(LAUNCHER_SIX_TUBE_HEADING_DEG),
+                        Cesium.Math.toRadians(LAUNCHER_SIX_TUBE_PITCH_DEG),
+                        0,
+                    );
+                    return Cesium.Transforms.headingPitchRollQuaternion(p, hpr);
+                } catch {
+                    return undefined;
+                }
+            }, false) as any;
+
+        const tubeGraphics = () => new Cesium.CylinderGraphics({
+            length: LAUNCHER_TUBE_LENGTH_M,
+            topRadius: LAUNCHER_TUBE_RADIUS_M,
+            bottomRadius: LAUNCHER_TUBE_RADIUS_M,
+            fill: true,
+            material: color,
+            outline: true,
+            outlineColor: Color.BLACK.withAlpha(0.75),
+            heightReference: HeightReference.NONE,
+        });
+
+        const eastOffsets = [
+            -LAUNCHER_SIX_TUBE_GRID_SPACING_M,
+            0,
+            LAUNCHER_SIX_TUBE_GRID_SPACING_M,
+        ];
+        const northOffsets = [
+            LAUNCHER_SIX_TUBE_GRID_CENTER_NORTH_M + LAUNCHER_SIX_TUBE_GRID_HALF_SPACING_M,
+            LAUNCHER_SIX_TUBE_GRID_CENTER_NORTH_M - LAUNCHER_SIX_TUBE_GRID_HALF_SPACING_M,
+        ];
+        const offsets: Array<{ east: number; north: number }> = [
+            { east: eastOffsets[0], north: northOffsets[0] },
+            { east: eastOffsets[1], north: northOffsets[0] },
+            { east: eastOffsets[2], north: northOffsets[0] },
+            { east: eastOffsets[0], north: northOffsets[1] },
+            { east: eastOffsets[1], north: northOffsets[1] },
+            { east: eastOffsets[2], north: northOffsets[1] },
+        ];
+
+        tubes.forEach((tube, i) => {
+            const o = offsets[i];
+            tube.position = makeTubePosition(o.east, o.north);
+            tube.orientation = makeTubeOrientation(tube);
+            tube.cylinder = tubeGraphics();
+            tube.billboard = undefined as any;
+            safelyDisableEntityBox(tube);
+            tube.polygon = undefined as any;
+            tube.point = undefined as any;
+            safelyDisableEntityPolyline(tube);
+            tube.label = undefined as any;
+            tagEntityWithUnitId(tube as any, u.id);
+            tube.show = ent.show !== false;
+        });
+    }
+
+    applyAvailability(ent, u);
+}
+
+function applyWeaponSingleLargeTubeLauncherGraphics(
+    ent: Cesium.Entity,
+    u: UnitRenderable,
+    viewer?: Cesium.Viewer,
+) {
+    const tubeIds = launcherTubeIdsForShape(u.id, "weaponSingleLargeTubeLauncher");
+    clearGroundOverrideArtifacts(viewer, u, {
+        removeSidcCap: true,
+        preserveEntityIds: [...tubeIds],
+    });
+    clearGroundOverrideEntityGraphics(ent);
+
+    const size = LAUNCHER_BASE_SIZE_M;
+    const centerOffset = size.z / 2;
+    const pose = makeGroundPrimitivePoseProperties(viewer, u, centerOffset, {
+        halfWidthMeters: size.x / 2,
+        halfLengthMeters: size.y / 2,
+    });
+    ent.position = pose.position as any;
+    ent.orientation = pose.orientation as any;
+    applyPathGraphics(ent, u);
+
+    const fillCss = extractGroupFill(u);
+    const color = safeCssColor(fillCss).withAlpha(1.0);
+
+    ent.box = new Cesium.BoxGraphics({
+        dimensions: new Cartesian3(size.x, size.y, size.z),
+        material: color,
+        heightReference: HeightReference.NONE,
+        outline: true,
+        outlineColor: Color.BLACK,
+    });
+    safelyDisableEntityCylinder(ent);
+    ent.polygon = undefined as any;
+    ent.billboard = undefined as any;
+    ent.point = undefined as any;
+    safelyDisableEntityPolyline(ent);
+
+    ent.label = u.name ? makeSideLabel(u.name, HeightReference.NONE, "left", u.labelOffsetPxY ?? -12) : undefined;
+    applyGroundPrimitiveLabelOffset(ent.label);
+
+    if (viewer) {
+        const tube = viewer.entities.getById(tubeIds[0]) ?? viewer.entities.add({ id: tubeIds[0] });
+        tube.position = new Cesium.CallbackProperty((time) => {
+            try {
+                return offsetFromEntityLocal(ent, time, 0, LAUNCHER_SINGLE_TUBE_NORTH_M, LAUNCHER_SINGLE_TUBE_UP_M);
+            } catch {
+                return undefined;
+            }
+        }, false) as any;
+        tube.orientation = ent.orientation;
+        tube.cylinder = new Cesium.CylinderGraphics({
+            length: LAUNCHER_SINGLE_TUBE_LENGTH_M,
+            topRadius: LAUNCHER_SINGLE_TUBE_RADIUS_M,
+            bottomRadius: LAUNCHER_SINGLE_TUBE_RADIUS_M,
+            fill: true,
+            material: color,
+            outline: true,
+            outlineColor: Color.BLACK.withAlpha(0.75),
+            heightReference: HeightReference.NONE,
+        });
+        tube.billboard = undefined as any;
+        safelyDisableEntityBox(tube);
+        tube.polygon = undefined as any;
+        tube.point = undefined as any;
+        safelyDisableEntityPolyline(tube);
+        tube.label = undefined as any;
+        tagEntityWithUnitId(tube as any, u.id);
+        tube.show = ent.show !== false;
+    }
+
+    applyAvailability(ent, u);
+}
+
+function isTriangleWeaponSidc(sidc?: string): boolean {
+    return resolveSidcShapeOverride(sidc) === "weaponTriangle";
+}
+
+function isDualTubeLauncherSidc(sidc?: string): boolean {
+    return resolveSidcShapeOverride(sidc) === "weaponDualTubeLauncher";
+}
+
+function isSixTubeLauncherSidc(sidc?: string): boolean {
+    return resolveSidcShapeOverride(sidc) === "weaponSixTubeLauncher";
+}
+
+function isSingleLargeTubeLauncherSidc(sidc?: string): boolean {
+    return resolveSidcShapeOverride(sidc) === "weaponSingleLargeTubeLauncher";
+}
+
+function manPortableIconCapIdForUnit(id: string) {
+    return `${id}${MAN_PORTABLE_ICON_CAP_SUFFIX}`;
+}
+
+function manPortableIconDecalIdForUnit(id: string) {
+    return `${id}${MAN_PORTABLE_ICON_DECAL_SUFFIX}`;
+}
+
+function isManPortableIconCapId(id: string) {
+    return id.endsWith(MAN_PORTABLE_ICON_CAP_SUFFIX);
+}
+
+function isManPortableIconDecalId(id: string) {
+    return id.endsWith(MAN_PORTABLE_ICON_DECAL_SUFFIX);
+}
+
+function baseIdFromManPortableIconCapId(id: string) {
+    return id.slice(0, -MAN_PORTABLE_ICON_CAP_SUFFIX.length);
+}
+
+function baseIdFromManPortableIconDecalId(id: string) {
+    return id.slice(0, -MAN_PORTABLE_ICON_DECAL_SUFFIX.length);
+}
+
+function removeManPortableIconCap(viewer: Cesium.Viewer | undefined, unitId: string) {
+    if (!viewer) return;
+    viewer.entities.removeById(manPortableIconCapIdForUnit(unitId));
+    viewer.entities.removeById(manPortableIconDecalIdForUnit(unitId));
+}
+
+function clearGroundOverrideArtifacts(
+    viewer: Cesium.Viewer | undefined,
+    u: UnitRenderable,
+    opts?: { removeSidcCap?: boolean; preserveEntityIds?: string[] },
+) {
+    setToeWinsUnderbarPolicy(u, false);
+    if (!viewer) return;
+    hideToeUnderbar(viewer, u.id);
+
+    const unitEnt = viewer.entities.getById(u.id);
+    if (unitEnt) {
+        // Stop any billboard-era label aligner from mutating ground-primitive labels.
+        try {
+            const old = (unitEnt as any).__labelAlignTick as (() => void) | undefined;
+            if (old) viewer.scene.postRender.removeEventListener(old);
+            (unitEnt as any).__labelAlignTick = undefined;
+        } catch { /* ignore */ }
+
+        // Reset/clear pedestal polyline attached to the unit entity.
+        try { (unitEnt as any).__hasPedestalPolyline = false; } catch { /* ignore */ }
+        try { safelyDisableEntityPolyline(unitEnt); } catch { /* ignore */ }
+    }
+
+    // Clear all known helper entities that can linger across style switches.
+    try { viewer.entities.removeById(toeUnderbarIdForUnit(u.id)); } catch { /* ignore */ }
+    try { viewer.entities.removeById(pedestalIdForUnit(u.id)); } catch { /* ignore */ }
+    try { viewer.entities.removeById(pedestalLinesIdForUnit(u.id)); } catch { /* ignore */ }
+    if (opts?.removeSidcCap) {
+        removeManPortableIconCap(viewer, u.id);
+    }
+
+    // Safety net: remove any helper entities following "<unitId>__*" naming.
+    // This catches stale icon/pedestal artifacts created by older render paths.
+    try {
+        const prefix = `${u.id}__`;
+        const preserve = new Set<string>(opts?.preserveEntityIds ?? []);
+        const extraIds = (viewer.entities.values ?? [])
+            .map((e: any) => e?.id)
+            .filter((id: any) => typeof id === "string" && id.startsWith(prefix) && id !== u.id && !preserve.has(id)) as string[];
+        for (const id of extraIds) {
+            try { viewer.entities.removeById(id); } catch { /* ignore */ }
+        }
+    } catch { /* ignore */ }
+}
+
+function clearGroundOverrideEntityGraphics(ent: Cesium.Entity) {
+    try { ent.billboard = undefined as any; } catch { /* ignore */ }
+}
+
+function safelyDisableEntityPolyline(ent: Cesium.Entity) {
+    try {
+        const polyline: any = ent.polyline;
+        if (!polyline) return;
+
+        // Cesium dynamic polyline updater dereferences entity.polyline.positions
+        // without guarding entity.polyline; keep an inert polyline object alive.
+        polyline.show = false;
+        if (!polyline.positions) {
+            polyline.positions = new Cesium.ConstantProperty([]);
+        }
+    } catch { /* ignore */ }
+}
+function safelyDisableEntityBox(ent: Cesium.Entity) {
+    try {
+        const box: any = ent.box;
+        if (!box) return;
+
+        box.show = false;
+        if (!box.heightReference) {
+            box.heightReference = new Cesium.ConstantProperty(Cesium.HeightReference.NONE);
+        }
+        if (!box.dimensions) {
+            box.dimensions = new Cesium.ConstantProperty(new Cesium.Cartesian3(1, 1, 1));
+        }
+    } catch { /* ignore */ }
+}
+
+function safelyDisableEntityCylinder(ent: Cesium.Entity) {
+    try {
+        const cylinder: any = ent.cylinder;
+        if (!cylinder) return;
+
+        cylinder.show = false;
+        if (!cylinder.heightReference) {
+            cylinder.heightReference = new Cesium.ConstantProperty(Cesium.HeightReference.NONE);
+        }
+        if (!cylinder.length) {
+            cylinder.length = new Cesium.ConstantProperty(1);
+        }
+        if (!cylinder.topRadius) {
+            cylinder.topRadius = new Cesium.ConstantProperty(0.5);
+        }
+        if (!cylinder.bottomRadius) {
+            cylinder.bottomRadius = new Cesium.ConstantProperty(0.5);
+        }
+    } catch { /* ignore */ }
+}
+
+function resolvedSidcForRendering(
+    u: UnitRenderable,
+    viewer?: Cesium.Viewer,
+    sidcOverride?: string,
+): string | undefined {
+    const sidcEventPreferred =
+        (typeof sidcOverride === "string" && sidcOverride.trim())
+            ? sidcOverride
+            : effectiveSidc(u, viewer);
+    const sidcUnit = preferredUnitSidc(u);
+
+    const eventShape = resolveSidcShapeOverride(sidcEventPreferred);
+    const unitShape = resolveSidcShapeOverride(sidcUnit);
+
+    // If unit SIDC has a custom ground-shape override but the event SIDC does not,
+    // prefer the unit SIDC so artifact cleanup and render branching stay consistent.
+    if (unitShape && !eventShape) return sidcUnit;
+
+    return sidcEventPreferred ?? sidcUnit;
+}
+
+function isManPortableWeaponException(
+    u: UnitRenderable,
+    viewer?: Cesium.Viewer,
+    sidcOverride?: string,
+): boolean {
+    const sidc = resolvedSidcForRendering(u, viewer, sidcOverride);
+    return isGroundPrimitiveSidc(sidc);
+}
+
+function applyLandEquipmentWeaponsGraphics(
+    ent: Cesium.Entity,
+    u: UnitRenderable,
+    viewer?: Cesium.Viewer,
+    subcategoryId?: string,
+) {
+    (u as any).__landEquipmentSubcategoryId = subcategoryId;
+    const sidcForRendering = resolvedSidcForRendering(u, viewer);
+    if (isSingleLargeTubeLauncherSidc(sidcForRendering)) {
+        applyWeaponSingleLargeTubeLauncherGraphics(ent, u, viewer);
+        return;
+    }
+    if (isSixTubeLauncherSidc(sidcForRendering)) {
+        applyWeaponSixTubeLauncherGraphics(ent, u, viewer);
+        return;
+    }
+    if (isDualTubeLauncherSidc(sidcForRendering)) {
+        applyWeaponDualTubeLauncherGraphics(ent, u, viewer);
+        return;
+    }
+    const useTriangleOverride =
+        (subcategoryId && WEAPON_TRIANGLE_SUBCATEGORY_IDS.has(subcategoryId))
+        || isTriangleWeaponSidc(sidcForRendering);
+
+    if (useTriangleOverride) {
+        clearGroundOverrideArtifacts(viewer, u, { removeSidcCap: true });
+        clearGroundOverrideEntityGraphics(ent);
+
+        const centerOffset = WEAPON_TRIANGLE_HEIGHT_M / 2;
+        const triHeight = (Math.sqrt(3) / 2) * WEAPON_TRIANGLE_SIDE_M;
+        const pose = makeGroundPrimitivePoseProperties(viewer, u, centerOffset, {
+            halfWidthMeters: WEAPON_TRIANGLE_SIDE_M / 2,
+            halfLengthMeters: (2 * triHeight) / 3,
+        });
+    ent.position = pose.position as any;
+    ent.orientation = pose.orientation as any;
+        applyPathGraphics(ent, u);
+
+        const fillCss = extractGroupFill(u);
+        const color = safeCssColor(fillCss).withAlpha(1.0);
+
+        ent.billboard = undefined as any;
+        ent.point = undefined as any;
+        safelyDisableEntityBox(ent);
+        safelyDisableEntityCylinder(ent);
+
+        ent.polygon = new Cesium.PolygonGraphics({
+            hierarchy: new Cesium.CallbackProperty((time) => {
+                try {
+                    const p = ent.position?.getValue?.(time);
+                    if (!p) return undefined;
+                    return makeEquilateralTrianglePolygonHierarchy(p, WEAPON_TRIANGLE_SIDE_M);
+                } catch {
+                    return undefined;
+                }
+            }, false) as any,
+            perPositionHeight: true,
+            extrudedHeight: new Cesium.CallbackProperty((time) => {
+                try {
+                    const p = ent.position?.getValue?.(time);
+                    if (!p) return undefined;
+                    const c = Cartographic.fromCartesian(p);
+                    return (c.height ?? 0) + WEAPON_TRIANGLE_HEIGHT_M;
+                } catch {
+                    return undefined;
+                }
+            }, false) as any,
+            material: color,
+            outline: true,
+            outlineColor: Color.BLACK.withAlpha(0.75),
+        });
+
+        ent.label = u.name ? makeSideLabel(u.name, HeightReference.NONE, "left", u.labelOffsetPxY ?? -12) : undefined;
+        applyGroundPrimitiveLabelOffset(ent.label);
+
+        applyAvailability(ent, u);
+        return;
+    }
+
+    const dims = getManPortableDimensions();
+    const capRadius = (MAN_PORTABLE_DEBUG_VISUALS ? dims.radius * 2 : MAN_PORTABLE_ICON_CAP_DIAMETER_M) / 2;
+    const decalRadius = capRadius;
+    const pose = makeGroundPrimitivePoseProperties(viewer, u, dims.height / 2, {
+        halfWidthMeters: dims.radius,
+        halfLengthMeters: dims.radius,
+    });
+    ent.position = pose.position as any;
+    ent.orientation = pose.orientation as any;
+    applyPathGraphics(ent, u);
+
+    const fillCss = extractGroupFill(u);
+    const sideColor = safeCssColor(fillCss).withAlpha(1.0);
+    const color = MAN_PORTABLE_DEBUG_VISUALS ? sideColor.brighten(0.35, new Color()) : sideColor;
+    (u as any).__iconLiftPx = 0;
+    if (viewer) uninstallIconLiftTick(viewer, ent);
+    try {
+        if (viewer) {
+            const old = (ent as any).__labelAlignTick as (() => void) | undefined;
+            if (old) viewer.scene.postRender.removeEventListener(old);
+            (ent as any).__labelAlignTick = undefined;
+        }
+    } catch { /* ignore */ }
+
+    ent.billboard = undefined as any;
+    ent.point = undefined as any;
+    safelyDisableEntityBox(ent);
+    ent.polygon = undefined as any;
+
+    ent.cylinder = new Cesium.CylinderGraphics({
+        length: dims.height,
+        topRadius: dims.radius,
+        bottomRadius: dims.radius,
+        fill: true,
+        material: color,
+        outline: false,
+        heightReference: HeightReference.NONE,
+    });
+
+    // Category-specific label rule for man-portable weapons only.
+    ent.label = u.name ? makeSideLabel(u.name, HeightReference.NONE, "left", u.labelOffsetPxY ?? -12) : undefined;
+    applyGroundPrimitiveLabelOffset(ent.label);
+
+    const sidcForCap = resolvedSidcForRendering(u, viewer);
+    // Use side-tinted SIDC art so logo color matches cylinder side color.
+    const fillHex = normalizeHex(fillCss);
+    const cachedCapIcon =
+        sidcForCap ? getSidcIconSync(sidcForCap, { fillColor: fillHex }, 96) : undefined;
+    const rawIconUrl = cachedCapIcon ?? buildIconUrlSync(u, viewer);
+    const iconUrl =
+        (typeof rawIconUrl === "string" && rawIconUrl.length > 0)
+            ? sanitizeIconUrlForImageLoad(rawIconUrl)
+            : undefined;
+    if (viewer) {
+        const capId = manPortableIconCapIdForUnit(u.id);
+        const decalId = manPortableIconDecalIdForUnit(u.id);
+        const capEnt = viewer.entities.getById(capId) ?? viewer.entities.add({ id: capId });
+        const decalEnt = viewer.entities.getById(decalId) ?? viewer.entities.add({ id: decalId });
+
+        capEnt.position = new CallbackProperty((time) => {
+            try {
+                // Anchor cap in the unit's local oriented frame so it remains attached
+                // even when terrain-conform tilt is active.
+                return offsetFromEntityLocal(
+                    ent,
+                    time,
+                    0,
+                    0,
+                    (dims.height / 2) + MAN_PORTABLE_ICON_CAP_RAISE_M,
+                );
+            } catch {
+                return undefined;
+            }
+        }, false) as any;
+
+        capEnt.billboard = undefined as any;
+        capEnt.label = undefined as any;
+        capEnt.point = undefined as any;
+        safelyDisableEntityBox(capEnt);
+        safelyDisableEntityCylinder(capEnt);
+        capEnt.ellipse = undefined as any;
+        safelyDisableEntityPolyline(capEnt);
+        // Base cap is always solid side-colored so top circle remains visible.
+        capEnt.polygon = new Cesium.PolygonGraphics({
+            hierarchy: new Cesium.CallbackProperty((time) => {
+                try {
+                    const p = capEnt.position?.getValue?.(time);
+                    if (!p) return undefined;
+                    const q = ent.orientation?.getValue?.(time) as Cesium.Quaternion | undefined;
+                    return makeOrientedCirclePolygonHierarchy(p, q, capRadius, 48);
+                } catch {
+                    return undefined;
+                }
+            }, false) as any,
+            perPositionHeight: true,
+            material: color,
+            outline: true,
+            outlineColor: Color.BLACK.withAlpha(0.75),
+        });
+        capEnt.show = ent.show !== false;
+
+        decalEnt.position = new CallbackProperty((time) => {
+            try {
+                return offsetFromEntityLocal(
+                    ent,
+                    time,
+                    0,
+                    0,
+                    (dims.height / 2) + MAN_PORTABLE_ICON_CAP_RAISE_M + MAN_PORTABLE_ICON_DECAL_RAISE_M,
+                );
+            } catch {
+                return undefined;
+            }
+        }, false) as any;
+
+        decalEnt.billboard = undefined as any;
+        decalEnt.label = undefined as any;
+        decalEnt.point = undefined as any;
+        safelyDisableEntityBox(decalEnt);
+        safelyDisableEntityCylinder(decalEnt);
+        safelyDisableEntityPolyline(decalEnt);
+        decalEnt.ellipse = undefined as any;
+
+        if (typeof iconUrl === "string" && iconUrl.length > 0) {
+            decalEnt.billboard = undefined as any;
+            // Horizontal world-space circular decal using polygon geometry (meter units).
+            decalEnt.polygon = new Cesium.PolygonGraphics({
+                hierarchy: new Cesium.CallbackProperty((time) => {
+                    try {
+                        const p = decalEnt.position?.getValue?.(time);
+                        if (!p) return undefined;
+                        const q = ent.orientation?.getValue?.(time) as Cesium.Quaternion | undefined;
+                        return makeOrientedCirclePolygonHierarchy(p, q, decalRadius, 48);
+                    } catch {
+                        return undefined;
+                    }
+                }, false) as any,
+                perPositionHeight: true,
+                material: new Cesium.ImageMaterialProperty({
+                    image: iconUrl,
+                    color: Color.WHITE,
+                    transparent: true,
+                }),
+                outline: false,
+            });
+            decalEnt.show = ent.show !== false;
+        } else {
+            decalEnt.billboard = undefined as any;
+            decalEnt.ellipse = undefined as any;
+            decalEnt.polygon = undefined as any;
+            decalEnt.show = false;
+        }
+
+    }
+
+    applyAvailability(ent, u);
+}
+
+function applyLandEquipmentGraphics(
+    ent: Cesium.Entity,
+    u: UnitRenderable,
+    viewer?: Cesium.Viewer,
+    sidcHint?: string,
+) {
+    const sidc = sidcHint ?? effectiveSidc(u, viewer) ?? preferredUnitSidc(u);
+    const category = resolveLandEquipmentCategoryFromSidc(sidc);
+    const subcategory = resolveLandEquipmentSubcategoryFromSidc(sidc);
+
+    (u as any).__landEquipmentCategoryId = category?.id;
+    (u as any).__landEquipmentSubcategoryId = subcategory?.id;
+
+    if (!category) {
+        removeManPortableIconCap(viewer, u.id);
+        applyBillboardGraphics(ent, u, viewer);
+        return;
+    }
+
+    // Default behavior stays billboard. Carve out explicit exceptions only.
+    if (category.id === "weapons-weapon-system") {
+        applyLandEquipmentWeaponsGraphics(ent, u, viewer, subcategory?.id);
+        return;
+    }
+
+    if (category.id === "vehicles") {
+        if (isVehicleTankTurretSidc(sidc)) {
+            applyVehicleTankTurretGraphics(ent, u, viewer);
+            return;
+        }
+        if (isVehicleIfvTurretSidc(sidc)) {
+            applyVehicleIfvTurretGraphics(ent, u, viewer);
+            return;
+        }
+        if (isVehicleApcAmbulanceSidc(sidc)) {
+            applyVehicleApcAmbulanceGraphics(ent, u, viewer);
+            return;
+        }
+        if (isVehicleApcModuleSidc(sidc)) {
+            applyVehicleApcModuleGraphics(ent, u, viewer);
+            return;
+        }
+        if (isVehicleReconMastSidc(sidc)) {
+            applyVehicleReconMastGraphics(ent, u, viewer);
+            return;
+        }
+        if (isVehicleCargoModuleSidc(sidc)) {
+            applyVehicleCargoModuleGraphics(ent, u, viewer);
+            return;
+        }
+        if (isVehicleCommandMastSidc(sidc)) {
+            applyVehicleCommandMastGraphics(ent, u, viewer);
+            return;
+        }
+        if (isVehicleRecoveryRigSidc(sidc)) {
+            applyVehicleRecoveryRigGraphics(ent, u, viewer);
+            return;
+        }
+        if (isVehicleArmoredTurretSidc(sidc)) {
+            applyVehicleArmoredTurretGraphics(ent, u, viewer);
+            return;
+        }
+        if (isVehicleRecoveryBoomSidc(sidc)) {
+            applyVehicleRecoveryBoomGraphics(ent, u, viewer);
+            return;
+        }
+        clearGroundOverrideArtifacts(viewer, u, { removeSidcCap: true });
+        applyVehicleBlockGraphics(ent, u, viewer);
+        return;
+    }
+
+    const categoryUsesVehicleHullPipeline =
+        category.id === "civilian-vehicles"
+        || category.id === "utility-vehicles"
+        || category.id === "law-enforcement"
+        || category.id === "emergency-operation";
+    if (categoryUsesVehicleHullPipeline) {
+        clearGroundOverrideArtifacts(viewer, u, { removeSidcCap: true });
+        applyVehicleBlockGraphics(ent, u, viewer);
+        return;
+    }
+
+    if (viewer) {
+        const applied = applyLandEquipmentRecipeOverride(ent, u, viewer, category, subcategory);
+        if (applied) return;
+    }
+
+    removeManPortableIconCap(viewer, u.id);
+    applyBillboardGraphics(ent, u, viewer);
+}
+
+function applySymbolAwareBillboardGraphics(
+    ent: Cesium.Entity,
+    u: UnitRenderable,
+    viewer?: Cesium.Viewer,
+    sidcHint?: string,
+) {
+    const sidcEvent =
+        (typeof sidcHint === "string" && sidcHint.trim())
+            ? sidcHint
+            : effectiveSidc(u, viewer);
+    const sidcUnit = preferredUnitSidc(u);
+    const sidc = sidcEvent ?? sidcUnit;
+    if (shouldDebugSidc(u.id)) {
+        logSidcDebug("applySymbolAwareBillboardGraphics", {
+            unitId: u.id,
+            sidcHint,
+            sidcEvent,
+            sidcUnit,
+            sidcChosen: sidc,
+            shapeEvent: resolveSidcShapeOverride(sidcEvent),
+            shapeUnit: resolveSidcShapeOverride(sidcUnit),
+            isLandEquipmentEvent: isLandEquipmentSidc(sidcEvent),
+            isLandEquipmentUnit: isLandEquipmentSidc(sidcUnit),
+        });
+    }
+
+    // Prefer event SIDC for timeline correctness, but allow unit SIDC fallback so
+    // freshly added/edited ORBAT units render overrides immediately.
+    const shapeOverride =
+        resolveSidcShapeOverride(sidcEvent)
+        ?? resolveSidcShapeOverride(sidcUnit);
+
+    if (shapeOverride === "vehicleTankTurret" || isVehicleTankTurretSidc(sidc)) {
+        applyVehicleTankTurretGraphics(ent, u, viewer);
+        return;
+    }
+
+    if (shapeOverride === "vehicleIfvTurret" || isVehicleIfvTurretSidc(sidc)) {
+        applyVehicleIfvTurretGraphics(ent, u, viewer);
+        return;
+    }
+
+    if (shapeOverride === "vehicleApcAmbulance" || isVehicleApcAmbulanceSidc(sidc)) {
+        applyVehicleApcAmbulanceGraphics(ent, u, viewer);
+        return;
+    }
+
+    if (shapeOverride === "vehicleApcModule" || isVehicleApcModuleSidc(sidc)) {
+        applyVehicleApcModuleGraphics(ent, u, viewer);
+        return;
+    }
+
+    if (shapeOverride === "vehicleReconMast" || isVehicleReconMastSidc(sidc)) {
+        applyVehicleReconMastGraphics(ent, u, viewer);
+        return;
+    }
+
+    if (shapeOverride === "vehicleCargoModule" || isVehicleCargoModuleSidc(sidc)) {
+        applyVehicleCargoModuleGraphics(ent, u, viewer);
+        return;
+    }
+
+    if (shapeOverride === "vehicleCommandMast" || isVehicleCommandMastSidc(sidc)) {
+        applyVehicleCommandMastGraphics(ent, u, viewer);
+        return;
+    }
+
+    if (shapeOverride === "vehicleRecoveryRig" || isVehicleRecoveryRigSidc(sidc)) {
+        applyVehicleRecoveryRigGraphics(ent, u, viewer);
+        return;
+    }
+
+    if (shapeOverride === "vehicleArmoredTurret" || isVehicleArmoredTurretSidc(sidc)) {
+        applyVehicleArmoredTurretGraphics(ent, u, viewer);
+        return;
+    }
+
+    if (shapeOverride === "vehicleRecoveryBoom" || isVehicleRecoveryBoomSidc(sidc)) {
+        applyVehicleRecoveryBoomGraphics(ent, u, viewer);
+        return;
+    }
+
+    if (shapeOverride === "vehicleBox" || isFixedVehicleBlockSidc(sidc)) {
+        clearGroundOverrideArtifacts(viewer, u, { removeSidcCap: true });
+        applyVehicleBlockGraphics(ent, u, viewer);
+        return;
+    }
+
+    if (isLandEquipmentSidc(sidcEvent) || isLandEquipmentSidc(sidcUnit)) {
+        const sidcForLandEquipment =
+            shapeOverride != null
+                ? (resolveSidcShapeOverride(sidcEvent) ? sidcEvent : sidcUnit)
+                : sidc;
+        applyLandEquipmentGraphics(ent, u, viewer, sidcForLandEquipment);
+        return;
+    }
+    applyBillboardGraphics(ent, u, viewer);
+}
+
+
+/* ------------------------ Event-time helpers (NEW) ------------------------ */
 
 /** Inspect the source unit's event list at time t. */
 function getSnapshotFromEvents(uSrc: any, tMs: number): { onMap: boolean; loc?: [number, number]; sidc?: string } {
@@ -1404,7 +5249,7 @@ function lastSidcAtOrBefore(uSrc: any, tMs: number): string | undefined {
     return bestSidc;
 }
 
-/** Decide visibility and position like 2-D: visible unless last ≤t event says location:null. */
+/** Decide visibility and position like 2-D: visible unless last =t event says location:null. */
 type SnapshotAtTime = { onMap: boolean; lon?: number; lat?: number; sidc?: string };
 
 function computeSnapshot(u: UnitRenderable, tMs: number): SnapshotAtTime {
@@ -1426,7 +5271,7 @@ function computeSnapshot(u: UnitRenderable, tMs: number): SnapshotAtTime {
     } catch { /* ignore */ }
 
     if (!pos) {
-        // (a) last event ≤ t with explicit non-null location
+        // (a) last event = t with explicit non-null location
         if (lastLocEvt && Array.isArray(lastLocEvt.location)) {
             pos = { lon: lastLocEvt.location[0], lat: lastLocEvt.location[1] };
         } else {
@@ -1450,8 +5295,10 @@ function computeSnapshot(u: UnitRenderable, tMs: number): SnapshotAtTime {
     // ON if not explicitly turned off and we can determine any plausible position
     const onMap = !explicitlyOff && !!pos;
 
-    // SIDC in effect: last sidc ≤ t (fallback to unit-level)
-    const sidc = lastSidcAtOrBefore(src, tMs) ?? (u as any)?.__baseSidc ?? u.sidc;
+    // SIDC in effect:
+    // - explicit SIDC event at/= t wins for timeline correctness
+    // - otherwise prefer current unit SIDC so ORBAT edits apply immediately
+    const sidc = lastExplicitSidcEventAtOrBefore(src, tMs) ?? preferredUnitSidc(u);
 
     return { onMap, lon: pos?.lon, lat: pos?.lat, sidc };
 }
@@ -1503,7 +5350,7 @@ function buildIconUrlForSidc(u: UnitRenderable, sidc?: string): string | undefin
         return `${u.iconUrl}${sep}sidc=${encodeURIComponent(sidc)}`;
     }
 
-    // 4) no known base → allow hook to supply later; return undefined
+    // 4) no known base ? allow hook to supply later; return undefined
     return undefined;
 }
 
@@ -1528,6 +5375,15 @@ function applySidcChange(
 
     // 1) Persist RAW SIDC (truth)
     u.sidc = sidc;
+    if (shouldDebugSidc(u.id)) {
+        logSidcDebug("applySidcChange.begin", {
+            unitId: u.id,
+            sidcIncoming: sidc,
+            sidcEffective: effectiveSidc(u, viewer),
+            sidcPreferredUnit: preferredUnitSidc(u),
+            isGroundException: isManPortableWeaponException(u, viewer, sidc),
+        });
+    }
     try {
         const src: any = (u as any).__sourceUnit;
         if (src && typeof src === "object") {
@@ -1537,6 +5393,22 @@ function applySidcChange(
             (src as any).__lastRenderedSidc = sidc;
         }
     } catch { /* ignore */ }
+
+    // Exception path: non-billboard ground primitives own their rendering.
+    if (isManPortableWeaponException(u, viewer, sidc)) {
+        setToeWinsUnderbarPolicy(u, false);
+        if (viewer) hideToeUnderbar(viewer, u.id);
+        ent.billboard = undefined as any;
+        applySymbolAwareBillboardGraphics(ent, u, viewer as any, sidc);
+        if (shouldDebugSidc(u.id)) {
+            logSidcDebug("applySidcChange.groundException", {
+                unitId: u.id,
+                sidcIncoming: sidc,
+                shape: resolveSidcShapeOverride(sidc),
+            });
+        }
+        return;
+    }
 
     const hex = normalizeHex(extractGroupFill(u));
 
@@ -1563,7 +5435,7 @@ function applySidcChange(
 
     if (!baseUrl) {
         ent.billboard = undefined as any;
-        applyBillboardGraphics(ent, u, viewer as any);
+        applySymbolAwareBillboardGraphics(ent, u, viewer as any);
         return;
     }
 
@@ -1609,7 +5481,7 @@ function applySidcChange(
 }
 
 
-/* ───────────────────────────── Adapter (public API) ─────────────────────────── */
+/* ----------------------------- Adapter (public API) --------------------------- */
 
 function replaceBaseImageryLayer(viewer: Cesium.Viewer, provider: Cesium.ImageryProvider) {
     const layers = viewer.imageryLayers;
@@ -1836,7 +5708,8 @@ export function createGlobeAdapter(): GlobePort {
             // Only store if we actually resolved something
             if (sidcNow !== undefined) lastSidc.set(u.id, sidcNow);
 
-            if (isInstallationBySidc(u)) {
+            const renderMode = resolveSymbol3DRenderMode(u);
+            if (renderMode === "installationFootprint") {
                 applyInstallationGraphics(ent as any, u as any, {
                     getParentById: (id) => unitMeta.get(id),
                     defaultSize: { x: 20, y: 20, z: 10 },
@@ -1849,28 +5722,40 @@ export function createGlobeAdapter(): GlobePort {
 
                 updateToeUnderbarForUnit(viewer, ent as any, u, tEff);
 
+            } else if (renderMode === "block") {
+                applyBlockGraphics(ent, u);
+                hideToeUnderbar(viewer, u.id);
             } else {
+                const sidcForRender = resolvedSidcForRendering(u, api.viewer);
+                const isGroundException = isManPortableWeaponException(u, api.viewer, sidcForRender);
                 const tNow = currentViewerMs(viewer);
                 const tFallback = Number((u as any)?._state?.t ?? (u as any)?.state?.[0]?.t ?? 0);
                 const tEff = (typeof tNow === "number" && Number.isFinite(tNow)) ? tNow : tFallback;
 
-                // Pre-seed TOE-wins policy BEFORE first billboard build so SIDC underbar gets stripped on first render.
-                if (Boolean((effectiveToeUnderbarEnabled as any)?.value ?? toeMapUnderbarEnabled.value)) {
-                    try {
-                        const baseUnit = getScenarioUnitById(u.id) ?? (u as any).__sourceUnit ?? u;
-                        const includeSubs = readPersonnelIncludeSubs();
-                        const pct = computeToePctForUnit(baseUnit, tEff, includeSubs, getScenarioUnitById);
-                        const toeDataAvailableForUnit = pct != null && Number.isFinite(pct);
-                        setToeWinsUnderbarPolicy(u, toeDataAvailableForUnit);
-                    } catch {
+                if (isGroundException) {
+                    setToeWinsUnderbarPolicy(u, false);
+                    hideToeUnderbar(viewer, u.id);
+                } else {
+                    // Pre-seed TOE-wins policy BEFORE first billboard build so SIDC underbar gets stripped on first render.
+                    if (Boolean((effectiveToeUnderbarEnabled as any)?.value ?? toeMapUnderbarEnabled.value)) {
+                        try {
+                            const baseUnit = getScenarioUnitById(u.id) ?? (u as any).__sourceUnit ?? u;
+                            const includeSubs = readPersonnelIncludeSubs();
+                            const pct = computeToePctForUnit(baseUnit, tEff, includeSubs, getScenarioUnitById);
+                            const toeDataAvailableForUnit = pct != null && Number.isFinite(pct);
+                            setToeWinsUnderbarPolicy(u, toeDataAvailableForUnit);
+                        } catch {
+                            setToeWinsUnderbarPolicy(u, false);
+                        }
+                    } else {
                         setToeWinsUnderbarPolicy(u, false);
                     }
-                } else {
-                    setToeWinsUnderbarPolicy(u, false);
                 }
 
-                applyBillboardGraphics(ent, u, api.viewer);
-                updateToeUnderbarForUnit(viewer, ent as any, u, tNow);
+                applySymbolAwareBillboardGraphics(ent, u, api.viewer);
+                if (!isGroundException) {
+                    updateToeUnderbarForUnit(viewer, ent as any, u, tNow);
+                }
             }
 
             // default visible; time updates may hide it
@@ -1896,6 +5781,76 @@ export function createGlobeAdapter(): GlobePort {
             // Keep pedestal LINE entities if their base unit is still present
             if (isPedestalLinesId(id)) {
                 const baseId = baseIdFromPedestalLinesId(id);
+                if (seen.has(baseId)) return;
+            }
+            // Keep man-portable top-cap entities if their base unit is still present
+            if (isManPortableIconCapId(id)) {
+                const baseId = baseIdFromManPortableIconCapId(id);
+                if (seen.has(baseId)) return;
+            }
+            if (isManPortableIconDecalId(id)) {
+                const baseId = baseIdFromManPortableIconDecalId(id);
+                if (seen.has(baseId)) return;
+            }
+            // Keep launcher tube child entities if their base unit is still present.
+            if (isLauncherTubeId(id)) {
+                const baseId = baseIdFromLauncherTubeId(id);
+                if (seen.has(baseId)) return;
+            }
+            if (isLandEquipPartId(id)) {
+                const baseId = baseIdFromLandEquipPartId(id);
+                if (seen.has(baseId)) return;
+            }
+            if (isVehicleMobilityPartId(id)) {
+                const baseId = baseIdFromVehicleMobilityPartId(id);
+                if (seen.has(baseId)) return;
+            }
+            if (isVehicleHullAddonPartId(id)) {
+                const baseId = baseIdFromVehicleHullAddonPartId(id);
+                if (seen.has(baseId)) return;
+            }
+            if (isTankPartId(id)) {
+                const baseId = baseIdFromTankPartId(id);
+                if (seen.has(baseId)) return;
+            }
+            if (isIfvPartId(id)) {
+                const baseId = baseIdFromIfvPartId(id);
+                if (seen.has(baseId)) return;
+            }
+            if (isArmoredHullPartId(id)) {
+                const baseId = baseIdFromArmoredHullPartId(id);
+                if (seen.has(baseId)) return;
+            }
+            if (isArmoredPartId(id)) {
+                const baseId = baseIdFromArmoredPartId(id);
+                if (seen.has(baseId)) return;
+            }
+            if (isRecoveryPartId(id)) {
+                const baseId = baseIdFromRecoveryPartId(id);
+                if (seen.has(baseId)) return;
+            }
+            if (isApcPartId(id)) {
+                const baseId = baseIdFromApcPartId(id);
+                if (seen.has(baseId)) return;
+            }
+            if (isApcAmbulancePartId(id)) {
+                const baseId = baseIdFromApcAmbulancePartId(id);
+                if (seen.has(baseId)) return;
+            }
+            if (isReconPartId(id)) {
+                const baseId = baseIdFromReconPartId(id);
+                if (seen.has(baseId)) return;
+            }
+            if (isCargoPartId(id)) {
+                const baseId = baseIdFromCargoPartId(id);
+                if (seen.has(baseId)) return;
+            }
+            if (isCommandPartId(id)) {
+                const baseId = baseIdFromCommandPartId(id);
+                if (seen.has(baseId)) return;
+            }
+            if (isRecoveryRigPartId(id)) {
+                const baseId = baseIdFromRecoveryRigPartId(id);
                 if (seen.has(baseId)) return;
             }
             if (!seen.has(id)) toRemove.push(id);
@@ -1971,11 +5926,11 @@ function applyRangeRingsForSnapshot(
     const rings: any[] = baseUnit?.rangeRings;
     if (!Array.isArray(rings) || !rings.length) return;
 
-    // ─────────────────────────────
+    // -----------------------------
     // 0. Event-based "on map" semantics for rings
-    //    - before first location event  → no rings
-    //    - last location event = null   → no rings
-    // ─────────────────────────────
+    //    - before first location event  ? no rings
+    //    - last location event = null   ? no rings
+    // -----------------------------
     let allowRingsNow = true;
     const events: any[] = Array.isArray(baseUnit?.state) ? baseUnit.state : [];
 
@@ -1983,7 +5938,7 @@ function applyRangeRingsForSnapshot(
         const lastEvt = lastLocEventAtOrBefore(baseUnit, tMs);
 
         if (!lastEvt) {
-            // Before the first location-bearing event → treat as "not yet on map"
+            // Before the first location-bearing event ? treat as "not yet on map"
             allowRingsNow = false;
         } else if (
             Object.prototype.hasOwnProperty.call(lastEvt, "location") &&
@@ -1994,10 +5949,10 @@ function applyRangeRingsForSnapshot(
         }
     }
 
-    // ─────────────────────────────
+    // -----------------------------
     // 1. Horizontal center (2D-compatible)
     //    2D uses unit._state.location as center; fall back to snapshot lon/lat
-    // ─────────────────────────────
+    // -----------------------------
     const stateLoc = baseUnit?._state?.location;
     const locFromSnap =
         (typeof snap.lon === "number" && typeof snap.lat === "number")
@@ -2014,9 +5969,9 @@ function applyRangeRingsForSnapshot(
 
     const [snapLon, snapLat] = centerLonLat ?? [NaN, NaN];
 
-    // ─────────────────────────────
+    // -----------------------------
     // 2. Base alt & height reference
-    // ─────────────────────────────
+    // -----------------------------
     const snapAlt = (snap as any)?.alt;
     const baseAlt = snapAlt ?? u?.alt ?? 0;
 
@@ -2038,9 +5993,9 @@ function applyRangeRingsForSnapshot(
     // Capture viewer safely for callbacks
     const safeViewer = viewer;
 
-    // ─────────────────────────────
+    // -----------------------------
     // 3. Per-ring loop (outer + optional inner)
-    // ─────────────────────────────
+    // -----------------------------
     for (let idx = 0; idx < rings.length; idx++) {
         const ring = rings[idx];
         if (!ring || ring.hidden) continue;
@@ -2091,9 +6046,9 @@ function applyRangeRingsForSnapshot(
             rangeRingEntities.set(ringId, ringEnt);
         }
 
-        // ─────────────────────────────
+        // -----------------------------
         // 4. Horizontal ranges
-        // ─────────────────────────────
+        // -----------------------------
         let outerMetersRaw = 0;
         try {
             outerMetersRaw = convertToMetric(ring.range, ring.uom || "km");
@@ -2131,9 +6086,9 @@ function applyRangeRingsForSnapshot(
                 ? (outerMinorMeters * innerMeters) / outerMeters
                 : innerMeters;
 
-        // ─────────────────────────────
+        // -----------------------------
         // 5. Vertical extent
-        // ─────────────────────────────
+        // -----------------------------
         const rawFloor =
             typeof ring.minVerticalMeters === "number" && Number.isFinite(ring.minVerticalMeters)
                 ? Math.max(0, ring.minVerticalMeters)
@@ -2163,9 +6118,9 @@ function applyRangeRingsForSnapshot(
         const height = baseHeight + floorMeters;
         const extrudedHeight = hasVerticalSlab ? baseHeight + ceilMeters : undefined;
 
-        // ─────────────────────────────
+        // -----------------------------
         // 6. Style
-        // ─────────────────────────────
+        // -----------------------------
         const style = resolveRangeRingStyle(ring) as any;
 
         const strokeCss =
@@ -2204,15 +6159,15 @@ function applyRangeRingsForSnapshot(
 
         const shape = ring.shape ?? "circle";
 
-        // ─────────────────────────────
+        // -----------------------------
         // 7. Center-follow logic – piggyback directly on the unit entity
-        // ─────────────────────────────
+        // -----------------------------
         ringEnt.position = unitEnt.position;
 
 
-        // ─────────────────────────────
-        // 8A. Square → Rectangle
-        // ─────────────────────────────
+        // -----------------------------
+        // 8A. Square ? Rectangle
+        // -----------------------------
         if (shape === "square") {
             const lon = lonCenter;
             const lat = latCenter;
@@ -2355,9 +6310,9 @@ function applyRangeRingsForSnapshot(
             continue;
         }
 
-        // ─────────────────────────────
-        // 8C. Circle / ellipse → Ellipse
-        // ─────────────────────────────
+        // -----------------------------
+        // 8C. Circle / ellipse ? Ellipse
+        // -----------------------------
         const semiMajorOuter = outerMeters;
         const semiMinorOuter =
             shape === "ellipse" ? outerMinorMeters : outerMeters;
@@ -2468,24 +6423,109 @@ function updateAllUnitsAtTime(tMs: number) {
         if (!passes) {
             if (ent.show !== false) ent.show = false;
             hideToeUnderbar(viewer, id);
+            removeManPortableIconCap(viewer, id);
             continue;
         }
         // Decide per events
         const snap = computeSnapshot(u, tMs);
+        const sidcSnap = (typeof snap.sidc === "string" && snap.sidc.trim()) ? snap.sidc : undefined;
+        const sidcForRender = resolvedSidcForRendering(u, viewer, sidcSnap);
+        const isGroundException = isManPortableWeaponException(u, viewer, sidcForRender);
 
         // IMPORTANT: update TOE-vs-SIDC underbar policy BEFORE we (re)build the icon
         // for this timestamp. Otherwise a SIDC change at t can bake an underbar into
         // the icon using the *previous* policy (which then appears “cached”).
         if (snap.onMap) {
-            updateToeUnderbarForUnit(viewer, ent as any, u, tMs);
+            if (isGroundException) {
+                setToeWinsUnderbarPolicy(u, false);
+                hideToeUnderbar(viewer, id);
+                if (
+                    isTriangleWeaponSidc(sidcForRender)
+                    || isFixedVehicleBlockSidc(sidcForRender)
+                    || isDualTubeLauncherSidc(sidcForRender)
+                    || isSixTubeLauncherSidc(sidcForRender)
+                    || isSingleLargeTubeLauncherSidc(sidcForRender)
+                    || hasLandEquipRecipeOverrideForSidc(sidcForRender)
+                ) {
+                    const shape = resolveSidcShapeOverride(sidcForRender);
+                    const preserve: string[] = [];
+                    if (
+                        shape === "weaponDualTubeLauncher"
+                        || shape === "weaponSixTubeLauncher"
+                        || shape === "weaponSingleLargeTubeLauncher"
+                    ) {
+                        preserve.push(...launcherTubeIdsForShape(id, shape));
+                    }
+                    if (shape === "vehicleTankTurret") {
+                        preserve.push(...tankPartIdsForUnit(id));
+                    }
+                    if (shape === "vehicleIfvTurret") {
+                        preserve.push(...ifvPartIdsForUnit(id));
+                    }
+                    if (shape === "vehicleArmoredTurret") {
+                        preserve.push(...armoredPartIdsForUnit(id));
+                    }
+                    if (shape === "vehicleRecoveryBoom") {
+                        preserve.push(...recoveryPartIdsForUnit(id));
+                    }
+                    if (shape === "vehicleApcModule") {
+                        preserve.push(...apcPartIdsForUnit(id));
+                    }
+                    if (shape === "vehicleApcAmbulance") {
+                        preserve.push(...apcAmbulancePartIdsForUnit(id));
+                    }
+                    if (shape === "vehicleReconMast") {
+                        preserve.push(...reconPartIdsForUnit(id));
+                    }
+                    if (shape === "vehicleCargoModule") {
+                        preserve.push(...cargoPartIdsForUnit(id));
+                    }
+                    if (shape === "vehicleCommandMast") {
+                        preserve.push(...commandPartIdsForUnit(id));
+                    }
+                    if (shape === "vehicleRecoveryRig") {
+                        preserve.push(...recoveryRigPartIdsForUnit(id));
+                    }
+                    if (
+                        shape === "vehicleTankTurret"
+                        || shape === "vehicleIfvTurret"
+                        || shape === "vehicleArmoredTurret"
+                        || shape === "vehicleRecoveryBoom"
+                        || shape === "vehicleApcModule"
+                        || shape === "vehicleApcAmbulance"
+                        || shape === "vehicleReconMast"
+                        || shape === "vehicleCargoModule"
+                        || shape === "vehicleCommandMast"
+                        || shape === "vehicleRecoveryRig"
+                        || shape === "vehicleBox"
+                    ) {
+                        preserve.push(...armoredHullPartIdsForUnit(id));
+                    }
+                    preserve.push(...vehicleMobilityPartIdsForSidc(id, sidcForRender));
+                    preserve.push(...landEquipPartIdsForUnit(viewer, id));
+                    clearGroundOverrideArtifacts(viewer, u, {
+                        removeSidcCap: true,
+                        preserveEntityIds: preserve.length ? preserve : undefined,
+                    });
+                    clearGroundOverrideEntityGraphics(ent);
+                }
+            } else {
+                updateToeUnderbarForUnit(viewer, ent as any, u, tMs);
+            }
         } else {
             hideToeUnderbar(viewer, id);
         }
 
         // Apply show/hide based on onMap
         ent.show = snap.onMap;
+        if (isGroundException) {
+            const cap = viewer.entities.getById(manPortableIconCapIdForUnit(id));
+            const decal = viewer.entities.getById(manPortableIconDecalIdForUnit(id));
+            if (cap) cap.show = snap.onMap;
+            if (decal) decal.show = snap.onMap;
+        }
 
-        // Visibility toggle (location=null ⇒ off map)
+        // Visibility toggle (location=null ? off map)
         const prevOn = lastOnMap.get(id);
         if (prevOn !== snap.onMap || prevOn == null) {
             ent.show = snap.onMap;
@@ -2495,20 +6535,73 @@ function updateAllUnitsAtTime(tMs: number) {
         // If on-map, update position only for STATIC units.
         if (snap.onMap && typeof snap.lon === "number" && typeof snap.lat === "number") {
             if (!hasDynamicPosition(u, ent)) {
-                const wouldClamp = u.clampToGround !== false && u.alt == null;
-                const treatAsAgl = u?.altIsAgl !== false;
-                const baseAlt = u?.alt ?? 0;
-                const h = wouldClamp ? 0 : (treatAsAgl ? scaledAlt(baseAlt) : baseAlt);
-                setEntityPosition(ent, snap.lon, snap.lat, h);
+                if (isGroundException) {
+                    const centerOffset = groundPrimitiveCenterOffsetMeters(sidcForRender);
+                    const footprint = groundPrimitiveFootprintForSidc(sidcForRender);
+                    ent.position = new CallbackProperty(
+                        () => terrainAwareProductCenterFromDegrees(
+                            viewer,
+                            snap.lon!,
+                            snap.lat!,
+                            centerOffset,
+                            footprint,
+                        ),
+                        false,
+                    ) as any;
+                    ent.orientation = new CallbackProperty(
+                        () => {
+                            const pose = computeGroundConformPose(
+                                (lon, lat) => terrainHeightMetersAtLonLatDeg(viewer, lon, lat),
+                                {
+                                    lonDeg: snap.lon!,
+                                    latDeg: snap.lat!,
+                                    footprint,
+                                    clearanceMeters: GROUND_PRIMITIVE_CLEARANCE_M,
+                                    includeCenterSample: true,
+                                },
+                            );
+                            const pos = Cartesian3.fromDegrees(
+                                snap.lon!,
+                                snap.lat!,
+                                pose.anchorHeightMeters + centerOffset,
+                            );
+                            return orientationFromGroundPose(pos, pose);
+                        },
+                        false,
+                    ) as any;
+                } else {
+                    const wouldClamp = u.clampToGround !== false && u.alt == null;
+                    const treatAsAgl = u?.altIsAgl !== false;
+                    const baseAlt = u?.alt ?? 0;
+                    const h = wouldClamp ? 0 : (treatAsAgl ? scaledAlt(baseAlt) : baseAlt);
+                    setEntityPosition(ent, snap.lon, snap.lat, h);
+                }
             }
         }
 
-        // Apply SIDC changes (event-time authoritative)
+        // Apply SIDC changes using the resolved render SIDC so unit-level edits
+        // can override stale/non-overridden event SIDC values.
         const sidcEvt = snap.sidc ?? (u as any).sidc;
+        const sidcToApply = sidcForRender ?? sidcEvt;
         const prevSidc = lastSidc.get(id);
         const sidcOnBillboard = sidcFromBillboard(ent, now);
+        const sidcMismatchFromBillboard = !isGroundException && sidcToApply !== sidcOnBillboard;
+        if (shouldDebugSidc(id)) {
+            logSidcDebug("updateAllUnitsAtTime.sidcDecision", {
+                unitId: id,
+                sidcSnap: snap.sidc,
+                sidcEvt,
+                sidcForRender,
+                sidcToApply,
+                prevSidc,
+                sidcOnBillboard,
+                sidcMismatchFromBillboard,
+                isGroundException,
+                shapeForRender: resolveSidcShapeOverride(sidcForRender),
+            });
+        }
 
-        if (sidcEvt && (sidcEvt !== prevSidc || sidcEvt !== sidcOnBillboard)) {
+        if (sidcToApply && (sidcToApply !== prevSidc || sidcMismatchFromBillboard)) {
             // Clear any memoized base so we don’t stick to an old data: URL
             try {
                 if (u.iconUrl && u.iconUrl.startsWith("data:")) {
@@ -2516,10 +6609,10 @@ function updateAllUnitsAtTime(tMs: number) {
                 }
             } catch { /* ignore */ }
 
-            applySidcChange(ent, u, sidcEvt, viewer, tMs);
+            applySidcChange(ent, u, sidcToApply, viewer, tMs);
 
-            // Book-keeping so we only patch when the event SIDC actually changes
-            lastSidc.set(id, sidcEvt);
+            // Book-keeping so we only patch when rendered SIDC actually changes
+            lastSidc.set(id, sidcToApply);
             lastFillHex.delete(id);
         }
 
@@ -2546,19 +6639,19 @@ function updateAllUnitsAtTime(tMs: number) {
                 (bb as any).image = nextUrl;
             } else {
                 // If we can't resolve a string URL, rebuild the billboard graphics safely
-                applyBillboardGraphics(ent, u, viewer);
+                applySymbolAwareBillboardGraphics(ent, u, viewer);
             }
 
             lastFillHex.set(id, curHex);
         }
-        // 🔹 NEW: range rings around this unit
+        // ?? NEW: range rings around this unit
         applyRangeRingsForSnapshot(
             id,
             u,
             snap,
-            ent,       // 🔹 pass the unit entity
+            ent,       // ?? pass the unit entity
             viewer,
-            now,       // 🔹 pass the Cesium time actually driving billboards
+            now,       // ?? pass the Cesium time actually driving billboards
             unitMap,
             activeRingIds,
             tMs,   
@@ -2652,6 +6745,11 @@ setSurfaceHeightSampler(sampleSurfaceHeightMeters);
             if (!groupColorIdx || groupColorIdx.size === 0) refreshGroupIndexFromScenario();
             applyGroupFillColorToUnit(u as any, groupColorIdx, { mirrorToIcon: false });
 
+            // Force re-evaluation of SIDC-driven shape/style on every ORBAT/unit upsert.
+            (lastSidc as Map<string, string | undefined>).delete(u.id);
+            (lastOnMap as Map<string, boolean>).delete(u.id);
+            lastFillHex.delete(u.id);
+
             const visibleByFilter = _unitFilter ? _unitFilter(u) : true;
             const notHidden2D = !isHidden2D(u);
             const passes = visibleByFilter && notHidden2D;
@@ -2689,20 +6787,25 @@ setSurfaceHeightSampler(sampleSurfaceHeightMeters);
                 }
             } catch { /* ignore */ }
 
-            if (isInstallationBySidc(u)) {
+            const renderMode = resolveSymbol3DRenderMode(u);
+            if (renderMode === "installationFootprint") {
                 applyInstallationGraphics(ent as any, u as any, {
                     getParentById: (id) => unitMeta.get(id),
                     defaultSize: { x: 20, y: 20, z: 10 },
                     style: "footprint",
                 });
                 applyAvailability(ent, u);
-            } else if (u.render === "block") {
+            } else if (renderMode === "block") {
                 applyBlockGraphics(ent, u);
             } else {
-                applyBillboardGraphics(ent, u, api.viewer);
+                applySymbolAwareBillboardGraphics(ent, u, api.viewer);
             }
 
             ent.show = true;
+            const tNow = currentViewerMs(api.viewer);
+            if (typeof tNow === "number" && Number.isFinite(tNow)) {
+                updateAllUnitsAtTime(tNow);
+            }
             api.viewer.scene.requestRender();
             publishDebug(api.viewer);
 
@@ -2717,6 +6820,7 @@ setSurfaceHeightSampler(sampleSurfaceHeightMeters);
             const ent = entities.get(id);
             if (ent) uninstallIconLiftTick(api.viewer, ent);
             api.viewer.entities.removeById(id);
+            removeManPortableIconCap(api.viewer, id);
             entities.delete(id);
             unitMeta.delete(id);
             (lastOnMap as Map<string, boolean>).delete(id);
@@ -2728,6 +6832,53 @@ setSurfaceHeightSampler(sampleSurfaceHeightMeters);
             lastToeUnderbarSig.delete(id);
             api.viewer.entities.removeById(pedestalLinesIdForUnit(id));
             pedestalTipCache.delete(id);
+            for (const childId of [
+                launcherTubeEntityId(id, 0),
+                launcherTubeEntityId(id, 1),
+                launcherTubeEntityId(id, 2),
+                launcherTubeEntityId(id, 3),
+                launcherTubeEntityId(id, 4),
+                launcherTubeEntityId(id, 5),
+                launcherTubeEntityId(id, 6),
+                tankTurretEntityId(id),
+                tankBarrelEntityId(id),
+                ifvTurretEntityId(id),
+                ifvBarrelEntityId(id),
+                ...armoredUpperHullPartIdsForUnit(id),
+                armoredTurretEntityId(id),
+                armoredBarrelEntityId(id),
+                recoveryBoomEntityId(id),
+                apcModuleEntityId(id),
+                apcAmbulanceModuleEntityId(id),
+                apcAmbulancePodEntityId(id),
+                reconMastEntityId(id),
+                cargoModuleEntityId(id),
+                commandModuleEntityId(id),
+                commandMastEntityId(id),
+                commandHeadEntityId(id),
+                recoveryRigBoomEntityId(id),
+                recoveryRigHookEntityId(id),
+            ]) {
+                try { api.viewer.entities.removeById(childId); } catch { /* ignore */ }
+            }
+            const lePrefix = `${id}${LAND_EQUIP_PART_SUFFIX}`;
+            for (const childId of (api.viewer.entities.values ?? [])
+                .map((e: any) => e?.id)
+                .filter((eid: any) => typeof eid === "string" && eid.startsWith(lePrefix)) as string[]) {
+                try { api.viewer.entities.removeById(childId); } catch { /* ignore */ }
+            }
+            const mobPrefix = `${id}${VEHICLE_MOBILITY_PART_SUFFIX}`;
+            for (const childId of (api.viewer.entities.values ?? [])
+                .map((e: any) => e?.id)
+                .filter((eid: any) => typeof eid === "string" && eid.startsWith(mobPrefix)) as string[]) {
+                try { api.viewer.entities.removeById(childId); } catch { /* ignore */ }
+            }
+            const hullAddonPrefix = `${id}${VEHICLE_HULL_ADDON_PART_SUFFIX}`;
+            for (const childId of (api.viewer.entities.values ?? [])
+                .map((e: any) => e?.id)
+                .filter((eid: any) => typeof eid === "string" && eid.startsWith(hullAddonPrefix)) as string[]) {
+                try { api.viewer.entities.removeById(childId); } catch { /* ignore */ }
+            }
         },
 
         flyToLatLon(lon, lat, height = 120000) {
@@ -2767,17 +6918,18 @@ setSurfaceHeightSampler(sampleSurfaceHeightMeters);
             for (const [id, ent] of entities) {
                 const u = unitMeta.get(id);
                 if (!u) continue;
-                if (isInstallationBySidc(u)) {
+                const renderMode = resolveSymbol3DRenderMode(u);
+                if (renderMode === "installationFootprint") {
                     applyInstallationGraphics(ent as any, u as any, {
                         getParentById: (pid) => unitMeta.get(pid),
                         defaultSize: { x: 20, y: 20, z: 10 },
                         style: "footprint",
                     });
                     applyAvailability(ent, u);
-                } else if (u.render === "block") {
+                } else if (renderMode === "block") {
                     applyBlockGraphics(ent, u);
                 } else {
-                    applyBillboardGraphics(ent, u, api.viewer);
+                    applySymbolAwareBillboardGraphics(ent, u, api.viewer);
                 }
             }
             api.viewer.scene.requestRender();
@@ -3006,3 +7158,11 @@ setSurfaceHeightSampler(sampleSurfaceHeightMeters);
 try {
     (window as any).buildIconUrlSync = (u: any) => buildIconUrlSync(u, (window as any).MentatGlobe?.viewer);
 } catch { }
+
+
+
+
+
+
+
+

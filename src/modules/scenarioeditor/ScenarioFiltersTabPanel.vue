@@ -242,6 +242,7 @@ const selectedStats = computed(() => {
 function updateUnitStats(unitOrUnitId: string | NUnit, stats: Record<string, number>) {
   const unit =
     typeof unitOrUnitId === "string" ? state.unitMap[unitOrUnitId] : unitOrUnitId;
+  if (!unit || !unit.sidc) return null as any;
   const keys = createKeys(unit);
   const {
     symbolSetKey,

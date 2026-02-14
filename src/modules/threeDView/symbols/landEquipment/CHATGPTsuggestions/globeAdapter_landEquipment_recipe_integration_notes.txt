@@ -1,0 +1,72 @@
+globeAdapter.ts integration notes (Symbol Set 15 full land-equipment ground primitives)
+
+You already have almost everything needed in globeAdapter.ts:
+- Terrain-aware ground anchor: terrainAwareCylinderCenterFromDegrees(...)
+- ENU offset helper: offsetFromCenterENU(...)
+- Label occlusion fix: applyGroundPrimitiveLabelOffset(...)
+- Artifact cleanup: clearGroundOverrideArtifacts(...)
+- Existing ground primitive patterns: applyVehicleBlockGraphics(...) and applyLandEquipmentWeaponsGraphics(...)
+
+What is missing for the new "complete design pass" is a generic recipe→primitives renderer for the other landEquipment families.
+
+RECOMMENDED MINIMAL INTEGRATION PLAN
+-----------------------------------
+1) Add the new helper module:
+   - Add file: src/modules/threeDView/symbols/landEquipment/landEquipmentRecipeEngine.ts
+     (use the provided landEquipmentRecipeEngine.ts content)
+
+2) Add a mapping data module (your generated v2):
+   - Add file: src/modules/threeDView/symbols/landEquipment/shapeOverrideMapping.ts
+     (export SHAPE_GRAMMAR_TOKENS + LAND_EQUIP_SHAPE_OVERRIDES array from your generated mapping TS)
+
+3) In globeAdapter.ts, wire a new renderer that:
+   - Looks up the override row using subcategory.entityCode/entityTypeCode/entitySubtypeCode
+   - Compiles the row.primitiveRecipe to instances (once per shapeType ideally)
+   - Spawns Cesium entities for each instance:
+       * main entity (u.id): first "body-ish" part (prefer first box/triangularPrism)
+       * helper entities: `${u.id}__le_part_${i}` for i>=1
+   - Applies color = extractGroupFill(u) and outline = black alpha ~0.75
+   - Sets label (do NOT remove labels) on main entity and calls applyGroundPrimitiveLabelOffset(label)
+   - Calls clearGroundOverrideArtifacts(viewer,u,{removeSidcCap:true}) before building
+   - Calls applyPathGraphics(ent,u) on main entity only
+
+4) Extend applyLandEquipmentGraphics(...) so that:
+   - weapons-weapon-system keeps the existing special logic (good and already tuned)
+   - vehicles keeps applyVehicleBlockGraphics for now (or upgrade to recipe later)
+   - ELSE (13/14/15/16/17/19/20/21/22/23): use the generic recipe renderer.
+
+5) Update isGroundPrimitiveSidc / isManPortableWeaponException:
+   - Today it only treats vehicleBox and some weapon shapes as ground primitives.
+   - For TOE underbar & pedestal cleanup to behave consistently, treat:
+       (isLandEquipmentSidc(sidc) && hasRecipeOverrideForSidc(sidc)) as ground primitive too.
+
+SUGGESTED INSERTION POINTS IN globeAdapter.ts
+---------------------------------------------
+A) Near the existing helper section (around makeEquilateralTrianglePolygonHierarchy / offsetFromCenterENU),
+   add a new helper ID suffix:
+     const LAND_EQUIP_PART_SUFFIX = "__le_part_";
+
+   and helpers:
+     function landEquipPartId(unitId: string, i: number) { return `${unitId}${LAND_EQUIP_PART_SUFFIX}${i}`; }
+
+B) In applyLandEquipmentGraphics(...) (around line ~2333 in the uploaded file),
+   add a new branch after vehicles:
+
+     // New: generic shapes for other land equipment families
+     if (viewer) {
+        const ok = applyLandEquipmentRecipeOverride(ent,u,viewer,category,subcategory);
+        if (ok) return;
+     }
+
+C) In clearGroundOverrideArtifacts(...) you already remove `<unitId>__*` helpers,
+   so the renderer should name helper entities with that prefix for automatic cleanup.
+
+NOTE ON TRIANGULAR PRISM / WEDGE
+--------------------------------
+Your existing code uses Entity.polygon extrusion (weapon triangle). That produces vertical sidewalls.
+The recipe engine currently treats "triangularPrism" as a "box-like body" for layout purposes.
+If you want a true triangular prism silhouette later, implement it using Cesium.Primitive + custom Geometry.
+For now, you can map triangularPrism -> box in the renderer without breaking the mapping table.
+
+If you want, I can produce the *exact* `applyLandEquipmentRecipeOverride(...)` Cesium-side function
+tailored to your globeAdapter conventions (heightReference, label styling, safety net cleanup).

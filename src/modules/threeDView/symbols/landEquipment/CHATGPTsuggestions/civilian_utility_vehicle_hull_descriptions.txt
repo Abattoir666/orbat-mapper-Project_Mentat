@@ -1,0 +1,516 @@
+civilian_utility_vehicle_hull_descriptions.txt
+(Plain-English hull-block silhouettes for Codex. No mobility parts: NO wheels/axles/tires/tracks/treads/skis.)
+
+Conventions:
+- “Vehicle length” = front bumper to rear-most body (include trailer if present).
+- “Front/middle/rear third” are rough placement guides.
+- Keep everything blocky: boxes, wedges, triangular prisms, cylinders. No high-poly.
+- Each class: 1) silhouette, 2) hull blocks front→back (≤5), 3) distinct cues.
+
+=====================================================================
+1) Civilian automobile compact (15:16:01:01)
+
+SILHOUETTE
+- Front: short nose/hood, steep windshield.
+- Side: short overall length; cabin looks “big” relative to car; rear is either hatchback or very short trunk.
+- Rear: fairly vertical hatch or stubby rear face.
+
+HULL BLOCKS (front → back)
+1) Hood wedge (engine bay):
+   - A low wedge occupying roughly the front ~20–25% of length.
+   - Slightly lower than the cabin roof; top surface slopes up toward windshield.
+2) Cabin block (greenhouse + roof):
+   - A box occupying roughly the next ~45–55% of length.
+   - Taller than the hood; roof is fairly flat.
+3) Rear hatch/stub block:
+   - A short box occupying the rear ~20–30% of length.
+   - Rear face is near-vertical; height lower than the cabin roof but higher than the hood.
+
+DISTINCT CUES
+- Cabin dominates the vehicle length more than midsize/sedan.
+- Rear overhang is minimal; hatchback feel (vertical-ish rear).
+- Overall “tight” proportions: short hood + short tail.
+
+=====================================================================
+2) Civilian automobile midsize (15:16:01:02)
+
+SILHOUETTE
+- Front: moderate hood; windshield less steep than compact.
+- Side: balanced proportions; not a strong “three-box” like a sedan.
+- Rear: modest trunk or fastback.
+
+HULL BLOCKS
+1) Hood wedge:
+   - Front ~25–30% of length, slightly longer than compact’s hood.
+2) Cabin block:
+   - Middle ~40–50% of length, roof flatter/longer than compact.
+3) Rear deck block:
+   - Rear ~20–30% of length; trunk exists but is not long/pronounced.
+
+DISTINCT CUES
+- Longer hood than compact; less distinct trunk than sedan.
+- “One-and-a-half box” look: hood + cabin with a modest rear volume.
+
+=====================================================================
+3) Civilian automobile sedan (15:16:01:03)
+
+SILHOUETTE
+- Front: moderate hood, clearly separate from cabin.
+- Side: classic three-box profile (hood + cabin + trunk).
+- Rear: pronounced trunk; rear face fairly vertical.
+
+HULL BLOCKS
+1) Hood wedge:
+   - Front ~25–30% of length; low wedge that rises to windshield.
+2) Cabin block:
+   - Middle ~35–45% of length; roof slightly arched but keep boxy.
+3) Trunk block:
+   - Rear ~25–35% of length; noticeably “separate” volume from cabin.
+   - Lower than cabin roof, but longer than midsize’s rear deck.
+
+DISTINCT CUES
+- Strongest three-box silhouette among the cars.
+- Trunk is longer and more distinct than midsize.
+
+=====================================================================
+4) Civilian pickup / open-bed truck (15:16:02:01 / 02 / 03)
+(Three variants: light, medium, heavy. Same basic shape; scale bed length + cab size.)
+
+BASE SILHOUETTE (all pickups)
+- Front: pickup hood + upright cab.
+- Side: cab in front, open cargo bed behind (low sidewalls).
+- Rear: flat tailgate plane.
+
+BASE HULL BLOCKS (front → back)
+1) Hood wedge:
+   - Front ~20–25% of length; taller/more blunt than a car hood.
+2) Cab block:
+   - Next ~25–35% of length; tall box with flat roof.
+3) Open bed tub:
+   - Rear ~40–55% of length; low-height rectangular volume.
+   - Key: bed block is LOW compared to cab (reads as “open”).
+   - Optionally add a thin “bed-rail lip” (very thin strip) if you need clarity, but count it as part of the bed block, not a new block.
+
+LIGHT (15:16:02:01)
+- Shorter bed; cab feels relatively large.
+- Bed is ~40–45% of length.
+
+MEDIUM (15:16:02:02)
+- Balanced; bed roughly ~45–50% of length.
+
+HEAVY (15:16:02:03)
+- Longer bed; sometimes “crew cab” (cab slightly longer).
+- Bed up to ~50–55% of length; overall vehicle reads bulkier/taller.
+
+DISTINCT CUES
+- The bed volume is low and long, immediately behind the cab.
+- Cab is boxier and taller than sedans/SUVs; silhouette shouts “pickup”.
+
+=====================================================================
+5) Civilian van (15:16:03:01)
+
+SILHOUETTE
+- Front: very short hood/nose (or almost flat), steep windshield.
+- Side: tall rectangular body, long continuous roof.
+- Rear: vertical rear doors (flat rear face).
+
+HULL BLOCKS
+1) Short hood wedge (or front cap box):
+   - Front ~10–20% of length; minimal slope; blunt.
+2) Main body box:
+   - Middle+rear ~70–85% of length; tall rectangular prism.
+   - Roof is high and flat; sides are near-vertical.
+3) Optional: roof “AC hump” (only if you need differentiation from other vans):
+   - A thin box on the roof in the rear half (but keep total blocks ≤5; skip if unnecessary).
+
+DISTINCT CUES
+- Tall, single-volume “loaf of bread” profile.
+- Rear face is tall and vertical.
+
+=====================================================================
+6) Civilian small bus (15:16:03:02)
+(Think shuttle / minibus / cutaway bus.)
+
+SILHOUETTE
+- Front: van/truck-like nose with tall windshield.
+- Side: extended tall passenger box, windows implied by flat sides.
+- Rear: vertical rear face, slightly taller than a van.
+
+HULL BLOCKS
+1) Front nose/hood wedge:
+   - Front ~15–25% of length; slightly longer than a van’s nose.
+2) Passenger cabin box:
+   - The main tall box, ~60–75% of length; roof high and flat.
+3) Optional rear roof cap:
+   - A small box at the rear top (rear ~15% of length) to suggest HVAC/raised rear section, if needed.
+
+DISTINCT CUES
+- Taller and longer than a van, but not as long as a full city bus.
+- Looks like “van front + bus box”.
+
+=====================================================================
+7) Civilian large bus (15:16:03:03)
+(Think 35–40 ft transit coach profile, big rectangular body.)
+
+SILHOUETTE
+- Front: wide blunt face, slightly rounded corners.
+- Side: very long rectangular body with a flat roofline.
+- Rear: vertical rear face; sometimes a slight rear cap.
+
+HULL BLOCKS
+1) Front cap box (driver area):
+   - Front ~15–20% of length; full width, tall, blunt.
+2) Main passenger body box:
+   - Middle ~60–70% of length; long tall rectangular prism.
+3) Rear cap box:
+   - Rear ~10–20% of length; similar height; can be slightly tapered or slightly shorter to imply engine compartment.
+
+(If you need a 4th block, make it a thin roof “equipment strip” running along the roofline, but only if you have block budget.)
+
+DISTINCT CUES
+- Longest “single rigid body” in the civilian set (excluding tractor-trailers).
+- Full width, tall, long, and very rectangular.
+
+=====================================================================
+8) Civilian SUV (15:16:04:01)
+
+SILHOUETTE
+- Front: car-like hood but taller overall stance.
+- Side: two-box look: hood + tall cabin/cargo volume; rear is not a separate trunk box like a sedan.
+- Rear: near-vertical hatch, larger rear cargo volume.
+
+HULL BLOCKS
+1) Hood wedge:
+   - Front ~20–25% of length; higher than sedan hood.
+2) Cabin/cargo box:
+   - Middle+rear ~60–70% of length; tall box.
+   - Roof flat; rear quarter feels “bulky”.
+3) Rear hatch cap (optional):
+   - A small rear box or wedge occupying last ~10–15% to emphasize vertical hatch.
+
+DISTINCT CUES
+- Taller cabin than sedan/midsize, with a “single cabin+cargo” volume.
+- Rear is hatch-like rather than a long separate trunk.
+
+=====================================================================
+9) Civilian small box truck (15:16:04:02)
+(Think local delivery truck / step-van-ish or short box truck.)
+
+SILHOUETTE
+- Front: small cab, often blunt.
+- Side: a rectangular cargo box immediately behind cab; shorter overall length than large box truck.
+- Rear: vertical cargo door face.
+
+HULL BLOCKS
+1) Cab block:
+   - Front ~20–30% of length; tall-ish and blunt, but narrower than the cargo box if you want “cab-forward” feel.
+2) Cargo box:
+   - Rear ~60–75% of length; tall rectangular prism (the dominant volume).
+3) Optional “box collar” (thin strip) at the front of the cargo box to suggest a seam between cab and box (do not count as a new block if possible; treat as a detail of the cargo box).
+
+DISTINCT CUES
+- Dominant rectangular cargo volume; clearly not a bus (no long smooth one-piece body).
+- Shorter cargo box than large box truck.
+
+=====================================================================
+10) Civilian large box truck (15:16:04:03)
+(Think 24–26 ft moving truck / big delivery box.)
+
+SILHOUETTE
+- Front: cab, moderate length.
+- Side: very long tall cargo box; box dominates more than in the small variant.
+- Rear: large flat rear door face.
+
+HULL BLOCKS
+1) Cab block (or cab + short hood wedge):
+   - Front ~15–25% of length; slightly more “truck-like” than small box.
+2) Long cargo box:
+   - Rear ~70–85% of length; tall rectangular prism.
+3) Optional roof fairing wedge (above cab front edge) if you want more detail, but only if within block limit.
+
+DISTINCT CUES
+- Cargo box is longer than small box truck and often taller.
+- The “box” volume overwhelms the cab visually.
+
+=====================================================================
+11) Jeep-type light / medium / heavy (15:16:05:01 / 02 / 03)
+(These read more rugged/squared than generic SUVs. Think upright windshield, flat-ish roof, short overhangs.)
+
+BASE SILHOUETTE
+- Front: short blunt hood, very upright windshield.
+- Side: boxy cabin; roof flat; body looks like a rectangle on top of a rectangle.
+- Rear: vertical tailgate; compact rear overhang.
+
+BASE HULL BLOCKS
+1) Hood wedge (short, blunt):
+   - Front ~15–20% of length; higher and more squared than car hood.
+2) Cabin box:
+   - Middle ~55–65% of length; upright sides; flat roof.
+3) Rear tailgate block:
+   - Rear ~15–25% of length; near-vertical rear face.
+
+LIGHT (15:16:05:01)
+- Shortest; cabin not very long (2-door vibe).
+- Hood and tail are short; “stubby” overall.
+
+MEDIUM (15:16:05:02)
+- Slightly longer cabin (4-door vibe); more balanced.
+
+HEAVY (15:16:05:03)
+- Longest and tallest; cabin length increases; rear cargo area larger.
+- Reads almost like a large off-road SUV, still boxier than normal SUV class.
+
+DISTINCT CUES
+- More upright and boxy than the generic SUV class.
+- Short overhangs; “rugged cube” look.
+
+=====================================================================
+12) Tractor trailer (boxed) light / medium / heavy (15:16:06:01 / 02 / 03)
+(Tractor + rectangular enclosed trailer (“dry van” feel).)
+
+BASE SILHOUETTE
+- Front: aerodynamic-ish tractor nose; tall cab; (optionally) sleeper behind cab.
+- Side: long rectangular trailer box dominates length.
+- Rear: tall flat trailer door face.
+
+BASE HULL BLOCKS (front → back)
+1) Tractor nose wedge:
+   - Front ~8–12% of total combo length; sloped top, blunt face.
+2) Cab + sleeper box:
+   - Next ~10–18% of combo length; tall rectangular prism behind the nose.
+   - Sleeper can be implied as rear half of this cab block (no extra block needed).
+3) Fifth-wheel gap / neck region (optional detail, not a block if possible):
+   - Just a visual seam between tractor and trailer.
+4) Trailer box:
+   - Rear ~65–80% of combo length; tall long rectangular prism.
+   - Height is near constant; corners slightly rounded if you want.
+
+LIGHT (15:16:06:01)
+- Shorter trailer (think “pup” or shorter box); total length noticeably shorter.
+
+MEDIUM (15:16:06:02)
+- Standard trailer length, “normal” proportions.
+
+HEAVY (15:16:06:03)
+- Longest trailer (common 48–53 ft feel); trailer dominates even more.
+- Tractor may feel slightly longer/taller (heavier-duty look).
+
+DISTINCT CUES
+- Trailer is a single long tall box: unmistakable “dry van” silhouette.
+- Very different from box trucks because the trailer starts after a clear tractor.
+
+=====================================================================
+13) Tractor trailer (flatbed) light / medium / heavy (15:16:07:01 / 02 / 03)
+(Tractor + long flat deck trailer; deck is low and thin.)
+
+BASE SILHOUETTE
+- Front: same tractor as boxed.
+- Side: long low deck; open top (no tall trailer walls).
+- Rear: thin deck tail; sometimes a headboard at the front of the deck.
+
+BASE HULL BLOCKS
+1) Tractor nose wedge.
+2) Cab + sleeper box.
+3) Flatbed deck slab:
+   - Rear ~65–80% of total combo length.
+   - Very low height (a thin rectangular prism).
+4) Headboard / bulkhead (optional, can be part of deck block):
+   - A short vertical plate at the front of the deck (immediately behind tractor).
+
+LIGHT / MEDIUM / HEAVY
+- Same scaling logic as boxed: deck length grows across variants.
+
+DISTINCT CUES
+- The towed section is LOW and THIN (deck), not a tall rectangular box.
+
+=====================================================================
+14) Utility semi-trailer truck classes (15:14:06:01 / 02 / 03)
+(Note: “utility” subclasses can vary by your dictionary. These are three common utility trailer silhouettes you can map to 01/02/03 as needed.)
+
+14A) Utility semi-trailer – TANKER-style (suggest mapping to 15:14:06:01)
+SILHOUETTE
+- Tractor in front; towed trailer is a long horizontal cylinder (rounded ends).
+
+HULL BLOCKS
+1) Tractor nose wedge.
+2) Cab + sleeper box.
+3) Tank cylinder:
+   - Rear majority of length; long cylinder lying lengthwise.
+   - Add tiny box “end cap” only if needed; prefer cylinder alone.
+
+CUES
+- Towed unit is ROUND, not boxy.
+
+14B) Utility semi-trailer – DUMP / TIPPER-style (suggest mapping to 15:14:06:02)
+SILHOUETTE
+- Trailer looks like a big box with a slanted top edge (dump bed).
+
+HULL BLOCKS
+1) Tractor nose wedge.
+2) Cab + sleeper box.
+3) Dump bed box/wedge:
+   - A tall rectangular prism with a slight wedge top or angled rear.
+   - Looks heavier and more “industrial” than a dry van.
+
+CUES
+- Trailer top edge is sloped/angled; looks like it could tip.
+
+14C) Utility semi-trailer – LOWBOY / EQUIPMENT TRANSPORT (suggest mapping to 15:14:06:03)
+SILHOUETTE
+- Trailer deck sits very low; often has a raised “gooseneck” at the front.
+
+HULL BLOCKS
+1) Tractor nose wedge.
+2) Cab + sleeper box.
+3) Gooseneck/neck block:
+   - A medium-height box immediately behind tractor (front of trailer).
+4) Low deck slab:
+   - Long thin slab extending rearward; very low height.
+
+CUES
+- Trailer is mostly a LOW thin deck with a distinct raised neck at the front.
+
+=====================================================================
+15) Utility tow truck light / heavy (15:14:12:01 / 02)
+(Key feature: rear towing apparatus + boom housing; do NOT model wheels.)
+
+LIGHT TOW (15:14:12:01)
+SILHOUETTE
+- Front: pickup/medium-truck cab.
+- Middle: short equipment body (toolboxes).
+- Rear: small boom / wheel-lift assembly.
+
+HULL BLOCKS
+1) Hood wedge + cab block (can be 2 blocks if you need: hood wedge then cab box).
+2) Equipment body box:
+   - A medium-height box behind cab (tool compartments).
+3) Rear tow apparatus block:
+   - A small angled “A-frame” or wedge at the rear (the wheel-lift mast / stinger housing).
+   - Keep it compact.
+
+CUES
+- Looks like a pickup/medium truck with a rear “towing mechanism bump”.
+
+HEAVY TOW (15:14:12:02)
+SILHOUETTE
+- Bigger cab; longer/heavier equipment body.
+- Rear: large boom housing, often taller than the body.
+
+HULL BLOCKS
+1) Hood wedge.
+2) Cab box (taller, more squared).
+3) Long equipment body box (tool compartments, ballast).
+4) Boom housing block:
+   - A tall box or triangular prism rising from the rear half of the body.
+5) Rear tow apparatus block:
+   - A chunky wedge/box at the rear representing the heavy wheel-lift assembly.
+
+CUES
+- Big rear superstructure/boom: unmistakably a heavy wrecker profile.
+
+=====================================================================
+16) Utility medical / evacuation / emergency physician (15:14:02 / 03 / 04)
+(These can map differently depending on your dictionary; shapes below reflect common roles.)
+
+16A) Utility medical (15:14:02) – “medical support van/truck”
+SILHOUETTE
+- Front: van/truck cab.
+- Rear: tall boxy medical module, shorter than a full ambulance.
+
+HULL BLOCKS
+1) Short hood wedge.
+2) Cab box.
+3) Medical module box:
+   - A tall rectangular prism behind the cab (shorter than the cab+module of a full ambulance).
+
+CUES
+- Looks like “service truck with a box module”, not just a civilian van.
+
+16B) Utility evacuation (15:14:03) – “ambulance-like”
+SILHOUETTE
+- Clear ambulance pattern: cab + large tall rear patient box.
+
+HULL BLOCKS
+1) Hood wedge (or cab-forward nose).
+2) Cab box.
+3) Patient module box:
+   - Tall long rectangular prism; dominates rear ~55–70% of vehicle length.
+4) Optional roof cap:
+   - Thin box on top rear half (HVAC/roof equipment) if you need class separation.
+
+CUES
+- Rear module is big and tall; stronger ambulance silhouette than 16A.
+
+16C) Utility emergency physician (15:14:04) – “rapid response car/SUV”
+SILHOUETTE
+- Essentially a sedan/SUV silhouette with small roof light bar.
+
+HULL BLOCKS
+1) Hood wedge.
+2) Cabin/cargo box (SUV-ish) OR cabin + trunk (sedan-ish) depending on your preference.
+3) Roof light bar block:
+   - Very thin, very short box sitting centered on the roof (keep subtle).
+
+CUES
+- Only minimal “emergency” geometry: tiny roof light bar; otherwise looks like a normal vehicle.
+
+=====================================================================
+17) Law-enforcement / police vehicle baseline (15:17:07)
+
+SILHOUETTE
+- Typical patrol car: sedan-ish or SUV-ish, with a roof light bar.
+- Side: clean civilian profile; minimal extra protrusions.
+
+HULL BLOCKS
+Option A (sedan patrol):
+1) Hood wedge.
+2) Cabin box.
+3) Trunk box.
+4) Roof light bar (thin small box centered on roof).
+
+Option B (SUV patrol):
+1) Hood wedge.
+2) Cabin/cargo box.
+3) Roof light bar (thin small box).
+
+DISTINCT CUES
+- Light bar is the key differentiator; otherwise it’s a normal car/SUV silhouette.
+
+=====================================================================
+18) Emergency ambulance / fire classes (15:23:01 / 02)
+
+18A) Ambulance (15:23:01) – “Type III box ambulance” silhouette
+SILHOUETTE
+- Front: van/truck cab front.
+- Rear: tall rectangular patient module; box dominates the vehicle.
+
+HULL BLOCKS
+1) Hood wedge / cab nose.
+2) Cab box.
+3) Patient module box (tall, long; rear ~60–75% of length).
+4) Optional roof equipment strip (thin box) on top of module for extra identity.
+
+CUES
+- Strong cab+box pattern; module is taller and more pronounced than generic utility medical.
+
+18B) Fire engine (15:23:02) – “pumper” silhouette
+SILHOUETTE
+- Front: truck cab.
+- Middle: long equipment body with compartment faces.
+- Rear/top: raised hose-bed block (a distinct high rear cap).
+
+HULL BLOCKS
+1) Hood wedge.
+2) Cab box (tall).
+3) Equipment body box:
+   - Long rectangular prism behind cab (dominant middle volume).
+4) Hose-bed / rear cap box:
+   - A taller box sitting on the rear third of the equipment body (creates the classic stepped profile).
+5) Optional “pump panel” wedge:
+   - Small wedge/box on the side-mid area (only if you need one more unique cue; otherwise skip).
+
+CUES
+- Classic stepped silhouette: cab + long body + raised rear/top section.
+- Much taller and more “industrial” than any civilian box truck.
+
+END OF FILE

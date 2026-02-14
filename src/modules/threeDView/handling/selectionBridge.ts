@@ -22,12 +22,12 @@ function tryExtractUnitIdFromPicked(picked: any): string | null {
     if (!id) return null;
 
     const ent = id as any;
-    if (typeof ent?.id === "string") return ent.id;
-    if (typeof ent?.name === "string") return ent.name;
-
     const props = ent?.properties;
     const v = props?.unitId?.getValue?.(Cesium.JulianDate.now());
     if (typeof v === "string") return v;
+
+    if (typeof ent?.id === "string") return ent.id;
+    if (typeof ent?.name === "string") return ent.name;
 
     return null;
 }
@@ -216,7 +216,7 @@ export function createCesiumSelectionBridge(opts: {
     }
 
     function pickUnitsInRect(viewer: Cesium.Viewer, a: Cesium.Cartesian2, b: Cesium.Cartesian2): string[] {
-        const out: string[] = [];
+        const out = new Set<string>();
 
         const toWin = getSceneToWindowFn();
         if (!toWin) return out;
@@ -229,7 +229,9 @@ export function createCesiumSelectionBridge(opts: {
         const t = viewer.clock.currentTime;
 
         for (const ent of viewer.entities.values) {
-            const id = (ent as any)?.id;
+            const props = (ent as any)?.properties;
+            const uid = props?.unitId?.getValue?.(t);
+            const id = typeof uid === "string" ? uid : ((ent as any)?.id as string | undefined);
             if (typeof id !== "string") continue;
 
             const pos = (ent as any)?.position?.getValue?.(t);
@@ -239,11 +241,11 @@ export function createCesiumSelectionBridge(opts: {
             if (!win) continue;
 
             if (win.x >= minX && win.x <= maxX && win.y >= minY && win.y <= maxY) {
-                out.push(id);
+                out.add(id);
             }
         }
 
-        return out;
+        return Array.from(out);
     }
 
     function onContextMenu(e: MouseEvent) {

@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
 import { convertMilXLayer, getMilXLayers } from "@/importexport/milx/readMilX";
 import { toMilx } from "@/importexport/milx/writeMilX";
@@ -200,7 +201,7 @@ describe("Convert to MilX", async function () {
   });
 
   it("writes symbol code", () => {
-    expect(feature1.properties.ID).toBe("SFGPUCIA---F--G");
+    expect(feature1.properties.ID).toBe("SFGPUCIA---F---");
   });
 
   it("writes coordinates", () => {

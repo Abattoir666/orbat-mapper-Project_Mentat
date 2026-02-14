@@ -1,0 +1,51 @@
+Civilian and Utility Vehicle 3D Reference Prompt Pack (for GPT-5.2)
+
+Use this for each vehicle class/subclass below. Replace <CLASS_NAME> and <SIDC_BUCKET>.
+
+MASTER PROMPT
+"For MIL-STD-2525 land equipment <CLASS_NAME> (<SIDC_BUCKET>), describe what the vehicle looks like in real life for simplified 3D rendering.
+Break it into core rigid hull/body subcomponents only (cab, hood, roof block, cargo body, trailer body, boom housing, etc.).
+DO NOT include wheels, tracks, axles, tires, treads, skis, or similar mobility parts in these hull components (mobility elements are rendered separately).
+Output:
+1) Top-level silhouette description (front/side/rear)
+2) Ordered component list from front to back, each with:
+- purpose/name
+- suggested relative dimensions (length %, width %, height % of full vehicle)
+- suggested center offset from vehicle center (east/x, north/y, up/z; in normalized fractions of full dimensions)
+3) Up to 5 hull/body blocks total (not counting mobility elements)
+4) Distinct cues to differentiate this class from adjacent classes."
+
+CLASSES TO RUN
+1) Civilian automobile compact (15:16:01:01)
+2) Civilian automobile midsize (15:16:01:02)
+3) Civilian automobile sedan (15:16:01:03)
+4) Civilian pickup/open-bed truck (15:16:02:01/02/03)
+5) Civilian van (15:16:03:01)
+6) Civilian small bus (15:16:03:02)
+7) Civilian large bus (15:16:03:03)
+8) Civilian SUV (15:16:04:01)
+9) Civilian small box truck (15:16:04:02)
+10) Civilian large box truck (15:16:04:03)
+11) Jeep-type light/medium/heavy (15:16:05:01/02/03)
+12) Tractor trailer (boxed) light/medium/heavy (15:16:06:01/02/03)
+13) Tractor trailer (flatbed) light/medium/heavy (15:16:07:01/02/03)
+14) Utility semi-trailer truck classes (15:14:06:01/02/03)
+15) Utility tow truck light/heavy (15:14:12:01/02)
+16) Utility medical / evacuation / emergency physician (15:14:02/03/04)
+17) Law-enforcement/police vehicle baseline (15:17:07)
+18) Emergency ambulance/fire classes (15:23:01/02)
+
+OPTIONAL FOLLOW-UP PROMPT (dimension anchoring)
+"Now provide one real-world exemplar vehicle for this class and its rough overall dimensions (L x W x H, meters), then map each hull component to those dimensions."
+
+---
+PINNED IMPLEMENTATION NOTE FOR GPT-5.2 (2026-02-14)
+- Keep giving hull/body decomposition guidance, but assume these are already solved in-code:
+  1) wheels/tracks are separate mobility elements (do not include them in hull blocks),
+  2) product aggregation + cache exists under `symbols/Products`,
+  3) terrain conform uses 4-corner footprint sampling with rigid whole-model orientation,
+  4) helper parts are attached in local oriented frame (no "flexing apart").
+- When proposing new shapes, prioritize:
+  - clean front/mid/rear (or cab/neck/trailer) block decomposition,
+  - normalized offsets suitable for rigid local-space attachment,
+  - class-distinguishing silhouette cues over micro-detail.

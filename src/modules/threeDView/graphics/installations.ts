@@ -11,6 +11,7 @@ import {
     PolygonHierarchy,
 } from "cesium";
 import * as Cesium from "cesium";
+import { isInstallationSymbolSet } from "@/modules/threeDView/symbols";
 
 /** WGS84 radius (meters) */
 const EARTH_R = 6378137;
@@ -58,20 +59,12 @@ function makeSideLabel(
 export function isInstallationBySidc(u: any): boolean {
     const sidc: string | undefined =
         u?.sidc ?? u?.symbolOptions?.sidc ?? (u as any)?.__sourceUnit?.sidc;
-    if (typeof sidc !== "string") return false;
-    const s = sidc.trim();
-
-    // Standard APP-6C/D: "installation" appears as code "20" in the function ID.
-    // Try both common placements (0-based slice):
-    //   - positions 4..6  (5th-6th chars)
-    //   - positions 10..12 (11th-12th chars)  — seen in some pipelines
-    const a = s.length >= 6 && s.slice(4, 6) === "20";
-    const b = s.length >= 12 && s.slice(10, 12) === "20";
+    const bySymbolSet = isInstallationSymbolSet(sidc);
 
     // Also accept explicit flags if your pipeline sets them
     const f = !!(u?.isInstallation || u?.symbolOptions?.isInstallation);
 
-    return a || b || f;
+    return bySymbolSet || f;
 }
 
 export function resolveFillCssWithParents(
@@ -129,6 +122,7 @@ export function applyInstallationGraphics(
     ent.point = undefined as any;
     ent.box = undefined as any;
     ent.rectangle = undefined as any;
+    ent.cylinder = undefined as any;
 
     if (style === "footprint") {
         // Build a small ground-clamped polygon centered at lon/lat, sized in meters
@@ -154,6 +148,7 @@ export function applyInstallationGraphics(
         ent.point = undefined as any;
         ent.box = undefined as any;
         ent.rectangle = undefined as any;
+        ent.cylinder = undefined as any;
 
         ent.position = undefined; // polygon doesn't need a position anchor
         ent.polygon = {

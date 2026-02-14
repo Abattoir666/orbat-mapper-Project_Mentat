@@ -1,0 +1,215 @@
+// globeAdapter.ts snippet: generic Symbol Set 15 land-equipment recipe renderer
+//
+// Dependencies (already present in globeAdapter.ts):
+// - clearGroundOverrideArtifacts(viewer,u,{removeSidcCap:true})
+// - clearGroundOverrideEntityGraphics(ent)
+// - buildPositionPropertyForUnit(u)
+// - terrainAwareCylinderCenterFromDegrees(viewer, lonDeg, latDeg, centerOffsetMeters)
+// - offsetFromCenterENU(center, east, north, up)
+// - applyPathGraphics(ent,u)
+// - extractGroupFill(u) + safeCssColor(css).withAlpha(1.0)
+// - makeSideLabel(text, heightRef, align, pxYOffset) + applyGroundPrimitiveLabelOffset(label)
+// - applyAvailability(ent,u)
+//
+// New imports you will need:
+//   import { compileRecipeToInstances, findBestOverrideRow, type CompiledInstance } from "@/modules/threeDView/symbols/landEquipment/landEquipmentRecipeEngine";
+//   import { LAND_EQUIP_SHAPE_OVERRIDES, SHAPE_GRAMMAR_TOKENS } from "@/modules/threeDView/symbols/landEquipment/shapeOverrideMapping";
+//
+// NOTE: triangularPrism is currently rendered as a box fallback for simplicity.
+
+const LAND_EQUIP_PART_SUFFIX = "__le_part_";
+function landEquipPartId(unitId: string, i: number) { return `${unitId}${LAND_EQUIP_PART_SUFFIX}${i}`; }
+
+const __leRecipeCache = new Map<string, { instances: CompiledInstance[]; bodyHalfH: number }>();
+
+function __leGetCompiled(recipe: string) {
+  const cached = __leRecipeCache.get(recipe);
+  if (cached) return cached;
+  const { instances, bodyBounds } = compileRecipeToInstances(recipe, SHAPE_GRAMMAR_TOKENS as any);
+  const v = { instances, bodyHalfH: bodyBounds.halfH };
+  __leRecipeCache.set(recipe, v);
+  return v;
+}
+
+function __leApplyPrimitiveToEntity(
+  ent: Cesium.Entity,
+  inst: CompiledInstance,
+  color: Cesium.Color,
+  outlineColor: Cesium.Color,
+) {
+  // clear any previous graphics we might have set
+  ent.box = undefined as any;
+  ent.cylinder = undefined as any;
+  ent.ellipsoid = undefined as any;
+  ent.polygon = undefined as any;
+
+  if (inst.kind === "box" || inst.kind === "triangularPrism") {
+    const L = inst.L ?? 4;
+    const W = inst.W ?? 2;
+    const H = inst.H ?? 2;
+    ent.box = new Cesium.BoxGraphics({
+      dimensions: new Cesium.Cartesian3(W, L, H), // W→east(x), L→north(y)
+      material: color,
+      outline: true,
+      outlineColor,
+    });
+    return;
+  }
+
+  if (inst.kind === "sphere") {
+    const rr = inst.radius ?? inst.r ?? 0.6;
+    ent.ellipsoid = new Cesium.EllipsoidGraphics({
+      radii: new Cesium.Cartesian3(rr, rr, rr),
+      material: color,
+      outline: true,
+      outlineColor,
+    });
+    return;
+  }
+
+  // cylinder / cone / capsule → CylinderGraphics
+  const r = inst.r ?? 0.4;
+  const h = inst.h ?? 1.0;
+  const isCone = inst.kind === "cone";
+  ent.cylinder = new Cesium.CylinderGraphics({
+    length: h,
+    topRadius: isCone ? 0.0 : r,
+    bottomRadius: r,
+    material: color,
+    outline: true,
+    outlineColor,
+  });
+}
+
+function __leOrientationForInstance(
+  inst: CompiledInstance,
+  position: Cesium.Cartesian3,
+): Cesium.Quaternion | undefined {
+  // Only implement axis=longitudinal for now (e.g., tanker barrels)
+  if (inst.axis !== "longitudinal") return undefined;
+  // Rotate cylinder's local +Z axis to point along +North (+Y) in ENU.
+  const pitch = Cesium.Math.toRadians(90);
+  return Cesium.Transforms.headingPitchRollQuaternion(
+    position,
+    new (Cesium as any).HeadingPitchRoll(0, pitch, 0),
+  );
+}
+
+/**
+ * Returns true if it applied a ground primitive override, false to allow billboard fallback.
+ */
+function applyLandEquipmentRecipeOverride(
+  ent: Cesium.Entity,
+  u: UnitRenderable,
+  viewer: Cesium.Viewer,
+  category: any,
+  subcategory: any,
+): boolean {
+  const entityCode = subcategory?.entityCode ?? category?.entityCode;
+  const entityTypeCode = subcategory?.entityTypeCode;
+  const entitySubtypeCode = subcategory?.entitySubtypeCode;
+
+  if (!entityCode || !entityTypeCode) return false;
+
+  const row = findBestOverrideRow(
+    LAND_EQUIP_SHAPE_OVERRIDES as any,
+    String(entityCode),
+    String(entityTypeCode),
+    entitySubtypeCode != null ? String(entitySubtypeCode) : "*",
+  );
+  if (!row || !row.primitiveRecipe) return false;
+
+  const { instances, bodyHalfH } = __leGetCompiled(row.primitiveRecipe);
+
+  // Hard safety: avoid runaway helper spam if a recipe is malformed.
+  const MAX_PARTS = 24;
+  const insts = instances.slice(0, MAX_PARTS);
+
+  clearGroundOverrideArtifacts(viewer, u, { removeSidcCap: true });
+  clearGroundOverrideEntityGraphics(ent);
+
+  // Anchor position (terrain-aware): center is bodyHalfH above ground.
+  const motion = buildPositionPropertyForUnit(u);
+  if (motion) {
+    ent.position = new Cesium.CallbackProperty((time) => {
+      const p = motion.getValue(time);
+      if (!p) return undefined;
+      const carto = Cesium.Cartographic.fromCartesian(p);
+      const lonDeg = Cesium.Math.toDegrees(carto.longitude);
+      const latDeg = Cesium.Math.toDegrees(carto.latitude);
+      return terrainAwareCylinderCenterFromDegrees(viewer, lonDeg, latDeg, bodyHalfH);
+    }, false) as any;
+  } else {
+    ent.position = new Cesium.CallbackProperty(() => {
+      return terrainAwareCylinderCenterFromDegrees(viewer, u.lon, u.lat, bodyHalfH);
+    }, false) as any;
+  }
+
+  ent.orientation = undefined;
+  applyPathGraphics(ent, u);
+
+  const fillCss = extractGroupFill(u);
+  const baseColor = safeCssColor(fillCss).withAlpha(1.0);
+  const outlineColor = Cesium.Color.BLACK.withAlpha(0.75);
+
+  // Main body = first instance (assumed body-ish)
+  const bodyInst = insts[0] ?? ({ kind: "box", L: 4, W: 2, H: 2, east: 0, north: 0, up: 0 } as any);
+  __leApplyPrimitiveToEntity(ent, bodyInst, baseColor, outlineColor);
+
+  // Label: keep it, and lift for tall equipment using row.labelOffset[2] as a bias.
+  ent.label = u.name ? makeSideLabel(u.name, Cesium.HeightReference.NONE, "left", u.labelOffsetPxY ?? -12) : undefined;
+  applyGroundPrimitiveLabelOffset(ent.label);
+  try {
+    if (ent.label && Array.isArray((row as any).labelOffset)) {
+      const z = Number((row as any).labelOffset[2] ?? 0);
+      if (Number.isFinite(z) && z !== 0) {
+        // eyeOffset.y is "up" in eye coordinates; treat z meters as a gentle lift.
+        const eo = ent.label.eyeOffset?.getValue?.(Cesium.JulianDate.now()) ?? (ent.label.eyeOffset as any);
+        if (eo && typeof eo.y === "number") {
+          ent.label.eyeOffset = new Cesium.Cartesian3(eo.x, eo.y + z, eo.z);
+        }
+      }
+    }
+  } catch { /* ignore */ }
+
+  // Helper parts
+  const preserveIds: string[] = [u.id];
+  for (let i = 1; i < insts.length; i += 1) {
+    const inst = insts[i];
+    const id = landEquipPartId(u.id, i);
+    preserveIds.push(id);
+
+    const partEnt = viewer.entities.getById(id) ?? viewer.entities.add({ id });
+    // Ensure cleanup catches it:
+    (partEnt as any).__landEquipHelper = true;
+    try { tagEntityWithUnitId(partEnt as any, u.id); } catch { /* ignore */ }
+
+    // no label, no billboard
+    partEnt.label = undefined as any;
+    partEnt.billboard = undefined as any;
+    partEnt.point = undefined as any;
+    partEnt.polyline = undefined as any;
+
+    partEnt.position = new Cesium.CallbackProperty((time) => {
+      const base = (ent.position as any)?.getValue?.(time);
+      if (!base) return undefined;
+      return offsetFromCenterENU(base, inst.east, inst.north, inst.up);
+    }, false) as any;
+
+    // Optional orientation for longitudinal cylinders
+    partEnt.orientation = new Cesium.CallbackProperty((time) => {
+      const p = (partEnt.position as any)?.getValue?.(time);
+      if (!p) return undefined;
+      return __leOrientationForInstance(inst, p) as any;
+    }, false) as any;
+
+    __leApplyPrimitiveToEntity(partEnt, inst, baseColor, outlineColor);
+    partEnt.show = true;
+  }
+
+  // Ensure any old helpers are removed (clearGroundOverrideArtifacts has a prefix sweep, but preserve ours).
+  clearGroundOverrideArtifacts(viewer, u, { removeSidcCap: false, preserveEntityIds: preserveIds });
+
+  applyAvailability(ent, u);
+  return true;
+}
